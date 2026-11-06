@@ -264,6 +264,22 @@ func (l *UILayer) TextInputActive() (active, noInputMethod bool) {
 	return l.host.ime.Active, l.host.ime.NoInputMethod
 }
 
+// TextInputClient bridges the layer's focused text input to the native
+// window that presents it. The returned client translates input-method
+// geometry through m, which is in the presenting element's coordinate
+// space, and forwards composition and editing to the layer. Keep the
+// returned value while the layer is presented and pass it to the
+// presenting element's HandleTextInput.
+//
+// The mapping is read when each method runs, so update it before the
+// frame that presents the layer. A nil mapping returns nil.
+func (l *UILayer) TextInputClient(m SurfaceMap) TextInputClient {
+	if l.closed || m == nil {
+		return nil
+	}
+	return &layerTextClient{layer: l, surface: m}
+}
+
 // Close drops the layer's engine and rendered resources.
 func (l *UILayer) Close() {
 	if l.closed {

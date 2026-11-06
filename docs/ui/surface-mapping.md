@@ -88,6 +88,27 @@ end an active capture. The outer host can read `UILayer.Cursor` after
 input to show the cursor requested by the native element under the
 mapped pointer.
 
+Text input crosses the same boundary. Create one client per presented
+surface and give it to the hosting element:
+
+```go
+text := layer.TextInputClient(surface)
+view := ui.Box(c).Focusable().HandleTextInput(text)
+view.HandleInput(func(ev ui.InputEvent) bool {
+	handled := layer.HandleSurfaceInput(surface, ev)
+	if handled {
+		layer.Render()
+	}
+	return handled
+})
+```
+
+The client forwards composition and editing into the layer. It projects
+the inner caret's bounds back through the surface map and maps native
+point queries back to the inner text layout. Keep the client stable while
+the surface is presented; update the `SurfaceMap` before rendering the
+frame it describes.
+
 A `UILayer.Bitmap()` can also be passed to `MetalCanvas.SetSource`, so
 the same live layer can be sampled by an external Metal pass without
 first being attached to the window tree:

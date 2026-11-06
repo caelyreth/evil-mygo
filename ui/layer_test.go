@@ -237,6 +237,95 @@ func TestUILayerTextInputThroughSurface(t *testing.T) {
 	}
 }
 
+func TestUILayerTextInputClientProjectsGeometry(t *testing.T) {
+	name := "Ada"
+	layer := NewUILayer(func(c *Context) {
+		TextInput(c.Key("name"), &name).Fill()
+	}, 100, 60)
+	defer layer.Close()
+	surface := NewPlanarSurface(Rect{X: 100, Y: 50, W: 200, H: 120})
+	layer.HandleSurfaceInput(surface, InputEvent{Kind: InputPointerDown, X: 120, Y: 70, Button: 0})
+	layer.HandleSurfaceInput(surface, InputEvent{Kind: InputPointerUp, X: 120, Y: 70, Button: 0})
+	layer.Render()
+
+	client := layer.TextInputClient(surface)
+	if client == nil {
+		t.Fatal("layer returned no text input client")
+	}
+	if got, actual := client.TextForRange(TextInputRange{End: 3}); got != "Ada" || actual != (TextInputRange{End: 3}) {
+		t.Fatalf("text range = %q %+v, want Ada {0 3}", got, actual)
+	}
+	selection := client.Selection()
+	innerBounds, _, ok := layer.host.ime.Client.BoundsForRange(selection.Range)
+	if !ok {
+		t.Fatal("inner text input has no caret bounds")
+	}
+	bounds, _, ok := client.BoundsForRange(selection.Range)
+	if !ok {
+		t.Fatal("surface text input has no caret bounds")
+	}
+	want := Rect{
+		X: float32(100 + innerBounds.X/100*200),
+		Y: float32(50 + innerBounds.Y/60*120),
+		W: float32(innerBounds.W / 100 * 200),
+		H: float32(innerBounds.H / 60 * 120),
+	}
+	if absSurface(bounds.X-want.X) > 1e-4 || absSurface(bounds.Y-want.Y) > 1e-4 ||
+		absSurface(bounds.W-want.W) > 1e-4 || absSurface(bounds.H-want.H) > 1e-4 {
+		t.Fatalf("projected caret = %+v, want %+v", bounds, want)
+	}
+	wantIndex, ok := layer.host.ime.Client.IndexForPoint(
+		float64(innerBounds.X), float64(innerBounds.Y+innerBounds.H/2),
+	)
+	if !ok {
+		t.Fatal("inner text input rejected its caret point")
+	}
+	index, ok := client.IndexForPoint(Point{X: want.X, Y: want.Y + want.H/2})
+	if !ok || index != wantIndex {
+		t.Fatalf("surface index = %d, %v, want %d", index, ok, wantIndex)
+	}
+
+	all := TextInputRange{End: 3}
+	client.ReplaceText(&all, "Grace")
+	layer.Render()
+	if name != "Grace" {
+		t.Fatalf("bridge replaced text with %q, want Grace", name)
+	}
+}
+
+func TestUILayerTextInputClientConnectsToOuterHost(t *testing.T) {
+	name := "Ada"
+	layer := NewUILayer(func(c *Context) {
+		TextInput(c.Key("name"), &name).Fill()
+	}, 200, 120)
+	defer layer.Close()
+	surface := NewPlanarSurface(Rect{W: 200, H: 120})
+	tt := NewTester(func(c *Context) {
+		target := Box(c).Absolute().Left(40).Top(20).Size(200, 120).Focusable().
+			HandleTextInput(layer.TextInputClient(surface))
+		target.HandleInput(func(ev InputEvent) bool {
+			taken := layer.HandleSurfaceInput(surface, ev)
+			if taken {
+				layer.Render()
+			}
+			return taken
+		})
+	}, 400, 200)
+	defer tt.rt.close()
+	tt.Press(220, 40)
+	tt.Release(220, 40)
+	layer.Render()
+	tt.Frame()
+	if active, _ := tt.TextInputActive(); !active {
+		t.Fatal("outer host did not activate the layer's text input")
+	}
+	tt.Type("!")
+	layer.Render()
+	if name != "Ada!" {
+		t.Fatalf("text typed through outer host = %q, want Ada!", name)
+	}
+}
+
 func TestUILayerCanFeedMetalCanvasSource(t *testing.T) {
 	layer := NewUILayer(func(c *Context) {
 		Text(c, "Layer source")
