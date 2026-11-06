@@ -544,6 +544,7 @@ func (r *Renderer) drawGPUCanvas(img *scene.Image, encoder *wgpu.CommandEncoder)
 	clear.Release()
 
 	var source *wgpu.TextureView
+	var sourceTexture *wgpu.Texture
 	sourceWidth, sourceHeight := 0, 0
 	if src := img.GPU.Source.Value(); src != nil && src != img {
 		switch {
@@ -562,6 +563,7 @@ func (r *Renderer) drawGPUCanvas(img *scene.Image, encoder *wgpu.CommandEncoder)
 		}
 		if t := r.texture(token); t != nil {
 			source = t.view
+			sourceTexture = t.tex
 			sourceWidth, sourceHeight = src.W, src.H
 		}
 	}
@@ -569,7 +571,8 @@ func (r *Renderer) drawGPUCanvas(img *scene.Image, encoder *wgpu.CommandEncoder)
 		if err := img.GPU.Draw(scene.GPUFrame{
 			DeviceObject: r.gpu.device, EncoderObject: encoder,
 			TextureObject: entry.tex.tex, SourceObject: source,
-			Width: img.W, Height: img.H,
+			SourceTextureObject: sourceTexture,
+			Width:               img.W, Height: img.H,
 			SourceWidth: sourceWidth, SourceHeight: sourceHeight, Scale: 1,
 		}); err != nil {
 			return fmt.Errorf("webgpu: native canvas: %w", err)

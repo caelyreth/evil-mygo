@@ -21,11 +21,11 @@ type textureEntry struct {
 
 type bindKey struct {
 	layout *wgpu.BindGroupLayout
-	image *wgpu.TextureView
-	clip  *wgpu.TextureView
-	mask  *wgpu.TextureView
-	color *wgpu.TextureView
-	stops *wgpu.Buffer
+	image  *wgpu.TextureView
+	clip   *wgpu.TextureView
+	mask   *wgpu.TextureView
+	color  *wgpu.TextureView
+	stops  *wgpu.Buffer
 }
 
 func (t *textureEntry) Release() {

@@ -20,6 +20,10 @@ type WebGPUFrame struct {
 	Encoder *wgpu.CommandEncoder
 	Texture *wgpu.Texture
 	Source  *wgpu.TextureView
+	// SourceTexture is the backing texture of Source, when available. It
+	// stays stable across frames while the captured source image does, so
+	// callbacks can cache its view and bind group.
+	SourceTexture *wgpu.Texture
 
 	Width, Height             int
 	SourceWidth, SourceHeight int
@@ -47,9 +51,11 @@ func NewWebGPUCanvas(w, h int, draw func(WebGPUFrame) error) *WebGPUCanvas {
 		encoder, _ := f.EncoderObject.(*wgpu.CommandEncoder)
 		texture, _ := f.TextureObject.(*wgpu.Texture)
 		source, _ := f.SourceObject.(*wgpu.TextureView)
+		sourceTexture, _ := f.SourceTextureObject.(*wgpu.Texture)
 		return draw(WebGPUFrame{
 			Device: device, Encoder: encoder, Texture: texture, Source: source,
-			Width: f.Width, Height: f.Height,
+			SourceTexture: sourceTexture,
+			Width:         f.Width, Height: f.Height,
 			SourceWidth: f.SourceWidth, SourceHeight: f.SourceHeight, Scale: f.Scale,
 		})
 	})

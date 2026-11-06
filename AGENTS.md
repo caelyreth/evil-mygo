@@ -74,6 +74,7 @@ go run ./cmd/mygo build -platform web examples/counter-native   # a static site 
 go run ./examples/gallery                  # the native UI toolkit's tour
 go run ./examples/code-editor              # the code editor and the diff viewer (ui/editor)
 go run ./examples/markdown-chat            # Markdown replies streaming in (ui/markdown)
+go run ./examples/flagscape                # a native UI face in a WebGPU 3D scene
 go run ./examples/notes                    # the rich text editor (ui/richtext), in a notes app
 go run ./examples/terminal                 # a terminal (downloads libghostty-vt once)
 go run ./examples/loading                  # loading.dev's 29 indicators (plugins/loading)

@@ -541,10 +541,14 @@ type GPUFrame struct {
 	EncoderObject any
 	TextureObject any
 	SourceObject  any
-	Width, Height int
-	SourceWidth   int
-	SourceHeight  int
-	Scale         float32
+	// SourceTextureObject is the source's backing texture when the backend
+	// exposes one, so a callback can create long-lived views and bind
+	// groups without retaining a frame-scoped view.
+	SourceTextureObject any
+	Width, Height       int
+	SourceWidth         int
+	SourceHeight        int
+	Scale               float32
 }
 
 // GPUCanvas is a render-target texture that platform code draws through

@@ -114,8 +114,9 @@ ui.Box(c).Fill().Children(func() {
 MyGo clears the target to transparent, invokes `Draw` on the main thread,
 and then samples the target in the same encoded frame. The callback may
 encode render or compute passes. `WebGPUFrame.Source` is the rendered
-native subtree when the canvas is used with `Element.Effect`; it is absent
-otherwise.
+native subtree when the canvas is used with `Element.Effect`;
+`WebGPUFrame.SourceTexture` is its stable backing texture, so a callback
+can cache a view and bind group instead of retaining a frame-scoped view.
 
 `ui.NewWebGPUTexture` publishes an application-owned `*wgpu.Texture` as an
 image. MyGo creates only a view and samples it; there is no CPU upload or
@@ -123,6 +124,10 @@ readback. The texture and device must belong to the window renderer, and
 the texture must be premultiplied RGBA8 in MyGo's row order. Commands
 submitted through the device's default queue are ordered with MyGo's
 frame.
+
+[`examples/flagscape`](../../examples/flagscape) shows the whole path: a
+3D WebGPU scene samples a captured native MyGo face, while WASD,
+pointer-look and UV hit-testing remain in the native tree.
 
 ## Effects
 
@@ -141,8 +146,9 @@ the shape, clip and opacity afterward.
 
 Backdrop-reading effects are supported through a copyable render target,
 RGBA8 downsample and separable blur textures. Generated `ui/shader`
-libraries emit WGSL through `internal/shaderir/wgsl` and share the Metal
-uniform layout with a byte-addressable `shader_uniforms` storage buffer.
+libraries emit WGSL through `internal/shaderir/wgsl` and share the packed
+shader uniform layout in a byte-addressable `shader_uniforms` storage
+buffer.
 The basic uniform, bool, derivative, masked-glyph, distortion-effect and
 glass-plugin paths have WebGPU tests; the full multi-image shader parity
 test is opt-in:
