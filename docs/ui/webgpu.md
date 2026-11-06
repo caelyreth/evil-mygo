@@ -39,8 +39,9 @@ the correct `libwgpu_native` beside the application or set
 - a surface over the platform's `CAMetalLayer`;
 - format, alpha-mode and present-mode negotiation;
 - configure, acquire and present operations;
-- the first WebGPU scene renderer stage: solid rounded fills and projective
-  transforms from MyGo's existing `gpu.Instance` stream;
+- the first WebGPU scene renderer stage: solid rounded fills, projective
+  transforms, image batches and grayscale mask glyphs from MyGo's existing
+  `gpu.Instance` stream;
 - deterministic release of queue, device, adapter and instance.
 
 The integration test clears a real offscreen texture, copies it to a
@@ -58,10 +59,10 @@ surface, acquires its texture, clears it, submits and presents:
 nix-shell -p go --run 'CGO_ENABLED=0 go test -tags nofakecgo ./internal/gpu/webgpu -count=1 -v'
 ```
 
-The renderer test builds a normal `scene.Scene`, encodes it through WebGPU
-into an offscreen texture, reads it back and verifies both the cleared
-background and the rounded fill. Unsupported scene features return an
-explicit error until their paths are ported.
+The renderer tests build normal `scene.Scene` values, encode them through
+WebGPU into offscreen textures, read them back and verify cleared
+backgrounds, rounded fills, image batches and grayscale glyphs. Unsupported
+scene features return an explicit error until their paths are ported.
 
 ## `purego` build tag
 

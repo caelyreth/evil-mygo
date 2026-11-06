@@ -117,3 +117,207 @@ func TestRendererDrawsRoundedFill(t *testing.T) {
 		t.Fatalf("clear pixel = %v, want [4 8 12 255]", p)
 	}
 }
+
+func TestRendererDrawsImageBatch(t *testing.T) {
+	if _, ok := RuntimePath(); !ok {
+		t.Skip("wgpu-native is not installed")
+	}
+	g, err := Open()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer g.Release()
+
+	const width, height = 64, 24
+	target, err := g.Device().CreateTexture(&wgpu.TextureDescriptor{
+		Usage:         wgpu.TextureUsageRenderAttachment | wgpu.TextureUsageCopySrc,
+		Size:          wgpu.Extent3D{Width: width, Height: height, DepthOrArrayLayers: 1},
+		Format:        wgpu.TextureFormatRGBA8Unorm,
+		MipLevelCount: 1,
+		SampleCount:   1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer target.Release()
+	view, err := target.CreateView(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer view.Release()
+	renderer, err := NewRenderer(g, wgpu.TextureFormatRGBA8Unorm)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer renderer.Release()
+
+	pix := []byte{
+		12, 34, 56, 255, 12, 34, 56, 255,
+		12, 34, 56, 255, 12, 34, 56, 255,
+	}
+	img := scene.NewImageRGBA(2, 2, pix)
+	s := &scene.Scene{
+		Width: width, Height: height,
+		Ops: []scene.Op{{
+			Kind: scene.OpImage, Image: img,
+			Rect: scene.Rect{W: width, H: height},
+			Src:  scene.Rect{W: 2, H: 2},
+		}},
+	}
+	encoder, err := g.Device().CreateCommandEncoder(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g.Device().PushErrorScope(wgpu.ErrorFilterValidation)
+	if err := renderer.Render(s, encoder, view); err != nil {
+		t.Fatal(err)
+	}
+	const size = width * height * 4
+	readback, err := g.Device().CreateBuffer(&wgpu.BufferDescriptor{
+		Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst,
+		Size:  size,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer readback.Release()
+	encoder.CopyTextureToBuffer(target, readback, []wgpu.BufferTextureCopy{{
+		TextureBase: wgpu.ImageCopyTexture{Texture: target, Aspect: wgpu.TextureAspectAll},
+		BufferLayout: wgpu.ImageDataLayout{
+			BytesPerRow: width * 4, RowsPerImage: height,
+		},
+		Size: wgpu.Extent3D{Width: width, Height: height, DepthOrArrayLayers: 1},
+	}})
+	command, err := encoder.Finish(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := g.Queue().Submit(command); err != nil {
+		t.Fatal(err)
+	}
+	if typ, message, err := g.Device().PopErrorScopeAsync(g.instance); err != nil {
+		t.Fatal(err)
+	} else if typ != wgpu.ErrorTypeNoError {
+		t.Fatalf("WebGPU validation error %v: %s", typ, message)
+	}
+	command.Release()
+	encoder.Release()
+	if err := readback.Map(context.Background(), wgpu.MapModeRead, 0, size); err != nil {
+		t.Fatal(err)
+	}
+	defer readback.Unmap()
+	ptr := readback.GetMappedRange(0, size)
+	if ptr == nil {
+		t.Fatal("no mapped pixels")
+	}
+	pixel := unsafe.Slice((*byte)(ptr), size)[(height/2*width+width/2)*4:][:4]
+	if pixel[0] != 12 || pixel[1] != 34 || pixel[2] != 56 || pixel[3] != 255 {
+		t.Fatalf("image pixel = %v, want [12 34 56 255]", pixel)
+	}
+}
+
+func TestRendererDrawsMaskGlyph(t *testing.T) {
+	if _, ok := RuntimePath(); !ok {
+		t.Skip("wgpu-native is not installed")
+	}
+	g, err := Open()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer g.Release()
+
+	const width, height = 64, 32
+	target, err := g.Device().CreateTexture(&wgpu.TextureDescriptor{
+		Usage:         wgpu.TextureUsageRenderAttachment | wgpu.TextureUsageCopySrc,
+		Size:          wgpu.Extent3D{Width: width, Height: height, DepthOrArrayLayers: 1},
+		Format:        wgpu.TextureFormatRGBA8Unorm,
+		MipLevelCount: 1,
+		SampleCount:   1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer target.Release()
+	view, err := target.CreateView(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer view.Release()
+	renderer, err := NewRenderer(g, wgpu.TextureFormatRGBA8Unorm)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer renderer.Release()
+
+	atlas := scene.NewAtlas(1, 32, 32)
+	x, y, ok := atlas.Alloc(16, 16)
+	if !ok {
+		t.Fatal("cannot allocate glyph mask")
+	}
+	mask := make([]byte, 16*16)
+	for i := range mask {
+		mask[i] = 255
+	}
+	atlas.Put(x, y, 16, 16, mask, 16)
+	glyphs := []scene.Glyph{{
+		X: 8, Y: 8, W: 16, H: 16,
+		U: uint16(x), V: uint16(y), UW: 16, VH: 16,
+		Color: scene.Color{R: 220, G: 30, B: 20, A: 255},
+	}}
+	s := &scene.Scene{
+		Width: width, Height: height,
+		MaskAtlas: atlas, Glyphs: glyphs,
+		Ops: []scene.Op{{Kind: scene.OpGlyphs, Start: 0, End: 1}},
+	}
+	encoder, err := g.Device().CreateCommandEncoder(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g.Device().PushErrorScope(wgpu.ErrorFilterValidation)
+	if err := renderer.Render(s, encoder, view); err != nil {
+		t.Fatal(err)
+	}
+	const size = width * height * 4
+	readback, err := g.Device().CreateBuffer(&wgpu.BufferDescriptor{
+		Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst,
+		Size:  size,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer readback.Release()
+	encoder.CopyTextureToBuffer(target, readback, []wgpu.BufferTextureCopy{{
+		TextureBase: wgpu.ImageCopyTexture{Texture: target, Aspect: wgpu.TextureAspectAll},
+		BufferLayout: wgpu.ImageDataLayout{
+			BytesPerRow: width * 4, RowsPerImage: height,
+		},
+		Size: wgpu.Extent3D{Width: width, Height: height, DepthOrArrayLayers: 1},
+	}})
+	command, err := encoder.Finish(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := g.Queue().Submit(command); err != nil {
+		t.Fatal(err)
+	}
+	if typ, message, err := g.Device().PopErrorScopeAsync(g.instance); err != nil {
+		t.Fatal(err)
+	} else if typ != wgpu.ErrorTypeNoError {
+		t.Fatalf("WebGPU validation error %v: %s", typ, message)
+	}
+	command.Release()
+	encoder.Release()
+	if err := readback.Map(context.Background(), wgpu.MapModeRead, 0, size); err != nil {
+		t.Fatal(err)
+	}
+	defer readback.Unmap()
+	ptr := readback.GetMappedRange(0, size)
+	if ptr == nil {
+		t.Fatal("no mapped pixels")
+	}
+	pixels := unsafe.Slice((*byte)(ptr), size)
+	pixel := pixels[(16*width+16)*4:][:4]
+	if pixel[0] != 220 || pixel[1] != 30 || pixel[2] != 20 || pixel[3] != 255 {
+		t.Fatalf("glyph pixel = %v, want [220 30 20 255]", pixel)
+	}
+}

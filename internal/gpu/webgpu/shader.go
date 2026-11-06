@@ -1,10 +1,11 @@
 package webgpu
 
 // sceneShader is the beginning of the WGSL port of the native scene
-// shader. It reads the same thirteen-float4 gpu.Instance stream as the
-// Metal, Direct3D and OpenGL renderers. This first stage covers solid
-// rounded fills and projective transforms; unsupported scene features
-// are rejected by Renderer.Render until their paths are ported.
+// shader. It reads the same fourteen-float4 gpu.Instance stream as the
+// Metal, Direct3D and OpenGL renderers. This stage covers solid rounded
+// fills, projective transforms, image batches and grayscale mask glyphs;
+// unsupported scene features are rejected by Renderer.Render until their
+// paths are ported.
 const sceneShader = `
 struct Globals {
 	size: vec4<f32>,
@@ -34,10 +35,16 @@ struct VertexOut {
 	@location(2) @interpolate(flat) rect: vec4<f32>,
 	@location(3) @interpolate(flat) radii: vec4<f32>,
 	@location(4) @interpolate(flat) params: vec4<f32>,
+	@location(5) tex: vec2<f32>,
+	@location(6) @interpolate(flat) clip: vec4<f32>,
 }
 
 @group(0) @binding(0) var<uniform> globals: Globals;
 @group(0) @binding(1) var<storage, read> instances: array<Instance>;
+@group(0) @binding(2) var image_tex: texture_2d<f32>;
+@group(0) @binding(3) var mask_tex: texture_2d<f32>;
+@group(0) @binding(4) var color_tex: texture_2d<f32>;
+@group(0) @binding(5) var texture_sampler: sampler;
 
 fn frame_h(inst: Instance, p: vec2<f32>) -> vec3<f32> {
 	return vec3<f32>(
@@ -83,6 +90,8 @@ fn vs(
 	out.rect = inst.rect;
 	out.radii = inst.radii;
 	out.params = inst.params;
+	out.tex = inst.uv.xy + (p - inst.rect.xy) / inst.rect.zw * (inst.uv.zw - inst.uv.xy);
+	out.clip = inst.clip;
 	return out;
 }
 
@@ -103,12 +112,47 @@ fn coverage(d: f32) -> f32 {
 	return clamp(0.5 - d, 0.0, 1.0);
 }
 
+fn clip_coverage(p: vec2<f32>, clip: vec4<f32>) -> f32 {
+	if (clip.z <= 0.0 || clip.w <= 0.0) {
+		return 1.0;
+	}
+	let c = saturate(min(clip.xy + clip.zw, p + vec2<f32>(0.5)) - max(clip.xy, p - vec2<f32>(0.5)));
+	return c.x * c.y;
+}
+
+fn tint(c: vec4<f32>, t: vec4<f32>) -> vec4<f32> {
+	return c * vec4<f32>(t.rgb * t.a, t.a);
+}
+
 @fragment
 fn fs(in: VertexOut) -> @location(0) vec4<f32> {
-	if (in.params.x < -0.25 || in.params.x > 0.25) {
-		return vec4<f32>(0.0);
-	}
+	let kind = in.params.x;
 	let shape = coverage(sd_round_rect(in.local, in.rect, max(in.radii, vec4<f32>(0.0))));
-	return vec4<f32>(in.color.rgb, in.color.a * shape * in.params.w);
+	let clip = clip_coverage(in.local, in.clip);
+	let opacity = in.params.w * shape * clip;
+	if (kind < 0.5) {
+		return vec4<f32>(in.color.rgb * in.color.a, in.color.a) * opacity;
+	}
+	if (kind < 2.5) {
+		let a = textureSampleLevel(mask_tex, texture_sampler, clamp(in.tex, vec2<f32>(0.0), vec2<f32>(1.0)), 0.0).r;
+		return vec4<f32>(in.color.rgb * in.color.a, in.color.a) * (a * opacity);
+	}
+	if (kind < 3.5) {
+		let c = textureSampleLevel(color_tex, texture_sampler, clamp(in.tex, vec2<f32>(0.0), vec2<f32>(1.0)), 0.0);
+		return c * in.color.a * opacity;
+	}
+	if (kind < 4.5) {
+		var c = textureSampleLevel(image_tex, texture_sampler, clamp(in.tex, vec2<f32>(0.0), vec2<f32>(1.0)), 0.0);
+		if (in.params.y > 0.5) {
+			c = vec4<f32>(vec3<f32>(dot(c.rgb, vec3<f32>(0.2126, 0.7152, 0.0722))), c.a);
+		}
+		return tint(c, in.color) * opacity;
+	}
+	if (kind < 5.5) {
+		let a = textureSampleLevel(color_tex, texture_sampler, clamp(in.tex, vec2<f32>(0.0), vec2<f32>(1.0)), 0.0);
+		let cov = dot(a.rgb, vec3<f32>(0.333333));
+		return vec4<f32>(in.color.rgb * in.color.a, in.color.a) * (cov * opacity);
+	}
+	return vec4<f32>(0.0);
 }
 `
