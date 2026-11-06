@@ -31,6 +31,9 @@ type Renderer struct {
 	clearShader *wgpu.ShaderModule
 	clearPipe   *wgpu.RenderPipeline
 	clearLayout *wgpu.BindGroupLayout
+	copyShader  *wgpu.ShaderModule
+	copyPipe    *wgpu.RenderPipeline
+	copyLayout  *wgpu.BindGroupLayout
 	sampler     *wgpu.Sampler
 	passShader  *wgpu.ShaderModule
 	passLayout  *wgpu.BindGroupLayout
@@ -176,6 +179,10 @@ func NewRenderer(g *GPU, format wgpu.TextureFormat) (*Renderer, error) {
 		return nil, errors.New("webgpu: hole pipeline has no bind group layout")
 	}
 	if err := r.initClear(); err != nil {
+		r.Release()
+		return nil, err
+	}
+	if err := r.initCopy(); err != nil {
 		r.Release()
 		return nil, err
 	}
@@ -883,6 +890,18 @@ func (r *Renderer) Release() {
 	if r.clearShader != nil {
 		r.clearShader.Release()
 		r.clearShader = nil
+	}
+	if r.copyPipe != nil {
+		r.copyPipe.Release()
+		r.copyPipe = nil
+	}
+	if r.copyLayout != nil {
+		r.copyLayout.Release()
+		r.copyLayout = nil
+	}
+	if r.copyShader != nil {
+		r.copyShader.Release()
+		r.copyShader = nil
 	}
 	if r.blurPipe != nil {
 		r.blurPipe.Release()

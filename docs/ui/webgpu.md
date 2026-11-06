@@ -72,11 +72,12 @@ glyphs, blurred shadows, nested canvases and native WebGPU passes. A UI
 integration test also renders a real offscreen `ui.UILayer`, including its
 own atlas and nested canvas, through the WebGPU renderer.
 
-`MYGO_PARTIAL=1` enables the experimental native-surface damage path. It
-uses `scene.Differ`, `gpu.Ages` and a scissored clear pipeline, and is
-opt-in because a WebGPU surface's preserved contents are backend-specific.
-The offscreen `Renderer.RenderTargetPart` primitive is always available
-for targets whose contents the application owns.
+`MYGO_PARTIAL=1` enables the native-surface damage path. It keeps the
+surface's content in a persistent WebGPU texture, redraws only the
+`scene.Differ` damage through a scissored clear, and copies that texture
+to the presented surface. This does not depend on a swapchain preserving
+its contents. The offscreen `Renderer.RenderTargetPart` primitive is
+always available for targets whose contents the application owns.
 
 ## Native UI
 

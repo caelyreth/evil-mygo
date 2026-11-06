@@ -92,6 +92,63 @@ func TestRendererPartialFrame(t *testing.T) {
 	}
 }
 
+func TestRendererCopiesSurfaceContent(t *testing.T) {
+	if _, ok := RuntimePath(); !ok {
+		t.Skip("wgpu-native is not installed")
+	}
+	g, err := Open()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer g.Release()
+	source, err := g.Device().CreateTexture(&wgpu.TextureDescriptor{
+		Usage:         wgpu.TextureUsageTextureBinding | wgpu.TextureUsageCopyDst,
+		Size:          wgpu.Extent3D{Width: 1, Height: 1, DepthOrArrayLayers: 1},
+		Format:        wgpu.TextureFormatRGBA8Unorm,
+		MipLevelCount: 1,
+		SampleCount:   1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer source.Release()
+	if err := g.Queue().WriteTexture(
+		&wgpu.ImageCopyTexture{Texture: source, Aspect: wgpu.TextureAspectAll},
+		[]byte{255, 0, 0, 255},
+		&wgpu.ImageDataLayout{Offset: 0, BytesPerRow: 4, RowsPerImage: 1},
+		&wgpu.Extent3D{Width: 1, Height: 1, DepthOrArrayLayers: 1},
+	); err != nil {
+		t.Fatal(err)
+	}
+	sourceView, err := source.CreateView(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sourceView.Release()
+	target, view := testTarget(t, g, 8, 8)
+	defer target.Release()
+	defer view.Release()
+	renderer, err := NewRenderer(g, wgpu.TextureFormatRGBA8Unorm)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer renderer.Release()
+	encoder, err := g.Device().CreateCommandEncoder(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := renderer.copyTexture(encoder, sourceView, view, 8, 8); err != nil {
+		t.Fatal(err)
+	}
+	pixels := readTarget(t, g, target, encoder, 8, 8)
+	encoder.Release()
+	renderer.FinishFrame()
+	pixel := pixels[(4*256 + 4*4):][:4]
+	if pixel[0] != 255 || pixel[1] != 0 || pixel[2] != 0 || pixel[3] != 255 {
+		t.Fatalf("copied pixel = %v, want red", pixel)
+	}
+}
+
 func TestRendererDrawsRoundedFill(t *testing.T) {
 	if _, ok := RuntimePath(); !ok {
 		t.Skip("wgpu-native is not installed")

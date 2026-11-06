@@ -31,8 +31,10 @@ type NativeRenderer struct {
 	partial  bool
 	held     bool
 	diff     scene.Differ
-	ages     gpu.Ages
 	part     gpu.Part
+	content  *textureEntry
+	contentW int
+	contentH int
 }
 
 type nsPoint struct{ X, Y float64 }
@@ -165,7 +167,6 @@ func (r *NativeRenderer) Render(s *scene.Scene) error {
 		return nil
 	}
 	if r.width != s.Width || r.height != s.Height || r.surface.needsConfigure() {
-		r.ages.Reset()
 		r.held = false
 		r.diff.Invalidate()
 		if err := r.surface.Configure(s.Width, s.Height); err != nil {
@@ -192,20 +193,11 @@ func (r *NativeRenderer) Render(s *scene.Scene) error {
 	var partial *gpu.Part
 	var damage []image.Rectangle
 	var known bool
+	reuse := false
 	if r.partial {
 		damage, known = r.diff.Diff(s)
 		if r.held {
-			ageDamage, ageKnown := r.ages.Take(texture.Handle())
-			if !known || !ageKnown {
-				damage, known = nil, false
-			} else {
-				damage = ageDamage
-			}
-			if known && len(damage) == 0 {
-				r.ages.Add(nil, false)
-				r.diff.Remember(s)
-				return nil
-			}
+			reuse = known && len(damage) == 0
 			if known && r.part.Set(damage, s.Width, s.Height, func(d []image.Rectangle) []image.Rectangle {
 				return r.diff.AddBackdrops(s, d)
 			}) {
@@ -213,6 +205,11 @@ func (r *NativeRenderer) Render(s *scene.Scene) error {
 			}
 		} else {
 			known = false
+		}
+		if r.content == nil || r.content.w != s.Width || r.content.h != s.Height {
+			if err := r.ensureContent(s.Width, s.Height); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -229,17 +226,24 @@ func (r *NativeRenderer) Render(s *scene.Scene) error {
 	}
 	defer encoder.Release()
 	var renderErr error
-	if partial != nil {
-		renderErr = r.renderer.RenderTargetPart(s, encoder, texture, view, partial)
+	if r.partial {
+		if !reuse {
+			if partial != nil {
+				renderErr = r.renderer.RenderTargetPart(s, encoder, r.content.tex, r.content.view, partial)
+			} else {
+				renderErr = r.renderer.RenderTarget(s, encoder, r.content.tex, r.content.view)
+			}
+		}
+		if renderErr == nil {
+			renderErr = r.renderer.copyTexture(encoder, r.content.view, view, s.Width, s.Height)
+		}
 	} else {
 		renderErr = r.renderer.RenderTarget(s, encoder, texture, view)
 	}
 	if renderErr != nil {
-		r.ages.Add(damage, !known)
 		return renderErr
 	}
 	if r.partial {
-		r.ages.Add(damage, !known)
 		r.diff.Remember(s)
 		r.held = true
 	}
@@ -262,6 +266,21 @@ func (r *NativeRenderer) Render(s *scene.Scene) error {
 	return nil
 }
 
+func (r *NativeRenderer) ensureContent(width, height int) error {
+	if r.content != nil && r.contentW == width && r.contentH == height {
+		return nil
+	}
+	next, err := r.renderer.createSurfaceContentTexture("MyGo WebGPU surface content", r.renderer.format, width, height)
+	if err != nil {
+		return fmt.Errorf("webgpu: surface content: %w", err)
+	}
+	if r.content != nil {
+		r.content.Release()
+	}
+	r.content, r.contentW, r.contentH = next, width, height
+	return nil
+}
+
 // Invalidate makes the next frame draw whole, including when the optional
 // partial-presentation mode is enabled.
 func (r *NativeRenderer) Invalidate() {
@@ -269,7 +288,6 @@ func (r *NativeRenderer) Invalidate() {
 		return
 	}
 	r.held = false
-	r.ages.Reset()
 	r.diff.Invalidate()
 }
 
@@ -298,8 +316,11 @@ func (r *NativeRenderer) SetWide(on bool) bool {
 	r.wide = on
 	r.width, r.height = 0, 0
 	r.held = false
-	r.ages.Reset()
 	r.diff.Invalidate()
+	if r.content != nil {
+		r.content.Release()
+		r.content = nil
+	}
 	return true
 }
 
@@ -318,6 +339,10 @@ func (r *NativeRenderer) Release() {
 		return
 	}
 	if r.renderer != nil {
+		if r.content != nil {
+			r.content.Release()
+			r.content = nil
+		}
 		r.renderer.Release()
 		r.renderer = nil
 	}

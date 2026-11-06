@@ -54,6 +54,11 @@ func (r *Renderer) createRenderTexture(label string, format wgpu.TextureFormat, 
 		wgpu.TextureUsageTextureBinding|wgpu.TextureUsageRenderAttachment|wgpu.TextureUsageStorageBinding|wgpu.TextureUsageCopySrc)
 }
 
+func (r *Renderer) createSurfaceContentTexture(label string, format wgpu.TextureFormat, width, height int) (*textureEntry, error) {
+	return r.createTextureWithUsage(label, format, width, height,
+		wgpu.TextureUsageTextureBinding|wgpu.TextureUsageRenderAttachment|wgpu.TextureUsageCopySrc)
+}
+
 func (r *Renderer) createTextureWithUsage(label string, format wgpu.TextureFormat, width, height int, usage wgpu.TextureUsage) (*textureEntry, error) {
 	width, height = max(width, 1), max(height, 1)
 	tex, err := r.gpu.device.CreateTexture(&wgpu.TextureDescriptor{

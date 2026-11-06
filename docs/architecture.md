@@ -4828,9 +4828,10 @@ either.
     copy of the target for backdrop blur; imported `wgpu.Texture` views are
     sampled directly when they belong to the renderer's device. Presentation
     negotiates BGRA8 or RGBA16Float and the target's alpha mode. Partial
-    presentation is available through scissored clears and
-    `Renderer.RenderTargetPart`; native `MYGO_PARTIAL=1` use remains
-    opt-in until surface-preservation behavior is verified across devices.
+    presentation keeps a persistent content texture, clears and redraws
+    only `scene.Differ` damage through `Renderer.RenderTargetPart`, and
+    copies that texture to the surface. `MYGO_PARTIAL=1` remains opt-in
+    and is covered by a live `wgpu-native` surface test.
   - `internal/gpu/gl` with the shader in GLSL 3.30 or GLSL ES 3.00, which
     the driver compiles when the renderer starts, since these versions
     have no compiled form every driver takes, and drivers keep what they
