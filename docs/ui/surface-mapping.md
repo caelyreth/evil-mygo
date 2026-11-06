@@ -75,3 +75,14 @@ layer := ui.NewUILayer(buildPanel, 900, 500)
 metal := ui.NewMetalCanvas(900, 500, drawMetalPass)
 metal.SetSource(layer.Bitmap())
 ```
+
+The layer benchmarks are:
+
+```sh
+go test -run '^$' -bench 'BenchmarkUILayer' -benchmem ./ui
+```
+
+On the current macOS arm64 development machine, the small layer benchmark
+is about 3.5 µs for a render and 0.36 µs for a down/up surface-input pair,
+with six allocations each. These are measurement baselines, not promises
+for a particular scene or GPU.
