@@ -35,6 +35,7 @@ type NativeRenderer struct {
 	content  *textureEntry
 	contentW int
 	contentH int
+	retired  []*textureEntry
 }
 
 type nsPoint struct{ X, Y float64 }
@@ -257,6 +258,7 @@ func (r *NativeRenderer) Render(s *scene.Scene) error {
 	}
 	command.Release()
 	r.renderer.FinishFrame()
+	r.releaseRetiredContent()
 	if err := r.surface.Present(); err != nil {
 		return fmt.Errorf("webgpu: present frame: %w", err)
 	}
@@ -275,10 +277,21 @@ func (r *NativeRenderer) ensureContent(width, height int) error {
 		return fmt.Errorf("webgpu: surface content: %w", err)
 	}
 	if r.content != nil {
-		r.content.Release()
+		r.retired = append(r.retired, r.content)
 	}
 	r.content, r.contentW, r.contentH = next, width, height
 	return nil
+}
+
+func (r *NativeRenderer) releaseRetiredContent() {
+	if r == nil || len(r.retired) == 0 || r.gpu == nil {
+		return
+	}
+	r.gpu.device.Poll(true)
+	for _, content := range r.retired {
+		content.Release()
+	}
+	r.retired = r.retired[:0]
 }
 
 // Invalidate makes the next frame draw whole, including when the optional
@@ -318,9 +331,10 @@ func (r *NativeRenderer) SetWide(on bool) bool {
 	r.held = false
 	r.diff.Invalidate()
 	if r.content != nil {
-		r.content.Release()
+		r.retired = append(r.retired, r.content)
 		r.content = nil
 	}
+	r.releaseRetiredContent()
 	return true
 }
 
@@ -340,9 +354,10 @@ func (r *NativeRenderer) Release() {
 	}
 	if r.renderer != nil {
 		if r.content != nil {
-			r.content.Release()
+			r.retired = append(r.retired, r.content)
 			r.content = nil
 		}
+		r.releaseRetiredContent()
 		r.renderer.Release()
 		r.renderer = nil
 	}
