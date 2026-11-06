@@ -21,6 +21,10 @@ focus, IME and accessibility. Native `RotateY`/`Perspective` on the
 source element remaps interaction along with the panel. The Metal shader's
 wave is pixels-only and does not remap interaction.
 
+The example's test exercises pointer clicks, keyboard focus and editing,
+the input-method caret, wheel scrolling and transformed accessibility
+bounds on the tilted native source.
+
 Without cgo the example builds and runs, but the Metal target is blank.
 The framework itself remains a `CGO_ENABLED=0` build; cgo is isolated to
 the macOS example encoder.
