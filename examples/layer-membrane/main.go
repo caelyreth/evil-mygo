@@ -257,11 +257,12 @@ func (a *app) layerView(c *ui.Context) {
 		ui.Text(c, "This text, field and button are native MyGo controls. The cloth is a separate Metal surface, and its input map follows the same moving geometry.").
 			FontSize(16).LineHeight(1.45).TextColor(muted).Width(690)
 		ui.Spacer(c)
-		ui.Column(c).Width(430).Shrink(0).Gap(12).Children(func() {
+		ui.Column(c).Width(430).Shrink(0).Gap(14).Children(func() {
 			ui.TextInput(c.Key("message"), &a.message).
 				Label("Message").FontSize(15).Height(50).
 				Background(ui.Hex("#f2f1ec")).Border(1, ui.Hex("#b9b8b2"))
 			action := ui.ButtonBase(c.Key("send-signal")).Width(430).Height(68).
+				Padding(0, 22).Gap(16).Justify(ui.Start).AlignItems(ui.Center).
 				Radius(10).Background(ui.Hex("#1e1e1c")).Border(0, ui.Transparent).
 				Cursor(ui.CursorPointer).Label("Send signal")
 			if action.Hovered() {
@@ -271,7 +272,12 @@ func (a *app) layerView(c *ui.Context) {
 				ui.Text(c, "SEND SIGNAL").Font("monospace").FontSize(15).Bold().
 					TextColor(ui.Hex("#f7f7f3"))
 				ui.Spacer(c)
-				ui.Text(c, "ENTER").Font("monospace").FontSize(11).TextColor(ui.Hex("#bdbdb7"))
+				ui.Row(c).Padding(4, 8).Radius(5).
+					Background(ui.Hex("#2b2b28")).Border(1, ui.Hex("#4b4b47")).
+					AlignItems(ui.Center).Children(func() {
+					ui.Text(c, "ENTER").Font("monospace").FontSize(10).
+						TextColor(ui.Hex("#d5d5cf"))
+				})
 			})
 			if action.Clicked() {
 				a.actions++

@@ -149,6 +149,34 @@ func TestMembraneSidebarLayout(t *testing.T) {
 	}
 }
 
+func TestMembraneActionContentInset(t *testing.T) {
+	a := newApp()
+	tt := ui.NewTester(a.layerView, layerWidth, layerHeight)
+	tt.Frame()
+	action, ok := tt.Access("Send signal")
+	if !ok {
+		t.Fatal("button has no laid-out accessibility node")
+	}
+	send, ok := tt.Find("SEND SIGNAL")
+	if !ok {
+		t.Fatal("button label is not laid out")
+	}
+	enter, ok := tt.Find("ENTER")
+	if !ok {
+		t.Fatal("button keycap is not laid out")
+	}
+	if left := send.X - action.Bounds.X; left < 16 {
+		t.Fatalf("button label left inset = %g, want at least 16", left)
+	}
+	if right := action.Bounds.X + action.Bounds.W - (enter.X + enter.W); right < 16 {
+		t.Fatalf("button keycap right inset = %g, want at least 16", right)
+	}
+	if send.Y < action.Bounds.Y || send.Y+send.H > action.Bounds.Y+action.Bounds.H ||
+		enter.Y < action.Bounds.Y || enter.Y+enter.H > action.Bounds.Y+action.Bounds.H {
+		t.Fatalf("button content is clipped: action %+v, send %+v, enter %+v", action.Bounds, send, enter)
+	}
+}
+
 func screenPointForLayerBox(a *app, box ui.Rect) (float32, float32, bool) {
 	if a.viewBox.W <= 0 || a.viewBox.H <= 0 || box.W <= 0 || box.H <= 0 {
 		return 0, 0, false
