@@ -5506,8 +5506,10 @@ change, a column of 1000 rows in a clipped box moved by a translation,
 a `List` of 100,000 rows scrolling 3 rows a frame, and a dashboard of 12
 cards with shadows, texts and progress bars. Its host (`stressHost`)
 hands the scene on rather than draw it on the CPU, so `ns/op` is the
-frame built, laid out and painted. GPU encode and timestamp metrics for
-the same stress views remain a parity item.
+frame built, laid out and painted. `BenchmarkStressFrameWebGPU` runs the
+same views through a reusable WebGPU device and target and waits after
+each submission, so its `ns/op` includes CPU encoding and GPU execution,
+but not display scheduling or input latency.
 
 Benchmarks are described on the page by their doc comments, which the
 site reads when it is built: start them with the benchmark's name.

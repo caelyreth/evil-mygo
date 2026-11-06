@@ -182,11 +182,14 @@ rasterizer on WebGPU.
 ## Remaining parity work
 
 The direct Metal renderer and Metal-specific public APIs have been
-removed. These WebGPU paths remain:
+removed. Benchmark coverage now includes the renderer's empty, box,
+translated, sprite-heavy, fill-rate and partial paths, plus the native UI
+stress scenes. These WebGPU paths remain:
 
-- validating and promoting the opt-in native-surface damage path;
-- benchmark parity;
-- removal of the `nofakecgo` requirement for fully cgo-free WebGPU builds.
+- deciding from workload measurements whether native-surface damage should
+  remain opt-in or become adaptive by default;
+- removal of the `nofakecgo` requirement for fully cgo-free WebGPU builds,
+  which is blocked by the upstream callback limitation below.
 
 ## `purego` build tag
 
@@ -205,6 +208,22 @@ with:
 
 The standalone WebGPU device test does not import purego and needs no tag.
 The surface-owning and native UI integration tests do.
+
+`github.com/unxed/pureffi` looks like a way to make both dependencies share
+goffi's fake-cgo runtime. It removes the duplicate `_cgo_init` with this
+replacement:
+
+```go
+replace github.com/ebitengine/purego => github.com/unxed/pureffi v0.1.21
+```
+
+It is not usable yet on Apple Silicon. goffi's ARM64 callback trampoline
+still rejects struct arguments and struct returns. MyGo registers
+Objective-C callbacks taking or returning `NSPoint`, `NSSize` and `NSRect`
+for hit testing, resizing, drag and drop, and accessibility; class
+registration fails at the first such callback. Keep upstream purego with
+`nofakecgo` until goffi supports AAPCS64 homogeneous floating-point
+aggregate callbacks, or purego can share goffi's runtime directly.
 
 ## Migration guardrails
 

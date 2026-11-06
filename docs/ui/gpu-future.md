@@ -35,13 +35,13 @@ smallest cross-platform core.
 
 ## Remaining checklist
 
-A second GPU backend should provide:
+The remaining work is:
 
-1. Establish a stable cgo-free dependency story without the
-   `nofakecgo` tag.
-2. Add WebGPU encode/GPU-time benchmarks matching the retired Metal
-   benchmarks.
-3. Complete damage-aware partial presentation parity.
+1. Remove the `nofakecgo` tag from cgo-free builds after goffi's ARM64
+   callback path accepts the struct arguments and returns used by AppKit.
+2. Decide from workload measurements whether partial presentation should
+   remain opt-in or become adaptive by default. Its correctness,
+   benchmarks and resource-retirement tests are in place.
 
 The `ui` layer must not learn any scene graph, cloth solver or renderer
 specific type while adding that backend.
