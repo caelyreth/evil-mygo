@@ -309,6 +309,7 @@ func (r *Renderer) renderScene(s *scene.Scene, encoder *wgpu.CommandEncoder, tar
 	}
 
 	var buildErr error
+	st.builder.Wide = targetFormat == wgpu.TextureFormatRGBA16Float
 	st.builder.BlurredImage = func(img *scene.Image, bk scene.Backdrop) uintptr {
 		if buildErr != nil {
 			return 0

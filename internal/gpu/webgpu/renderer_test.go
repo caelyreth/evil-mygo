@@ -63,6 +63,7 @@ func TestRendererDrawsRoundedFill(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer encoder.Release()
 	if err := renderer.Render(s, encoder, view); err != nil {
 		t.Fatal(err)
 	}
@@ -1042,6 +1043,62 @@ func TestRendererErasesHoles(t *testing.T) {
 	}
 	if inside[3] != 0 {
 		t.Fatalf("hole inside pixel = %v, want transparent", inside)
+	}
+}
+
+func TestRendererEnablesWideColorsForRGBA16Target(t *testing.T) {
+	if _, ok := RuntimePath(); !ok {
+		t.Skip("wgpu-native is not installed")
+	}
+	g, err := Open()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer g.Release()
+	const width, height = 8, 8
+	target, err := g.Device().CreateTexture(&wgpu.TextureDescriptor{
+		Label:         "wide target",
+		Usage:         wgpu.TextureUsageRenderAttachment | wgpu.TextureUsageCopySrc,
+		Size:          wgpu.Extent3D{Width: width, Height: height, DepthOrArrayLayers: 1},
+		Format:        wgpu.TextureFormatRGBA16Float,
+		MipLevelCount: 1,
+		SampleCount:   1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer target.Release()
+	view, err := target.CreateView(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer view.Release()
+	renderer, err := NewRenderer(g, wgpu.TextureFormatRGBA16Float)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer renderer.Release()
+	s := &scene.Scene{
+		Width: width, Height: height,
+		Wide: []scene.WideColors{{
+			Color: [4]float32{1.2, 0.2, 0.1, 1},
+			Set:   scene.WideColor,
+		}},
+		Ops: []scene.Op{{
+			Kind: scene.OpFill, Rect: scene.Rect{W: width, H: height},
+			Color: scene.Color{R: 255, G: 100, B: 50, A: 255}, Wide: 1,
+		}},
+	}
+	encoder, err := g.Device().CreateCommandEncoder(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer encoder.Release()
+	if err := renderer.Render(s, encoder, view); err != nil {
+		t.Fatal(err)
+	}
+	if !renderer.root.builder.Wide {
+		t.Fatal("RGBA16 target did not enable wide shader colors")
 	}
 }
 
