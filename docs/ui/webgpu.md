@@ -74,18 +74,26 @@ own atlas and nested canvas, through the WebGPU renderer.
 
 ## Native UI
 
-The WebGPU backend is currently opt-in while effects and custom shader
-libraries finish moving from the direct Metal path:
+On macOS, a cgo-enabled build uses this WebGPU renderer by default; without
+cgo, the direct Metal renderer remains the fallback while effects and custom
+shader libraries finish moving:
 
 ```sh
+go run ./examples/counter-native
+
+# The cgo-free WebGPU path, for tests and pure-Go distributions:
 CGO_ENABLED=0 go run -tags mygo_webgpu,nofakecgo ./examples/counter-native
+
+# The legacy direct Metal path, explicitly:
+CGO_ENABLED=1 go run -tags mygo_metal ./examples/counter-native
 ```
 
-`nofakecgo` is required because MyGo's macOS platform package still uses
+`nofakecgo` is required for the cgo-free WebGPU build because MyGo's macOS
+platform package still uses
 `ebitengine/purego`, while go-webgpu uses goffi; both provide the fake-cgo
 runtime under `CGO_ENABLED=0`. The tag keeps goffi's copy and uses
-purego's. Native UI apps remain cgo-free. Removing that build-tag
-requirement is part of the migration, not an application concern.
+purego's. A cgo build needs neither tag. Removing the tag from the cgo-free
+path is part of the migration, not an application concern.
 
 ## WebGPU canvases
 
