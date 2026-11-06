@@ -21,6 +21,7 @@ type UILayer struct {
 	bm             *Bitmap
 	closed         bool
 	surfaceButtons uint32
+	surfaceInside  bool
 	lastUV         UV
 	version        uint64
 }
@@ -176,6 +177,7 @@ func (l *UILayer) HandleSurfaceInput(m SurfaceMap, ev InputEvent) bool {
 	case InputKeyDown, InputKeyUp, InputText, InputCompose, InputCommand:
 		return l.HandleInput(ev)
 	case InputPointerLeave:
+		l.surfaceInside = false
 		return l.HandleInput(ev)
 	}
 	pressed := l.surfaceButtons != 0
@@ -192,10 +194,15 @@ func (l *UILayer) HandleSurfaceInput(m SurfaceMap, ev InputEvent) bool {
 		ok = false
 	}
 	if !ok && !pressed {
+		if l.surfaceInside {
+			l.surfaceInside = false
+			return l.HandleInput(InputEvent{Kind: InputPointerLeave})
+		}
 		return false
 	}
 	if ok {
 		l.lastUV = hit.UV
+		l.surfaceInside = true
 	}
 	ev.X = l.lastUV.U * l.host.w
 	ev.Y = l.lastUV.V * l.host.h

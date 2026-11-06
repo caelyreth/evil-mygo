@@ -198,6 +198,11 @@ func TestUILayerCursorReflectsMappedHover(t *testing.T) {
 	if got := layer.Cursor(); got != CursorPointer {
 		t.Fatalf("layer cursor = %v, want pointer", got)
 	}
+	layer.HandleSurfaceInput(m, InputEvent{Kind: InputPointerMove, X: 200, Y: 200})
+	if got := layer.Cursor(); got != CursorDefault {
+		t.Fatalf("layer cursor after leaving mapped surface = %v, want default", got)
+	}
+	layer.HandleSurfaceInput(m, InputEvent{Kind: InputPointerMove, X: 20, Y: 20})
 	layer.HandleSurfaceInput(m, InputEvent{Kind: InputPointerLeave})
 	if got := layer.Cursor(); got != CursorDefault {
 		t.Fatalf("layer cursor after leave = %v, want default", got)
