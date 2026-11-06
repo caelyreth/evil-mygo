@@ -207,6 +207,12 @@ func (l *UILayer) HandleSurfaceInput(m SurfaceMap, ev InputEvent) bool {
 	ev.X = l.lastUV.U * l.host.w
 	ev.Y = l.lastUV.V * l.host.h
 	taken := l.HandleInput(ev)
+	if ev.Kind == InputPointerDown && l.rt.pressed != nil {
+		// PointerDown itself has no "handled" result in the native input
+		// stream. A target holding the press is what tells a presenting
+		// camera or scene not to take the same gesture.
+		taken = true
+	}
 	return l.finishSurfaceInput(taken, ev)
 }
 

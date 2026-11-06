@@ -88,6 +88,12 @@ end an active capture. The outer host can read `UILayer.Cursor` after
 input to show the cursor requested by the native element under the
 mapped pointer.
 
+The boolean result is also a gesture arbitration primitive. A press that
+lands on an interactive native element returns true even though native
+pointer down has no "handled" flag of its own. A scene host can therefore
+avoid starting camera orbit or object dragging when the press belongs to
+the rendered UI.
+
 Text input crosses the same boundary. Create one client per presented
 surface and give it to the hosting element:
 
@@ -108,6 +114,12 @@ the inner caret's bounds back through the surface map and maps native
 point queries back to the inner text layout. Keep the client stable while
 the surface is presented; update the `SurfaceMap` before rendering the
 frame it describes.
+
+[`examples/layer-membrane`](../../examples/layer-membrane) exercises the
+full path with an application-owned moving heightfield: ray intersection,
+UV lookup, front/back-face rejection, ground occlusion, native button
+input, IME geometry and cursor handoff. It is deliberately application
+code; the core only supplies the layer and mapping contracts.
 
 A `UILayer.Bitmap()` can also be passed to `MetalCanvas.SetSource`, so
 the same live layer can be sampled by an external Metal pass without

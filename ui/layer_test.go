@@ -111,7 +111,9 @@ func TestUILayerSurfaceInput(t *testing.T) {
 	}, 100, 60)
 	defer layer.Close()
 	m := NewPlanarSurface(Rect{W: 100, H: 60})
-	layer.HandleSurfaceInput(m, InputEvent{Kind: InputPointerDown, X: 20, Y: 20, Button: 0})
+	if !layer.HandleSurfaceInput(m, InputEvent{Kind: InputPointerDown, X: 20, Y: 20, Button: 0}) {
+		t.Fatal("surface press did not report that the layer took it")
+	}
 	layer.HandleSurfaceInput(m, InputEvent{Kind: InputPointerMove, X: 200, Y: 200})
 	layer.HandleSurfaceInput(m, InputEvent{Kind: InputPointerUp, X: 200, Y: 200, Button: 0})
 	layer.Render()
