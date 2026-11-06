@@ -4203,9 +4203,11 @@ either.
   owns a per-frame-slot render target, calls the application's callback
   before the frame samples it, and can pass a captured native layer as
   `Source`. The callback uses the renderer's device and command buffer;
-  it does not commit or wait. Other renderers leave the image
-  transparent. This is the current opt-in Metal interoperability seam;
-  it does not yet map interaction through a non-affine presentation.
+  it does not commit or wait. `ui.MetalTexture` also lets an
+  application-owned same-device `MTLTexture` be sampled without an
+  upload. Other renderers leave these images transparent. This is the
+  current opt-in Metal interoperability seam; it does not yet map
+  interaction through a non-affine presentation.
 - **Effects** (`scene.Effect`) are drawings that packages outside the
   renderers define, as the official plugins do (the glass plugin's Liquid
   Glass): a fragment shader for each GPU renderer, in Metal Shading
