@@ -107,6 +107,14 @@ func ensureMetalLayer(viewOrLayer uintptr) (uintptr, error) {
 	if parent == 0 {
 		return 0, errors.New("webgpu: NSView has no layer")
 	}
+	if sublayers := objc.Send[objc.ID](parent, objc.RegisterName("sublayers")); sublayers != 0 {
+		for i, count := uint(0), objc.Send[uint](sublayers, objc.RegisterName("count")); i < count; i++ {
+			candidate := objc.Send[objc.ID](sublayers, objc.RegisterName("objectAtIndex:"), i)
+			if candidate != 0 && objc.Send[bool](candidate, objc.RegisterName("isKindOfClass:"), objc.ID(class)) {
+				return uintptr(candidate), nil
+			}
+		}
+	}
 	layer := objc.Send[objc.ID](objc.ID(class), objc.RegisterName("alloc"))
 	layer = objc.Send[objc.ID](layer, objc.RegisterName("init"))
 	if layer == 0 {
@@ -114,6 +122,7 @@ func ensureMetalLayer(viewOrLayer uintptr) (uintptr, error) {
 	}
 	device := metalDevice()
 	if device == 0 {
+		objc.Send[objc.ID](layer, objc.RegisterName("release"))
 		return 0, errors.New("webgpu: no Metal device")
 	}
 	objc.Send[objc.ID](layer, objc.RegisterName("setDevice:"), device)
