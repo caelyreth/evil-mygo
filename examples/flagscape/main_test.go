@@ -38,7 +38,7 @@ func TestCameraInput(t *testing.T) {
 func TestPanelControls(t *testing.T) {
 	a := newApp()
 	tt := ui.NewTester(a.view, 1440, 900)
-	if err := tt.Click("Reset view"); err != nil {
+	if err := tt.Click("Reset camera"); err != nil {
 		t.Fatal(err)
 	}
 	if a.cam.z != 3.8 || a.cam.x != 0 || a.cam.pitch != 0 {

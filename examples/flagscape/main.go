@@ -165,68 +165,64 @@ func (a *app) face(c *ui.Context) {
 	surface := ui.Box(c).Fill().IgnoreInput(true)
 	surface.Draw(func(p *ui.Painter, r ui.Rect) {
 		p.FillGradient(r, ui.LinearGradient{
-			From: ui.Hex("#101010"), To: ui.Hex("#4b4b4b"), Angle: 135,
+			From: ui.Hex("#f0f0f0"), To: ui.Hex("#b8b8b8"), Angle: 135,
 			Stops: []ui.GradientStop{
-				{Color: ui.Hex("#0b0b0b"), At: 0},
-				{Color: ui.Hex("#3f3f3f"), At: .58},
-				{Color: ui.Hex("#777777"), At: 1},
+				{Color: ui.Hex("#f5f5f5"), At: 0},
+				{Color: ui.Hex("#d6d6d6"), At: .58},
+				{Color: ui.Hex("#aaaaaa"), At: 1},
 			},
 		}, 0)
 	})
 	surface.Children(func() {
-		ui.Column(c).Fill().Padding(48).Justify(ui.SpaceBetween).Children(func() {
+		ui.Column(c).Fill().Padding(56, 48).Gap(22).Children(func() {
 			ui.Row(c).AlignItems(ui.Center).Children(func() {
-				ui.Text(c, "MYGO / STATIC PANEL").Font("monospace").FontSize(12).TextColor(ui.Hex("#e6e6e6"))
+				ui.Text(c, "MYGO / SURFACE").Font("monospace").FontSize(12).TextColor(ui.Hex("#3d3d3d"))
 				ui.Spacer(c)
-				ui.Box(c).Size(11, 11).Radius(6).Background(ui.Hex("#d0d0d0"))
+				ui.Box(c).Size(11, 11).Radius(6).Background(ui.Hex("#303030"))
 			})
 			ui.Column(c).Gap(9).Children(func() {
-				ui.Text(c, "A PANEL\nIN SPACE.").Font("Baskerville").FontSize(92).LineHeight(.86).TextColor(ui.Hex("#f4f4f4"))
-				ui.Text(c, "A native MyGo surface, rendered into a static 3D panel.").FontSize(16).LineHeight(1.45).TextColor(ui.Hex("#cfcfcf"))
+				ui.Text(c, "STATIC\nSURFACE").Font("Baskerville").FontSize(86).LineHeight(.88).TextColor(ui.Hex("#171717"))
+				ui.Text(c, "A native MyGo interface, presented as one clean 3D panel.").FontSize(16).LineHeight(1.45).TextColor(ui.Hex("#4b4b4b"))
 			})
-			ui.Row(c).AlignItems(ui.Center).Gap(18).Children(func() {
-				action := ui.ButtonBase(c.Key("activate")).Width(360).Height(72).
-					Radius(18).Background(ui.RGBA(245, 245, 245, .16)).Border(2, ui.RGBA(245, 245, 245, .72)).
-					Label("Activate panel").IgnoreInput(true)
-				action.Children(func() {
-					ui.Textf(c, "ACTIVATE  /  %02d", a.actions).Font("monospace").FontSize(15).TextColor(ui.Hex("#f7f7f7"))
-					ui.Spacer(c)
-					ui.Text(c, "CLICK").Font("monospace").FontSize(11).TextColor(ui.Hex("#bdbdbd"))
-				})
-				a.hitBox = action.LayoutBounds()
-				ui.Column(c).Gap(4).Children(func() {
-					ui.Text(c, "SIGNAL / NOMINAL").Font("monospace").FontSize(10).TextColor(ui.Hex("#d6d6d6"))
-					ui.Text(c, "MODEL / STATIC PANEL").Font("monospace").FontSize(10).TextColor(ui.Hex("#a9a9a9"))
-				})
+			ui.Spacer(c)
+			action := ui.ButtonBase(c.Key("activate")).Width(360).Height(72).AlignSelf(ui.Center).
+				Radius(12).Background(ui.Hex("#1b1b1b")).Border(0, ui.Transparent).
+				Label("Activate").IgnoreInput(true)
+			action.Children(func() {
+				ui.Text(c, "ACTIVATE").Font("monospace").FontSize(17).Bold().TextColor(ui.Hex("#ffffff"))
+			})
+			a.hitBox = action.LayoutBounds()
+			ui.Row(c).Children(func() {
+				ui.Textf(c, "ACTIVATIONS  /  %02d", a.actions).Font("monospace").FontSize(11).TextColor(ui.Hex("#3d3d3d"))
 				ui.Spacer(c)
-				ui.Text(c, "03").Font("Baskerville").FontSize(66).TextColor(ui.RGBA(255, 255, 255, .24))
+				ui.Text(c, "NATIVE UI / GRAYSCALE").Font("monospace").FontSize(10).TextColor(ui.Hex("#555555"))
 			})
 		})
 	})
 }
 
 func (a *app) panel(c *ui.Context) {
-	ui.Column(c).Width(panelWidth).Shrink(0).FillHeight().Padding(24).Gap(18).
-		Background(ui.Hex("#151515")).Children(func() {
-		ui.Text(c, "FLAGSCAPE / STATIC").Font("monospace").FontSize(10).TextColor(ui.Hex("#bcbcbc"))
-		ui.Text(c, "A panel,\nnot a flag.").Font("Baskerville").FontSize(38).LineHeight(.95).TextColor(ui.Hex("#f0f0f0"))
-		ui.Text(c, "The viewport is a Metal scene. The panel is a captured native MyGo face.").FontSize(12).LineHeight(1.5).TextColor(ui.Hex("#929292"))
-		ui.Box(c).Height(1).Background(ui.Hex("#343434"))
-		ui.Column(c).Padding(16).Radius(12).Background(ui.Hex("#202020")).Gap(6).Children(func() {
-			ui.Text(c, "ACTIVATIONS").Font("monospace").FontSize(10).TextColor(ui.Hex("#929292"))
-			ui.Textf(c, "%02d", a.actions).Font("Baskerville").FontSize(48).TextColor(ui.Hex("#f4f4f4"))
+	ui.Column(c).Width(panelWidth).Shrink(0).FillHeight().Padding(24).Gap(16).
+		Background(ui.Hex("#eeeeee")).Children(func() {
+		ui.Text(c, "MYGO / SCENE").Font("monospace").FontSize(10).TextColor(ui.Hex("#555555"))
+		ui.Text(c, "Static surface").Font("Baskerville").FontSize(32).LineHeight(.95).TextColor(ui.Hex("#171717"))
+		ui.Box(c).Height(1).Background(ui.Hex("#c7c7c7"))
+		ui.Column(c).Padding(16).Radius(12).Background(ui.Hex("#dddddd")).Gap(4).Children(func() {
+			ui.Text(c, "ACTIVATIONS").Font("monospace").FontSize(10).TextColor(ui.Hex("#555555"))
+			ui.Textf(c, "%02d", a.actions).Font("Baskerville").FontSize(52).TextColor(ui.Hex("#171717"))
 		})
 		ui.Column(c).Gap(5).Children(func() {
-			ui.Text(c, "CAMERA").Font("monospace").FontSize(10).TextColor(ui.Hex("#929292"))
-			ui.Textf(c, "X %+.2f  Y %+.2f  Z %+.2f", a.cam.x, a.cam.y, a.cam.z).Font("monospace").FontSize(10).TextColor(ui.Hex("#d8d8d8"))
-			ui.Textf(c, "YAW %+.1f°  PITCH %+.1f°", a.cam.yaw*180/math.Pi, a.cam.pitch*180/math.Pi).Font("monospace").FontSize(10).TextColor(ui.Hex("#929292"))
+			ui.Text(c, "CAMERA").Font("monospace").FontSize(10).TextColor(ui.Hex("#555555"))
+			ui.Textf(c, "X %+.2f  Y %+.2f  Z %+.2f", a.cam.x, a.cam.y, a.cam.z).Font("monospace").FontSize(10).TextColor(ui.Hex("#313131"))
+			ui.Textf(c, "YAW %+.1f°  PITCH %+.1f°", a.cam.yaw*180/math.Pi, a.cam.pitch*180/math.Pi).Font("monospace").FontSize(10).TextColor(ui.Hex("#555555"))
 		})
 		ui.Spacer(c)
-		if ui.Button(c.Key("reset"), "Reset view").Clicked() {
+		reset := ui.ButtonBase(c.Key("reset")).FillWidth().Height(36).Radius(8).Background(ui.Hex("#1b1b1b")).Label("Reset camera")
+		reset.Children(func() { ui.Text(c, "RESET CAMERA").Font("monospace").FontSize(11).TextColor(ui.Hex("#ffffff")) })
+		if reset.Clicked() {
 			a.cam = camera{z: 3.8, y: 0.16}
 		}
-		ui.Text(c, "WASD  walk     Q/E  height\nDRAG  mouse-look     WHEEL  zoom").Font("monospace").FontSize(10).LineHeight(1.5).TextColor(ui.Hex("#929292"))
-		ui.Text(c, "Click the large ACTIVATE control inside the panel. The click is ray-hittested through the 3D surface.").FontSize(10).LineHeight(1.45).TextColor(ui.Hex("#929292"))
+		ui.Text(c, "WASD  walk     Q/E  height\nDRAG  mouse-look     WHEEL  zoom").Font("monospace").FontSize(10).LineHeight(1.5).TextColor(ui.Hex("#555555"))
 	})
 }
 
