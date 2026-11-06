@@ -114,13 +114,16 @@ func (a *app) tick(c *ui.Context) {
 
 func (a *app) viewport(c *ui.Context) {
 	view := ui.Box(c).Grow(1).MinWidth(0).FillHeight().Focusable().
-		Label("Interactive 3D panel viewport").
-		Cursor(ui.CursorCrosshair)
-	if a.drag {
-		view.Cursor(ui.CursorNone)
-	}
+		Label("Interactive 3D panel viewport")
 	view.Cache().Effect(a.canvas.Effect())
 	a.viewBox = view.LayoutBounds()
+	if a.drag {
+		view.Cursor(ui.CursorNone)
+	} else if x, y, over := view.PointerPosition(); over && a.hitAction(x, y) {
+		view.Cursor(ui.CursorPointer)
+	} else {
+		view.Cursor(ui.CursorCrosshair)
+	}
 	view.HandleInput(func(ev ui.InputEvent) bool {
 		switch ev.Kind {
 		case ui.InputPointerDown:
@@ -217,7 +220,8 @@ func (a *app) panel(c *ui.Context) {
 			ui.Textf(c, "YAW %+.1f°  PITCH %+.1f°", a.cam.yaw*180/math.Pi, a.cam.pitch*180/math.Pi).Font("monospace").FontSize(10).TextColor(ui.Hex("#555555"))
 		})
 		ui.Spacer(c)
-		reset := ui.ButtonBase(c.Key("reset")).FillWidth().Height(36).Radius(8).Background(ui.Hex("#1b1b1b")).Label("Reset camera")
+		reset := ui.ButtonBase(c.Key("reset")).FillWidth().Height(36).Radius(8).Background(ui.Hex("#1b1b1b")).
+			Cursor(ui.CursorPointer).Label("Reset camera")
 		reset.Children(func() { ui.Text(c, "RESET CAMERA").Font("monospace").FontSize(11).TextColor(ui.Hex("#ffffff")) })
 		if reset.Clicked() {
 			a.cam = camera{z: 3.8, y: 0.16}

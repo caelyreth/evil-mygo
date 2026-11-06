@@ -66,6 +66,26 @@ func TestFlagActionUsesUVHit(t *testing.T) {
 	}
 }
 
+func TestFlagActionCursor(t *testing.T) {
+	a := newApp()
+	tt := ui.NewTester(a.view, 1440, 900)
+	tt.Frame()
+	u := (a.hitBox.X - a.viewBox.X + a.hitBox.W/2) / a.viewBox.W
+	v := (a.hitBox.Y - a.viewBox.Y + a.hitBox.H/2) / a.viewBox.H
+	x, y, ok := panelScreenPoint(a, u, v, a.viewBox.W, a.viewBox.H)
+	if !ok {
+		t.Fatal("action center does not project onto the panel")
+	}
+	tt.Move(x, y)
+	if got := tt.Cursor(); got != ui.CursorPointer {
+		t.Fatalf("cursor over action = %v, want pointer", got)
+	}
+	tt.Move(20, 20)
+	if got := tt.Cursor(); got != ui.CursorCrosshair {
+		t.Fatalf("cursor away from action = %v, want crosshair", got)
+	}
+}
+
 func panelScreenPoint(a *app, u, v, w, h float32) (float32, float32, bool) {
 	halfH := float32(0.68)
 	halfW := halfH * w / h
