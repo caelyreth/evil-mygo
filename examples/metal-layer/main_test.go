@@ -25,6 +25,14 @@ func TestLiveNativeLayerControls(t *testing.T) {
 	}
 	a.tilt = 0.85
 	tt.Frame()
+	if err := tt.Click("Display name"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Key(ui.Cmd, ui.KeyA)
+	tt.Type("Focus follows the plane")
+	if a.name != "Focus follows the plane" {
+		t.Fatalf("name after the tilted edit = %q", a.name)
+	}
 	if err := tt.Click("Acknowledge profile"); err != nil {
 		t.Fatal(err)
 	}
