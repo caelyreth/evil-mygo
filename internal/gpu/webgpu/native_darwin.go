@@ -107,6 +107,7 @@ func (r *NativeRenderer) Render(s *scene.Scene) error {
 		return fmt.Errorf("webgpu: submit frame: %w", err)
 	}
 	command.Release()
+	r.renderer.FinishFrame()
 	if err := r.surface.Present(); err != nil {
 		return fmt.Errorf("webgpu: present frame: %w", err)
 	}

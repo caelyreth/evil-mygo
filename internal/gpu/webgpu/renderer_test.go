@@ -858,6 +858,68 @@ func TestRendererSamplesExternalWebGPUTexture(t *testing.T) {
 	}
 }
 
+func TestRendererDrawsWGSLSceneEffect(t *testing.T) {
+	if _, ok := RuntimePath(); !ok {
+		t.Skip("wgpu-native is not installed")
+	}
+	g, err := Open()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer g.Release()
+	fx := &scene.Effect{
+		Name: "test effect",
+		WGSL: `
+fn effect(p: vec2<f32>, e: Effect) -> vec4<f32> {
+	return e.p1;
+}`,
+	}
+	const width, height = 64, 32
+	target, view := testTarget(t, g, width, height)
+	defer target.Release()
+	defer view.Release()
+	renderer, err := NewRenderer(g, wgpu.TextureFormatRGBA8Unorm)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer renderer.Release()
+	s := &scene.Scene{
+		Width: width, Height: height,
+		Clear: scene.Color{A: 255},
+		Effects: []scene.EffectOp{{
+			Effect: fx,
+			Params: [5][4]float32{
+				{}, {240.0 / 255, 40.0 / 255, 20.0 / 255, 1},
+			},
+		}},
+		Ops: []scene.Op{{
+			Kind:  scene.OpEffect,
+			Rect:  scene.Rect{X: 8, Y: 8, W: 48, H: 16},
+			Radii: scene.Uniform(4),
+			Start: 0,
+		}},
+	}
+	encoder, err := g.Device().CreateCommandEncoder(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g.Device().PushErrorScope(wgpu.ErrorFilterValidation)
+	if err := renderer.Render(s, encoder, view); err != nil {
+		t.Fatal(err)
+	}
+	pixels := readTarget(t, g, target, encoder, width, height)
+	renderer.FinishFrame()
+	if typ, message, err := g.Device().PopErrorScopeAsync(g.Instance()); err != nil {
+		t.Fatal(err)
+	} else if typ != wgpu.ErrorTypeNoError {
+		t.Fatalf("WebGPU validation error %v: %s", typ, message)
+	}
+	pixel := pixels[(16*256 + 32*4):][:4]
+	if pixel[0] != 240 || pixel[1] != 40 || pixel[2] != 20 || pixel[3] != 255 {
+		t.Fatalf("effect pixel = %v, want [240 40 20 255]", pixel)
+	}
+}
+
 func testTarget(t *testing.T, g *GPU, width, height int) (*wgpu.Texture, *wgpu.TextureView) {
 	t.Helper()
 	target, err := g.Device().CreateTexture(&wgpu.TextureDescriptor{

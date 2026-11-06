@@ -42,6 +42,15 @@ type Effect struct {
 	// shader in GLSL 3.30 and GLSL ES 3.00, which drivers compile.
 	Metal, HLSL EffectCode
 	GLSL        string
+	// WGSL is the effect's WebGPU shader. It defines
+	//
+	//	fn effect(p: vec2<f32>, e: Effect) -> vec4<f32>
+	//
+	// where p is the pixel center in the effect's local pixels and e
+	// holds the shape, the five float4 parameters and the backdrop area
+	// the effect reads. The renderer supplies T0 to T3 images, clip_tex,
+	// mask_tex, effect_sampler, shader_uniforms and the Effect struct.
+	WGSL string
 	// Pixels makes what draws the effect on the CPU, one for each
 	// renderer.
 	Pixels func() EffectPixels

@@ -28,14 +28,17 @@ type Renderer struct {
 	pipe    *wgpu.RenderPipeline
 	sampler *wgpu.Sampler
 
-	defaultImage *textureEntry
-	defaultMask  *textureEntry
-	defaultColor *textureEntry
-	defaultClip  *textureEntry
+	defaultImage       *textureEntry
+	defaultMask        *textureEntry
+	defaultColor       *textureEntry
+	defaultClip        *textureEntry
+	defaultTransparent *textureEntry
 
 	root     drawState
 	canvases map[uint64]*canvasEntry
 	images   map[uintptr]*textureEntry
+	effects  map[string]*effectPipeline
+	pending  []func()
 	frame    uint64
 }
 
@@ -43,17 +46,18 @@ type Renderer struct {
 // from Renderer lets a canvas render before the root without replacing the
 // root's instances, uniforms, atlases or bind groups.
 type drawState struct {
-	builder  gpu.Builder
-	globals  *wgpu.Buffer
-	instBuf  *wgpu.Buffer
-	capacity int
-	instRaw  []byte
-	globRaw  [16]byte
-	stopsBuf *wgpu.Buffer
-	stopsCap int
-	mask     *textureEntry
-	color    *textureEntry
-	binds    map[bindKey]*wgpu.BindGroup
+	builder                 gpu.Builder
+	globals                 *wgpu.Buffer
+	instBuf                 *wgpu.Buffer
+	capacity                int
+	instRaw                 []byte
+	globRaw                 [16]byte
+	stopsBuf                *wgpu.Buffer
+	stopsCap                int
+	mask                    *textureEntry
+	color                   *textureEntry
+	binds                   map[bindKey]*wgpu.BindGroup
+	sceneWidth, sceneHeight int
 }
 
 type canvasEntry struct {
@@ -135,8 +139,13 @@ func NewRenderer(g *GPU, format wgpu.TextureFormat) (*Renderer, error) {
 		r.Release()
 		return nil, err
 	}
+	if r.defaultTransparent, err = r.solidTexture("MyGo transparent", wgpu.TextureFormatRGBA8Unorm, [4]byte{}); err != nil {
+		r.Release()
+		return nil, err
+	}
 	r.images = map[uintptr]*textureEntry{}
 	r.canvases = map[uint64]*canvasEntry{}
+	r.effects = map[string]*effectPipeline{}
 	r.root.reset(r, r.defaultMask, r.defaultColor)
 	if err := r.root.ensureInstances(r, initialCapacity); err != nil {
 		r.Release()
@@ -167,6 +176,7 @@ func (r *Renderer) Render(s *scene.Scene, encoder *wgpu.CommandEncoder, view *wg
 }
 
 func (r *Renderer) renderScene(s *scene.Scene, encoder *wgpu.CommandEncoder, view *wgpu.TextureView, st *drawState) error {
+	st.sceneWidth, st.sceneHeight = s.Width, s.Height
 	if err := r.syncAtlas(s.MaskAtlas, wgpu.TextureFormatR8Unorm, &st.mask); err != nil {
 		return err
 	}
@@ -245,6 +255,12 @@ func (r *Renderer) renderScene(s *scene.Scene, encoder *wgpu.CommandEncoder, vie
 		pass.SetPipeline(r.pipe)
 		for _, batch := range st.builder.Batches {
 			if batch.Count == 0 {
+				continue
+			}
+			if batch.Effect != nil {
+				if err := r.drawEffect(pass, st, batch); err != nil {
+					return err
+				}
 				continue
 			}
 			image := r.defaultImage.view
@@ -474,8 +490,11 @@ func (r *Renderer) sweepCanvases() {
 
 func supported(batches []gpu.Batch, instances []gpu.Instance) error {
 	for _, b := range batches {
-		if b.Effect != nil || b.Shader != nil || b.Hole {
+		if b.Hole {
 			return errors.New("webgpu: scene effect or hole not ported yet")
+		}
+		if b.Effect != nil && b.Effect.WGSL == "" {
+			return errors.New("webgpu: effect has no WGSL source")
 		}
 	}
 	for _, in := range instances {
@@ -488,6 +507,8 @@ func supported(batches []gpu.Batch, instances []gpu.Instance) error {
 			// continuous corners.
 		case kind >= 2 && kind <= 5:
 			// Glyph, image and color-glyph paths are ported.
+		case kind > 5.5 && kind < 6.5:
+			// Effect instances draw through their own pipeline.
 		default:
 			return errors.New("webgpu: scene instance kind is not ported yet")
 		}
@@ -566,6 +587,18 @@ func (r *Renderer) forgetBindings() {
 	}
 }
 
+// FinishFrame releases transient effect resources after the command buffer
+// that reads them has been submitted.
+func (r *Renderer) FinishFrame() {
+	if r == nil {
+		return
+	}
+	for _, release := range r.pending {
+		release()
+	}
+	r.pending = r.pending[:0]
+}
+
 // Release frees the renderer's WebGPU resources.
 func (r *Renderer) Release() {
 	if r == nil {
@@ -603,6 +636,16 @@ func (r *Renderer) Release() {
 		r.defaultClip.Release()
 		r.defaultClip = nil
 	}
+	if r.defaultTransparent != nil {
+		r.defaultTransparent.Release()
+		r.defaultTransparent = nil
+	}
+	r.FinishFrame()
+	for _, effect := range r.effects {
+		effect.pipe.Release()
+		effect.layout.Release()
+	}
+	r.effects = nil
 	if r.pipe != nil {
 		r.pipe.Release()
 		r.pipe = nil

@@ -125,12 +125,31 @@ the texture must be premultiplied RGBA8 in MyGo's row order. Commands
 submitted through the device's default queue are ordered with MyGo's
 frame.
 
+## Effects
+
+`scene.Effect.WGSL` is the WebGPU effect boundary. It defines:
+
+```wgsl
+fn effect(p: vec2<f32>, e: Effect) -> vec4<f32>
+```
+
+`p` is in device pixels in the effect's local box, and `e.rect`, `e.radii`
+and `e.p0` through `e.p4` are the same shape and parameters the existing
+Metal, Direct3D and CPU effects receive. The renderer supplies `T0` to
+`T3`, `clip_tex`, `mask_tex`, `effect_sampler`, `shader_uniforms` and the
+backdrop area fields. The effect returns premultiplied color; MyGo applies
+the shape, clip and opacity afterward.
+
+Effects that need a backdrop or a generated `ui/shader` library are still
+pending. The WebGPU path currently rejects them with a useful error
+instead of silently drawing a different result.
+
 ## Remaining parity work
 
 The direct Metal renderer remains temporarily as the default until these
 WebGPU paths are complete:
 
-- `scene.Effect` pipelines and backdrop textures;
+- backdrop textures for effects that read them;
 - the `ui/shader`-generated shader libraries and the glass plugin;
 - holes, wide-gamut presentation and damage-aware presentation;
 - benchmark parity and the purego/goffi build-tag removal;
