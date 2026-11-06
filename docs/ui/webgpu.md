@@ -132,7 +132,9 @@ submitted through the device's default queue are ordered with MyGo's
 frame. `WebGPUTexture.SetSync` adds explicit `Wait` and `Signal` callbacks
 for a producer that is not already ordered with that queue. `Wait` runs
 before first sampling; `Signal` runs after all sampling has been encoded.
-Neither callback may submit the frame or block the main thread.
+Neither callback may submit the frame or block the main thread. An owner
+replaced by `WebGPUTexture.SetTexture` is retained until the submitted
+frame completes, then released.
 
 [`examples/flagscape`](../../examples/flagscape) shows the whole path: a
 3D WebGPU scene samples a captured native MyGo face, while WASD,

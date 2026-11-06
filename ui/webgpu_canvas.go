@@ -153,7 +153,8 @@ func (t *WebGPUTexture) Bitmap() *Bitmap { return t.bm }
 func (t *WebGPUTexture) Size() (w, h int) { return t.img.W, t.img.H }
 
 // SetTexture publishes another texture and owner for the same image. The
-// size and device must stay the same.
+// size and device must stay the same. The previous owner is retained until
+// the frame that last sampled it has completed.
 func (t *WebGPUTexture) SetTexture(device *wgpu.Device, texture *wgpu.Texture, owner any) {
 	if t.img.External == nil {
 		return
