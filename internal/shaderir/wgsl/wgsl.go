@@ -1,6 +1,7 @@
 // Package wgsl writes the fragment library of a shaderir program as WGSL.
-// It uses the Metal uniform layout and reads uniforms from the byte-addressable
-// shader_uniforms storage buffer declared by the renderer's effect prelude.
+// It uses the packed uniform layout and reads uniforms from the
+// byte-addressable shader_uniforms storage buffer declared by the
+// renderer's effect prelude.
 package wgsl
 
 import (
@@ -10,7 +11,7 @@ import (
 	"strings"
 
 	"github.com/egoist/mygo/internal/shaderir"
-	"github.com/egoist/mygo/internal/shaderir/msl"
+	"github.com/egoist/mygo/internal/shaderir/packed"
 )
 
 type compileContext struct {
@@ -42,7 +43,7 @@ func Fragment(p *shaderir.Program, name string) string {
 	if entry == nil {
 		return ""
 	}
-	offsets, _ := msl.UniformLayout(lib)
+	offsets, _ := packed.UniformLayout(lib)
 	c := &compileContext{uniformOffsets: offsets}
 	var lines []string
 	lines = append(lines, strings.Split(Prelude(), "\n")...)
@@ -192,7 +193,7 @@ func (c *compileContext) uniformValue(p *shaderir.Program, t *shaderir.Type, bas
 		n := t.MatrixSize()
 		columnStride := 16
 		if n == 2 {
-			// Metal aligns a float2 column to 8 bytes.
+			// The packed layout aligns a float2 column to 8 bytes.
 			columnStride = 8
 		}
 		cols := make([]string, n)
@@ -202,7 +203,7 @@ func (c *compileContext) uniformValue(p *shaderir.Program, t *shaderir.Type, bas
 		return fmt.Sprintf("mat%dx%d<f32>(%s)", n, n, strings.Join(cols, ", "))
 	case shaderir.Array:
 		stride := 0
-		lanes := msl.TypeLanes(&t.Sub[0])
+		lanes := packed.TypeLanes(&t.Sub[0])
 		if len(lanes) > 0 {
 			stride = roundUp(lanes[len(lanes)-1]+4, 4)
 		}

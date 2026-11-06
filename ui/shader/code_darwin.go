@@ -7,16 +7,15 @@ import (
 	"github.com/egoist/mygo/internal/scene"
 	internalshader "github.com/egoist/mygo/internal/shader"
 	"github.com/egoist/mygo/internal/shaderir"
-	"github.com/egoist/mygo/internal/shaderir/msl"
+	"github.com/egoist/mygo/internal/shaderir/packed"
 	"github.com/egoist/mygo/internal/shaderir/wgsl"
 )
 
 // code gives fx p's WGSL code for the WebGPU renderer, and returns where
 // the uniforms' lanes lie in its byte-addressable buffer and the buffer's
-// size. The shared packed layout is kept compatible with the Metal
-// uniform layout used by the compiler's existing backends.
+// size.
 func code(p *shaderir.Program, fx *scene.Effect) ([]int, int) {
-	uniformOffsets, _ := msl.UniformLayout(p)
+	uniformOffsets, _ := packed.UniformLayout(p)
 	scaleOffset := 0
 	for i, name := range p.UniformNames {
 		if name == internalshader.ScaleUniform {
@@ -33,5 +32,5 @@ fn effect(p: vec2<f32>, e: Effect) -> vec4<f32> {
 	return shaderFragment(%s);
 }
 `, strings.Join(args, ", "))
-	return msl.UniformLanes(p)
+	return packed.UniformLanes(p)
 }
