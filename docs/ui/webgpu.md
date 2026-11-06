@@ -36,6 +36,9 @@ the correct `libwgpu_native` beside the application or set
 - a high-performance adapter and logical device;
 - the default queue;
 - adapter metadata, including verification that macOS selected Metal;
+- a surface over the platform's `CAMetalLayer`;
+- format, alpha-mode and present-mode negotiation;
+- configure, acquire and present operations;
 - deterministic release of queue, device, adapter and instance.
 
 The integration test clears a real offscreen texture, copies it to a
@@ -46,10 +49,37 @@ installed.
 nix-shell -p go --run 'CGO_ENABLED=0 go test ./internal/gpu/webgpu -count=1 -v'
 ```
 
+The `nofakecgo` test creates a detached `CAMetalLayer`, configures a real
+surface, acquires its texture, clears it, submits and presents:
+
+```sh
+nix-shell -p go --run 'CGO_ENABLED=0 go test -tags nofakecgo ./internal/gpu/webgpu -count=1 -v'
+```
+
+## `purego` build tag
+
+Both `github.com/ebitengine/purego` and `github.com/go-webgpu/goffi`
+provide the runtime symbols needed by `CGO_ENABLED=0` FFI. Linking both
+without a tag duplicates `_cgo_init`.
+
+goffi's supported solution is its `nofakecgo` tag: purego supplies the
+shared runtime while goffi uses those symbols. Any binary that links MyGo's
+platform packages together with the WebGPU backend must therefore be built
+with:
+
+```sh
+-tags nofakecgo
+```
+
+The standalone WebGPU device test does not import purego and needs no tag.
+The surface-owning test and the eventual renderer integration do.
+
 ## Migration guardrails
 
 - The direct Metal renderer stays temporarily as a reference, but new
   public GPU work must target WebGPU.
+- Platform integration must pass `nofakecgo` until `purego` is removed
+  from the final native stack or upstream provides automatic arbitration.
 - The Metal implementation is removed only after WebGPU parity for the
   scene renderer, offscreen canvases, custom passes, imported surfaces,
   synchronization, wide color, effects and benchmarks.
