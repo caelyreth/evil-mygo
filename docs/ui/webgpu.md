@@ -141,6 +141,11 @@ frame completes, then released.
 3D WebGPU scene samples a captured native MyGo face, while WASD,
 pointer-look and UV hit-testing remain in the native tree.
 
+[`examples/webgpu-layer`](../../examples/webgpu-layer) shows an
+independent `UILayer` used as a WebGPU source, with `PlanarSurface` and
+`HostLayer` routing pointer, focus, IME, cursor and accessibility back
+into the native layer.
+
 ## Effects
 
 `scene.Effect.WGSL` is the WebGPU effect boundary. It defines:
