@@ -14,3 +14,19 @@ func TestMetalCanvasIsAnImage(t *testing.T) {
 		t.Fatal("a Metal canvas made a CPU downsampled level")
 	}
 }
+
+func TestMetalCanvasEffectUsesTheWholeTarget(t *testing.T) {
+	c := NewMetalCanvas(64, 32, nil)
+	tt := NewTester(func(ctx *Context) {
+		Box(ctx).Size(20, 10).Effect(c.Effect())
+	}, 20, 10)
+	for _, op := range tt.rt.scene.Ops {
+		if op.Image == c.img {
+			if op.Src.W != 64 || op.Src.H != 32 {
+				t.Fatalf("target source is %v, want 64×32", op.Src)
+			}
+			return
+		}
+	}
+	t.Fatal("the Metal target was not painted")
+}

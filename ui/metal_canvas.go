@@ -81,9 +81,9 @@ type metalCanvasEffect struct{ canvas *MetalCanvas }
 
 func (m metalCanvasEffect) EffectMargin() Point { return Point{} }
 
-func (m metalCanvasEffect) PaintEffect(p *Painter, box Rect, content *Bitmap, inset Point) {
+func (m metalCanvasEffect) PaintEffect(p *Painter, box Rect, content *Bitmap, _ Point) {
 	m.canvas.SetSource(content)
-	s := p.Scale()
-	src := Rect{X: inset.X, Y: inset.Y, W: box.W * s, H: box.H * s}
+	srcW, srcH := m.canvas.Size()
+	src := Rect{W: float32(srcW), H: float32(srcH)}
 	p.ImageRegion(m.canvas.Bitmap(), src, box, ImageOptions{})
 }
