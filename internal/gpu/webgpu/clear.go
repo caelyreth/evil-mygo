@@ -6,7 +6,6 @@ import (
 	"unsafe"
 
 	"github.com/go-webgpu/webgpu/wgpu"
-	"github.com/gogpu/gputypes"
 
 	"github.com/egoist/mygo/internal/gpu"
 )
@@ -112,5 +111,3 @@ func (r *Renderer) clearPart(
 	})
 	return nil
 }
-
-var _ = gputypes.BlendOperationAdd

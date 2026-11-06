@@ -53,6 +53,7 @@ type Renderer struct {
 	encoder  *wgpu.CommandEncoder
 	waited   map[*scene.ExternalTexture]bool
 	signals  map[*scene.ExternalTexture]any
+	external map[*scene.ExternalTexture]bool
 	pending  []func()
 	frame    uint64
 }
@@ -216,6 +217,7 @@ func NewRenderer(g *GPU, format wgpu.TextureFormat) (*Renderer, error) {
 	r.blurred = map[uintptr]*textureEntry{}
 	r.waited = map[*scene.ExternalTexture]bool{}
 	r.signals = map[*scene.ExternalTexture]any{}
+	r.external = map[*scene.ExternalTexture]bool{}
 	r.root.reset(r, r.defaultMask, r.defaultColor)
 	if err := r.root.ensureInstances(r, initialCapacity); err != nil {
 		r.Release()
@@ -818,6 +820,13 @@ func (r *Renderer) FinishFrame() {
 		release()
 	}
 	r.pending = r.pending[:0]
+	if len(r.external) > 0 {
+		r.gpu.device.Poll(true)
+		for external := range r.external {
+			external.Retired = nil
+		}
+		clear(r.external)
+	}
 	for token, t := range r.blurred {
 		t.Release()
 		delete(r.blurred, token)
@@ -841,6 +850,7 @@ func (r *Renderer) Release() {
 		t.Release()
 	}
 	r.images = nil
+	r.external = nil
 	for token, t := range r.blurred {
 		t.Release()
 		delete(r.blurred, token)

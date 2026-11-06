@@ -237,6 +237,9 @@ func (r *Renderer) syncExternalImage(img *scene.Image) (uintptr, error) {
 	if e.Sync.SignalObject != nil {
 		r.signals[e] = e.TextureObject
 	}
+	if len(e.Retired) > 0 {
+		r.external[e] = true
+	}
 	token := uintptr(img.ID())
 	t := r.images[token]
 	if t == nil || t.tex != tex || t.w != img.W || t.h != img.H {

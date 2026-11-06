@@ -1223,6 +1223,62 @@ fn effect(p: vec2<f32>, e: Effect) -> vec4<f32> {
 	}
 }
 
+func TestRendererRetiresReplacedExternalOwners(t *testing.T) {
+	if _, ok := RuntimePath(); !ok {
+		t.Skip("wgpu-native is not installed")
+	}
+	g, err := Open()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer g.Release()
+	external, err := g.Device().CreateTexture(&wgpu.TextureDescriptor{
+		Usage:         wgpu.TextureUsageTextureBinding | wgpu.TextureUsageCopyDst,
+		Size:          wgpu.Extent3D{Width: 1, Height: 1, DepthOrArrayLayers: 1},
+		Format:        wgpu.TextureFormatRGBA8Unorm,
+		MipLevelCount: 1,
+		SampleCount:   1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer external.Release()
+	img := scene.NewExternalObjectImage(1, 1, g.Device(), external, "current")
+	img.External.Retired = []any{"old"}
+	target, view := testTarget(t, g, 8, 8)
+	defer target.Release()
+	defer view.Release()
+	renderer, err := NewRenderer(g, wgpu.TextureFormatRGBA8Unorm)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer renderer.Release()
+	encoder, err := g.Device().CreateCommandEncoder(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := renderer.Render(&scene.Scene{
+		Width: 8, Height: 8,
+		Ops: []scene.Op{{Kind: scene.OpImage, Image: img, Rect: scene.Rect{W: 8, H: 8}, Src: scene.Rect{W: 1, H: 1}}},
+	}, encoder, view); err != nil {
+		t.Fatal(err)
+	}
+	command, err := encoder.Finish(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoder.Release()
+	if _, err := g.Queue().Submit(command); err != nil {
+		command.Release()
+		t.Fatal(err)
+	}
+	command.Release()
+	renderer.FinishFrame()
+	if img.External.Retired != nil {
+		t.Fatalf("retired owners = %v, want released", img.External.Retired)
+	}
+}
+
 func testTarget(t *testing.T, g *GPU, width, height int) (*wgpu.Texture, *wgpu.TextureView) {
 	t.Helper()
 	target, err := g.Device().CreateTexture(&wgpu.TextureDescriptor{
