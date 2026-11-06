@@ -95,6 +95,8 @@ UI as they read other apps (see [Accessibility](accessibility.md)).
   Go's syntax, with values and images the app passes them.
 - [Metal canvases](metal.md): application Metal passes rendering into
   native UI images, without a CPU upload.
+- [Surface mapping](surface-mapping.md): projecting pointer positions
+  between screen space, surface UVs and embedded native UI.
 - [Transitions](transitions.md): elements that move, resize, recolor and
   shade smoothly as the layout changes, and come and go.
 - [Motion](motion.md): springs that keep their velocity, curves, delays,
