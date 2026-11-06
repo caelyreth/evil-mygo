@@ -4,6 +4,7 @@ package webgpu
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"unsafe"
 
@@ -1276,6 +1277,53 @@ func TestRendererRetiresReplacedExternalOwners(t *testing.T) {
 	renderer.FinishFrame()
 	if img.External.Retired != nil {
 		t.Fatalf("retired owners = %v, want released", img.External.Retired)
+	}
+}
+
+func TestRendererReportsExternalSyncErrors(t *testing.T) {
+	if _, ok := RuntimePath(); !ok {
+		t.Skip("wgpu-native is not installed")
+	}
+	g, err := Open()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer g.Release()
+	external, err := g.Device().CreateTexture(&wgpu.TextureDescriptor{
+		Usage:         wgpu.TextureUsageTextureBinding,
+		Size:          wgpu.Extent3D{Width: 1, Height: 1, DepthOrArrayLayers: 1},
+		Format:        wgpu.TextureFormatRGBA8Unorm,
+		MipLevelCount: 1,
+		SampleCount:   1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer external.Release()
+	want := errors.New("producer not ready")
+	img := scene.NewExternalObjectImage(1, 1, g.Device(), external, nil)
+	img.External.Sync.WaitObject = func(device, encoder, texture any) error {
+		return want
+	}
+	target, view := testTarget(t, g, 8, 8)
+	defer target.Release()
+	defer view.Release()
+	renderer, err := NewRenderer(g, wgpu.TextureFormatRGBA8Unorm)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer renderer.Release()
+	encoder, err := g.Device().CreateCommandEncoder(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer encoder.Release()
+	err = renderer.Render(&scene.Scene{
+		Width: 8, Height: 8,
+		Ops: []scene.Op{{Kind: scene.OpImage, Image: img, Rect: scene.Rect{W: 8, H: 8}}},
+	}, encoder, view)
+	if !errors.Is(err, want) {
+		t.Fatalf("render error = %v, want %v", err, want)
 	}
 }
 
