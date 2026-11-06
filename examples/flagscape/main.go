@@ -1,12 +1,13 @@
 // Flagscape is a native Metal scene inside a MyGo window. The left side is a
-// full-bleed 3D viewport; the right side is ordinary MyGo UI. A native MyGo
-// face is captured as a texture and mapped onto a lit, waving flag.
+// static 3D panel; the right side is a small grayscale MyGo sidebar. A native
+// MyGo face is captured as a texture and mapped onto the panel.
 //
 //	go run ./examples/flagscape
 //
 // WASD moves the camera, Q/E lowers and raises it, and click-dragging the
-// viewport captures the pointer for mouse look. The right panel controls the
-// cloth and camera. The Metal encoder is isolated in the cgo example.
+// viewport captures the pointer for mouse look. The panel itself does not
+// animate. Clicking its large ACTIVATE control is resolved through a camera
+// ray, the panel UV, and the control's source-space bounds.
 package main
 
 import (
@@ -21,7 +22,9 @@ import (
 const (
 	viewportWidth  = 2200
 	viewportHeight = 1800
-	panelWidth     = 340
+	panelWidth     = 320
+	panelLift      = 0.28
+	panelThickness = 0.025
 )
 
 type camera struct {
@@ -34,37 +37,28 @@ type app struct {
 	canvas *ui.MetalCanvas
 	cam    camera
 
-	started time.Time
 	last    time.Time
-	time    float32
-	wind    float64
-	light   float64
-	animate bool
 	drag    bool
 	lastX   float32
 	lastY   float32
+	actions int
+	viewBox ui.Rect
+	hitBox  ui.Rect
 }
 
 func newApp() *app {
-	a := &app{
-		cam:     camera{z: 3.8, y: 0.04},
-		started: time.Now(),
-		wind:    0.68,
-		light:   0.72,
-		animate: true,
-	}
+	a := &app{cam: camera{z: 3.8, y: 0.16}}
 	a.canvas = ui.NewMetalCanvas(viewportWidth, viewportHeight, a.draw)
 	return a
 }
 
 func (a *app) draw(frame ui.MetalFrame) error {
-	return drawFlag(frame, a.time, a.cam.x, a.cam.y, a.cam.z, a.cam.yaw, a.cam.pitch, float32(a.wind), float32(a.light))
+	return drawPanel(frame, a.cam.x, a.cam.y, a.cam.z, a.cam.yaw, a.cam.pitch)
 }
 
 func (a *app) view(c *ui.Context) {
 	a.tick(c)
-	t := c.Theme()
-	ui.Row(c).Fill().Background(t.Background).Children(func() {
+	ui.Row(c).Fill().Background(ui.Hex("#111111")).Children(func() {
 		a.viewport(c)
 		a.panel(c)
 	})
@@ -113,14 +107,6 @@ func (a *app) tick(c *ui.Context) {
 		a.cam.y += speed * float32(dt)
 		moving = true
 	}
-	a.cam.x = clamp(a.cam.x, -2.8, 2.8)
-	a.cam.y = clamp(a.cam.y, -0.55, 1.25)
-	a.cam.z = clamp(a.cam.z, 2.0, 5.2)
-
-	if a.animate && !c.Preferences().ReduceMotion {
-		a.time += float32(dt)
-		moving = true
-	}
 	if moving || a.drag {
 		c.AnimationFrame()
 	}
@@ -128,17 +114,23 @@ func (a *app) tick(c *ui.Context) {
 
 func (a *app) viewport(c *ui.Context) {
 	view := ui.Box(c).Grow(1).MinWidth(0).FillHeight().Focusable().
-		Label("Interactive 3D flag viewport").
+		Label("Interactive 3D panel viewport").
 		Cursor(ui.CursorCrosshair)
 	if a.drag {
 		view.Cursor(ui.CursorNone)
 	}
 	view.Cache().Effect(a.canvas.Effect())
+	a.viewBox = view.LayoutBounds()
 	view.HandleInput(func(ev ui.InputEvent) bool {
 		switch ev.Kind {
 		case ui.InputPointerDown:
 			if ev.Button != 0 {
 				return false
+			}
+			if a.hitAction(ev.X, ev.Y) {
+				a.actions++
+				a.canvas.Invalidate()
+				return true
 			}
 			a.drag = true
 			a.lastX, a.lastY = ev.X, ev.Y
@@ -160,7 +152,7 @@ func (a *app) viewport(c *ui.Context) {
 				return true
 			}
 		case ui.InputScroll:
-			a.cam.z = clamp(a.cam.z-ev.DY*0.006, 2.0, 5.2)
+			a.cam.z -= ev.DY * 0.006
 			a.canvas.Invalidate()
 			return true
 		}
@@ -170,86 +162,164 @@ func (a *app) viewport(c *ui.Context) {
 }
 
 func (a *app) face(c *ui.Context) {
-	ui.Box(c).Fill().Draw(func(p *ui.Painter, r ui.Rect) {
+	surface := ui.Box(c).Fill().IgnoreInput(true)
+	surface.Draw(func(p *ui.Painter, r ui.Rect) {
 		p.FillGradient(r, ui.LinearGradient{
-			From: ui.Hex("#0b3138"), To: ui.Hex("#17646a"), Angle: 135,
+			From: ui.Hex("#101010"), To: ui.Hex("#4b4b4b"), Angle: 135,
 			Stops: []ui.GradientStop{
-				{Color: ui.Hex("#092126"), At: 0},
-				{Color: ui.Hex("#17646a"), At: .52},
-				{Color: ui.Hex("#d47c52"), At: 1},
+				{Color: ui.Hex("#0b0b0b"), At: 0},
+				{Color: ui.Hex("#3f3f3f"), At: .58},
+				{Color: ui.Hex("#777777"), At: 1},
 			},
 		}, 0)
-		// Keep the face free of decorative slice lines: the cloth shader
-		// supplies the only surface detail.
-		p.Stroke(ui.Rect{X: r.X + 18, Y: r.Y + 18, W: r.W - 36, H: r.H - 36}, ui.RGBA(244, 215, 168, .25), 0, 1)
-	}).Children(func() {
-		ui.Column(c).Fill().Padding(46, 48).Justify(ui.SpaceBetween).Children(func() {
+	})
+	surface.Children(func() {
+		ui.Column(c).Fill().Padding(48).Justify(ui.SpaceBetween).Children(func() {
 			ui.Row(c).AlignItems(ui.Center).Children(func() {
-				ui.Text(c, "MYGO / FIELD UNIT 03").Font("monospace").FontSize(12).TextColor(ui.Hex("#f4d7a8"))
+				ui.Text(c, "MYGO / STATIC PANEL").Font("monospace").FontSize(12).TextColor(ui.Hex("#e6e6e6"))
 				ui.Spacer(c)
-				ui.Box(c).Size(11, 11).Radius(6).Background(ui.Hex("#f0a36c"))
+				ui.Box(c).Size(11, 11).Radius(6).Background(ui.Hex("#d0d0d0"))
 			})
-			ui.Column(c).Gap(8).Children(func() {
-				ui.Text(c, "A FLAG\nFOR A\nLIVE UI.").Font("Baskerville").FontSize(92).LineHeight(.86).TextColor(ui.Hex("#fff1d5"))
-				ui.Text(c, "A native MyGo surface carried into a 3D world.\nThe cloth is lit; the interface is real.").FontSize(15).LineHeight(1.45).TextColor(ui.Hex("#d9e5d4"))
+			ui.Column(c).Gap(9).Children(func() {
+				ui.Text(c, "A PANEL\nIN SPACE.").Font("Baskerville").FontSize(92).LineHeight(.86).TextColor(ui.Hex("#f4f4f4"))
+				ui.Text(c, "A native MyGo surface, rendered into a static 3D panel.").FontSize(16).LineHeight(1.45).TextColor(ui.Hex("#cfcfcf"))
 			})
-			ui.Row(c).AlignItems(ui.End).Children(func() {
-				ui.Column(c).Gap(6).Children(func() {
-					ui.Text(c, "SIGNAL  /  NOMINAL").Font("monospace").FontSize(10).TextColor(ui.Hex("#f0a36c"))
-					ui.Text(c, "CLOTH RIG  /  ONE FACE").Font("monospace").FontSize(10).TextColor(ui.Hex("#c5d9ce"))
+			ui.Row(c).AlignItems(ui.Center).Gap(18).Children(func() {
+				action := ui.ButtonBase(c.Key("activate")).Width(360).Height(72).
+					Radius(18).Background(ui.RGBA(245, 245, 245, .16)).Border(2, ui.RGBA(245, 245, 245, .72)).
+					Label("Activate panel").IgnoreInput(true)
+				action.Children(func() {
+					ui.Textf(c, "ACTIVATE  /  %02d", a.actions).Font("monospace").FontSize(15).TextColor(ui.Hex("#f7f7f7"))
+					ui.Spacer(c)
+					ui.Text(c, "CLICK").Font("monospace").FontSize(11).TextColor(ui.Hex("#bdbdbd"))
+				})
+				a.hitBox = action.LayoutBounds()
+				ui.Column(c).Gap(4).Children(func() {
+					ui.Text(c, "SIGNAL / NOMINAL").Font("monospace").FontSize(10).TextColor(ui.Hex("#d6d6d6"))
+					ui.Text(c, "MODEL / STATIC PANEL").Font("monospace").FontSize(10).TextColor(ui.Hex("#a9a9a9"))
 				})
 				ui.Spacer(c)
-				ui.Text(c, "03").Font("Baskerville").FontSize(76).TextColor(ui.RGBA(255, 244, 218, .28))
+				ui.Text(c, "03").Font("Baskerville").FontSize(66).TextColor(ui.RGBA(255, 255, 255, .24))
 			})
 		})
 	})
 }
 
 func (a *app) panel(c *ui.Context) {
-	ui.Column(c).Width(panelWidth).Shrink(0).FillHeight().Padding(26, 24, 22, 24).
-		Background(ui.Hex("#101b1e")).Gap(17).Children(func() {
-		ui.Text(c, "FLAGSCAPE  /  03").Font("monospace").FontSize(11).TextColor(ui.Hex("#d67b53"))
-		ui.Text(c, "The scene is\nan input.").Font("Baskerville").FontSize(40).LineHeight(.95).TextColor(ui.Hex("#ecf0df"))
-		ui.Text(c, "The left viewport is a Metal scene. Its flag is textured with the captured native UI face; WASD moves the camera, and dragging captures the pointer for mouse look.").FontSize(12).LineHeight(1.55).TextColor(ui.Hex("#91a9a0"))
-
-		ui.Box(c).Height(1).Background(ui.Hex("#294044"))
-		ui.Column(c).Gap(8).Children(func() {
-			ui.Text(c, "CAMERA").Font("monospace").FontSize(10).TextColor(ui.Hex("#6e9186"))
-			ui.Textf(c, "X %+.2f   Y %+.2f   Z %+.2f", a.cam.x, a.cam.y, a.cam.z).Font("monospace").FontSize(11).TextColor(ui.Hex("#ecf0df"))
-			ui.Textf(c, "YAW %+.1f°   PITCH %+.1f°", a.cam.yaw*180/math.Pi, a.cam.pitch*180/math.Pi).Font("monospace").FontSize(10).TextColor(ui.Hex("#91a9a0"))
+	ui.Column(c).Width(panelWidth).Shrink(0).FillHeight().Padding(24).Gap(18).
+		Background(ui.Hex("#151515")).Children(func() {
+		ui.Text(c, "FLAGSCAPE / STATIC").Font("monospace").FontSize(10).TextColor(ui.Hex("#bcbcbc"))
+		ui.Text(c, "A panel,\nnot a flag.").Font("Baskerville").FontSize(38).LineHeight(.95).TextColor(ui.Hex("#f0f0f0"))
+		ui.Text(c, "The viewport is a Metal scene. The panel is a captured native MyGo face.").FontSize(12).LineHeight(1.5).TextColor(ui.Hex("#929292"))
+		ui.Box(c).Height(1).Background(ui.Hex("#343434"))
+		ui.Column(c).Padding(16).Radius(12).Background(ui.Hex("#202020")).Gap(6).Children(func() {
+			ui.Text(c, "ACTIVATIONS").Font("monospace").FontSize(10).TextColor(ui.Hex("#929292"))
+			ui.Textf(c, "%02d", a.actions).Font("Baskerville").FontSize(48).TextColor(ui.Hex("#f4f4f4"))
 		})
 		ui.Column(c).Gap(5).Children(func() {
-			sliderLabel(c, "Cloth wind", a.wind)
-			ui.Slider(c.Key("wind"), &a.wind, 0, 1)
+			ui.Text(c, "CAMERA").Font("monospace").FontSize(10).TextColor(ui.Hex("#929292"))
+			ui.Textf(c, "X %+.2f  Y %+.2f  Z %+.2f", a.cam.x, a.cam.y, a.cam.z).Font("monospace").FontSize(10).TextColor(ui.Hex("#d8d8d8"))
+			ui.Textf(c, "YAW %+.1f°  PITCH %+.1f°", a.cam.yaw*180/math.Pi, a.cam.pitch*180/math.Pi).Font("monospace").FontSize(10).TextColor(ui.Hex("#929292"))
 		})
-		ui.Column(c).Gap(5).Children(func() {
-			sliderLabel(c, "Sunlight", a.light)
-			ui.Slider(c.Key("light"), &a.light, 0, 1)
-		})
-		ui.Checkbox(c.Key("animate"), &a.animate, "Cloth motion").FontSize(12).TextColor(ui.Hex("#d8e4d7"))
 		ui.Spacer(c)
-		ui.Row(c).Gap(8).Children(func() {
-			if ui.Button(c.Key("reset"), "Reset view").Clicked() {
-				a.cam = camera{z: 3.8, y: 0.04}
-				a.wind, a.light = .68, .72
-			}
-			ui.Text(c, "DRAG TO LOOK").Font("monospace").FontSize(10).TextColor(ui.Hex("#6e9186"))
-		})
-		ui.Text(c, "WASD  walk     Q/E  height\nDRAG  mouse-look     WHEEL  zoom").Font("monospace").FontSize(10).LineHeight(1.5).TextColor(ui.Hex("#6e9186"))
-		ui.Spacer(c)
-		ui.Text(c, "Native MyGo controls. No WebView. No CPU pixel upload in the Metal frame.").FontSize(10).LineHeight(1.4).TextColor(ui.Hex("#6e9186"))
-		ui.Text(c, "Cloth light, camera, and UI controls are independent.").FontSize(10).LineHeight(1.4).TextColor(ui.Hex("#6e9186"))
+		if ui.Button(c.Key("reset"), "Reset view").Clicked() {
+			a.cam = camera{z: 3.8, y: 0.16}
+		}
+		ui.Text(c, "WASD  walk     Q/E  height\nDRAG  mouse-look     WHEEL  zoom").Font("monospace").FontSize(10).LineHeight(1.5).TextColor(ui.Hex("#929292"))
+		ui.Text(c, "Click the large ACTIVATE control inside the panel. The click is ray-hittested through the 3D surface.").FontSize(10).LineHeight(1.45).TextColor(ui.Hex("#929292"))
 	})
 }
 
-func sliderLabel(c *ui.Context, label string, v float64) {
-	ui.Row(c).Children(func() {
-		ui.Text(c, label).FontSize(11).TextColor(ui.Hex("#91a9a0"))
-		ui.Spacer(c)
-		ui.Textf(c, "%d%%", int(v*100)).Font("monospace").FontSize(10).TextColor(ui.Hex("#d8e4d7"))
-	})
+func (a *app) hitAction(x, y float32) bool {
+	if a.viewBox.W <= 0 || a.viewBox.H <= 0 || a.hitBox.W <= 0 {
+		return false
+	}
+	u, v, ok := a.panelUV(x, y, a.viewBox.W, a.viewBox.H)
+	if !ok {
+		return false
+	}
+	px := a.viewBox.X + u*a.viewBox.W
+	py := a.viewBox.Y + v*a.viewBox.H
+	return px >= a.hitBox.X && px < a.hitBox.X+a.hitBox.W &&
+		py >= a.hitBox.Y && py < a.hitBox.Y+a.hitBox.H
 }
 
+func (a *app) panelUV(x, y, w, h float32) (float32, float32, bool) {
+	if w <= 0 || h <= 0 {
+		return 0, 0, false
+	}
+	aspect := w / h
+	halfH := float32(0.68)
+	halfW := halfH * aspect
+	ndcX := x/w*2 - 1
+	ndcY := 1 - y/h*2
+	fwd := v3{
+		float32(math.Sin(float64(a.cam.yaw))) * float32(math.Cos(float64(a.cam.pitch))),
+		float32(math.Sin(float64(a.cam.pitch))),
+		-float32(math.Cos(float64(a.cam.yaw))) * float32(math.Cos(float64(a.cam.pitch))),
+	}
+	right := normalize3(cross3(fwd, v3{0, 1, 0}))
+	up := normalize3(cross3(right, fwd))
+	rd := normalize3(add3(fwd, add3(scale3(right, ndcX*0.74*aspect), scale3(up, ndcY*0.74))))
+	if abs32(rd.z) <= 0.02 {
+		return 0, 0, false
+	}
+	cam := v3{a.cam.x, a.cam.y, a.cam.z}
+	front := a.intersectPanel(cam, rd, halfW, halfH, panelThickness)
+	back := a.intersectPanel(cam, rd, halfW, halfH, -panelThickness)
+	t := float32(-1)
+	if front > 0 && (back <= 0 || front < back) {
+		t = front
+	} else if back > 0 {
+		t = back
+	}
+	if t <= 0.01 {
+		return 0, 0, false
+	}
+	p := add3(cam, scale3(rd, t))
+	if abs32(p.x) > halfW || abs32(p.y-panelLift) > halfH {
+		return 0, 0, false
+	}
+	u := (p.x + halfW) / (2 * halfW)
+	v := (halfH - (p.y - panelLift)) / (2 * halfH)
+	if rd.z > 0 {
+		u = 1 - u
+	}
+	return u, v, true
+}
+
+func (a *app) intersectPanel(cam, rd v3, halfW, halfH, offset float32) float32 {
+	if abs32(rd.z) <= 0.02 {
+		return -1
+	}
+	t := (offset - cam.z) / rd.z
+	p := add3(cam, scale3(rd, t))
+	if t > 0.01 && abs32(p.x) <= halfW && abs32(p.y-panelLift) <= halfH {
+		return t
+	}
+	return -1
+}
+
+type v3 struct{ x, y, z float32 }
+
+func add3(a, b v3) v3           { return v3{a.x + b.x, a.y + b.y, a.z + b.z} }
+func scale3(a v3, s float32) v3 { return v3{a.x * s, a.y * s, a.z * s} }
+func cross3(a, b v3) v3 {
+	return v3{a.y*b.z - a.z*b.y, a.z*b.x - a.x*b.z, a.x*b.y - a.y*b.x}
+}
+func normalize3(a v3) v3 {
+	l := float32(math.Sqrt(float64(a.x*a.x + a.y*a.y + a.z*a.z)))
+	if l == 0 {
+		return v3{}
+	}
+	return scale3(a, 1/l)
+}
+func abs32(v float32) float32 {
+	if v < 0 {
+		return -v
+	}
+	return v
+}
 func clamp(v, lo, hi float32) float32 { return min(max(v, lo), hi) }
 
 func main() {

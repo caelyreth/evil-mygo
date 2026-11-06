@@ -1,28 +1,25 @@
 # Flagscape
 
-A full-bleed Metal 3D viewport on the left and native MyGo controls on the
-right. The scene is raymarched in a Metal compute shader; the flag's cloth
-lighting and wave are driven by the camera and wind uniforms.
+A static 3D panel inside a native Metal viewport. The left side is the
+scene; the right side is a compact grayscale MyGo sidebar.
 
 ```sh
 CGO_ENABLED=1 go run ./examples/flagscape
 ```
 
-The flag texture is a live MyGo face captured by `MetalCanvas.Effect`, not
-an image asset. The right panel is ordinary MyGo UI. `Element.Cache`
-keeps the face's source texture stable when only the cloth or camera
-changes.
+The panel face is live MyGo UI captured by `MetalCanvas.Effect`. It is
+rendered as a thin slab with front, back and side surfaces, so moving
+behind or around it still shows a solid panel.
 
 ## Controls
 
-- `WASD` walks the camera; `Q`/`E` lower and raise it.
+- `WASD` moves the camera; `Q`/`E` lowers and raises it.
 - Click and drag the viewport to capture the pointer for mouse look.
-- The wheel zooms the camera.
-- `Cloth motion`, wind, sunlight and `Reset view` are native controls.
+- The wheel moves the camera along Z.
+- The large `ACTIVATE` control is hit-tested through the 3D surface: the
+  pointer ray produces panel UVs, which are checked against the native
+  control's source-space rectangle.
+- The outer sidebar shows the activation count.
 
-The pointer capture is MyGo's native press capture: the viewport takes the
-press, so moves and release continue to it outside the surface. It is not
-a global system pointer lock.
-
-`CGO_ENABLED=0` builds and runs the native panel but leaves the Metal
-viewport blank; cgo is isolated to this example encoder.
+The panel does not animate and has no wind, cloth, or pole. `CGO_ENABLED=0`
+builds the native sidebar but leaves the Metal viewport blank.
