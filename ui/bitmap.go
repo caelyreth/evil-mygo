@@ -149,7 +149,7 @@ func decodeImage(data []byte) (*scene.Image, error) {
 // thread, in the view or through Window.Update, which redraws the window
 // to show it.
 func (b *Bitmap) Update(img image.Image) {
-	if b.img.Scene != nil || b.img.GPU != nil {
+	if b.img.Scene != nil || b.img.GPU != nil || b.img.External != nil {
 		return // a canvas's: Canvas.Draw draws it
 	}
 	// The picture is no longer data's, nor the image's NewBitmap
@@ -254,7 +254,7 @@ func (b *Bitmap) imageSize() (float32, float32) {
 // sampling a bitmap far larger than it shows sees only some of its
 // pixels, which shimmer, where a level averages them all.
 func (b *Bitmap) smaller(shrink float32) *scene.Image {
-	if b.img.Scene != nil || b.img.GPU != nil {
+	if b.img.Scene != nil || b.img.GPU != nil || b.img.External != nil {
 		return b.img // a canvas, whose pixels the GPU keeps
 	}
 	if shrink < 2 {

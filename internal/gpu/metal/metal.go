@@ -971,6 +971,12 @@ func (r *Renderer) syncAtlas(t *texture, a *scene.Atlas, format uint) error {
 // imageTexture returns the texture of an image, uploading it when new or
 // changed.
 func (r *Renderer) imageTexture(img *scene.Image) uintptr {
+	if img.External != nil {
+		if img.External.Texture == nil || img.External.Device != ptr(r.device) {
+			return 0
+		}
+		return uintptr(img.External.Texture)
+	}
 	if img.GPU != nil {
 		t := r.gpuCanvases[img.ID()]
 		if t == nil {

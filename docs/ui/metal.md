@@ -55,18 +55,36 @@ the source element, including `RotateY` and `Perspective`, map pointer and
 keyboard interaction along with the visual result. Coordinate changes
 made only inside the Metal shader do not remap interaction.
 
+## Imported textures
+
+`NewMetalTexture` accepts an `MTLTexture` that the application already
+owns:
+
+```go
+texture := ui.NewMetalTexture(width, height, frame.Device, externalTexture, owner)
+ui.Image(c, texture.Bitmap()).Fill()
+```
+
+The renderer samples the texture directly; it does not upload pixels or
+copy the texture. The native texture must be on the renderer's device,
+use RGBA8 with premultiplied alpha, and remain alive while it is shown.
+`owner` is retained with the image for a Go-side wrapper such as a cgo
+handle. Call `SetTexture` when the producer recreates a texture of the
+same size, and `Invalidate` when its contents change.
+
 ## Scope
 
 This is a same-device, same-process Metal seam. The application must use
 the device handed to it, and it must not commit the command buffer or
 wait for GPU completion. MyGo owns the command buffer, presentation and
-target lifetime.
+target lifetime. Imported textures remain owned by the application.
 
 On a renderer that is not Metal, or when the window falls back to CPU
-drawing, the bitmap is transparent. This API does not import a texture
-owned by another device or graphics API yet, and it does not change hit
-testing, focus, input methods or accessibility geometry. Those are
-separate composition and interaction boundaries.
+drawing, the bitmap is transparent. The API supports same-device Metal
+textures, not cross-device or cross-API imports yet. It does not change
+hit testing, focus, input methods or accessibility geometry for
+shader-only coordinate changes. Those are separate composition and
+interaction boundaries.
 
 The [Metal canvas example](../../examples/metal-canvas) uses cgo only in
 the example to encode a compute shader. The framework's default build

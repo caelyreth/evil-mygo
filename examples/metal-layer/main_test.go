@@ -23,8 +23,16 @@ func TestLiveNativeLayerControls(t *testing.T) {
 	if !a.done || !tt.HasText("Acknowledged") {
 		t.Fatal("the native button did not update the source tree")
 	}
+	before, ok := tt.Access("Display name")
+	if !ok {
+		t.Fatal("the native source field has no accessibility node")
+	}
 	a.tilt = 0.85
 	tt.Frame()
+	after, ok := tt.Access("Display name")
+	if !ok || after.Bounds == before.Bounds {
+		t.Fatalf("field accessibility bounds before %+v, after %+v", before.Bounds, after.Bounds)
+	}
 	if err := tt.Click("Display name"); err != nil {
 		t.Fatal(err)
 	}

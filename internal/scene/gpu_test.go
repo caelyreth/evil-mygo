@@ -29,3 +29,10 @@ func TestGPUCanvasResizeKeepsNoPixels(t *testing.T) {
 		t.Fatalf("resized GPU canvas is %d×%d with pixels %v", img.W, img.H, img.Pixels() != nil)
 	}
 }
+
+func TestExternalImageHasNoPixels(t *testing.T) {
+	img := NewExternalImage(4, 3, nil, nil, "owner")
+	if img.W != 4 || img.H != 3 || img.Pixels() != nil || img.External == nil {
+		t.Fatalf("external image is %d×%d pixels=%v external=%v", img.W, img.H, img.Pixels() != nil, img.External != nil)
+	}
+}

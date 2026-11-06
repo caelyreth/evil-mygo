@@ -456,13 +456,13 @@ func (s *Scene) eachShown(fn func(*Image)) {
 
 func (s *Scene) eachShownAny(fn func(*Image)) {
 	for i := range s.Ops {
-		if op := &s.Ops[i]; op.Kind == OpImage && op.Image != nil && (op.Image.Scene != nil || op.Image.GPU != nil) {
+		if op := &s.Ops[i]; op.Kind == OpImage && op.Image != nil && (op.Image.Scene != nil || op.Image.GPU != nil || op.Image.External != nil) {
 			fn(op.Image)
 		}
 	}
 	for i := range s.Effects {
 		for _, img := range s.Effects[i].Images {
-			if img != nil && (img.Scene != nil || img.GPU != nil) {
+			if img != nil && (img.Scene != nil || img.GPU != nil || img.External != nil) {
 				fn(img)
 			}
 		}
@@ -507,6 +507,9 @@ type Image struct {
 	// GPU, in a native graphics canvas, is rendered by the platform's GPU
 	// renderer rather than uploaded from Pix or drawn from Scene.
 	GPU *GPUCanvas
+	// External is a texture owned by the application, which the platform's
+	// GPU renderer samples directly.
+	External *ExternalTexture
 	// Transient marks a canvas drawn anew in every frame that shows it,
 	// as an element's effect layer: renderers free its texture once
 	// frames stop drawing it, rather than once it is collected, which
@@ -543,6 +546,13 @@ type GPUCanvas struct {
 	Source weak.Pointer[Image]
 }
 
+// ExternalTexture is an application-owned native texture sampled by a
+// GPU renderer. The application keeps the native object alive.
+type ExternalTexture struct {
+	Device, Texture unsafe.Pointer
+	KeepAlive       any
+}
+
 // NewCanvas returns a w×h image that renderers draw from a scene of its
 // own, cleared to transparent: render to texture.
 func NewCanvas(w, h int) *Image {
@@ -569,6 +579,14 @@ func NewImageRGBA(w, h int, pix []byte) *Image {
 // CPU pixels or scene.
 func NewGPUCanvas(w, h int, draw func(GPUFrame) error) *Image {
 	return &Image{id: lastImageID.Add(1), version: 1, W: w, H: h, GPU: &GPUCanvas{Draw: draw}}
+}
+
+// NewExternalImage returns a w×h image sampling texture, owned by keepAlive.
+// Device is the native device that owns texture; renderers reject a texture
+// from another device.
+func NewExternalImage(w, h int, device, texture unsafe.Pointer, keepAlive any) *Image {
+	return &Image{id: lastImageID.Add(1), version: 1, W: w, H: h,
+		External: &ExternalTexture{Device: device, Texture: texture, KeepAlive: keepAlive}}
 }
 
 // ID identifies the image for texture caches.
@@ -603,7 +621,7 @@ func (m *Image) Uploaded() {
 // clip does not leave a new texture in the cache on every frame.
 func (m *Image) Resize(w, h int) {
 	m.W, m.H = w, h
-	if m.GPU != nil {
+	if m.GPU != nil || m.External != nil {
 		m.Changed()
 		return
 	}
