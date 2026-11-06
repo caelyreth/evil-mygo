@@ -42,3 +42,14 @@ func TestUILayerResizeAndClose(t *testing.T) {
 		t.Fatal("closed layer kept its scene")
 	}
 }
+
+func TestUILayerAccessibility(t *testing.T) {
+	name := "Ada"
+	layer := NewUILayer(func(c *Context) {
+		TextInput(c.Key("name"), &name).Label("Name")
+	}, 180, 60)
+	defer layer.Close()
+	if a, ok := layer.Access("Name"); !ok || a.Role != RoleTextField {
+		t.Fatalf("access = %+v, %v", a, ok)
+	}
+}

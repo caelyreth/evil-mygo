@@ -113,7 +113,7 @@ type AccessInfo struct {
 // screen readers would get, whether or not one reads the window, and
 // reading it changes nothing.
 func (t *Tester) Access(name string) (AccessInfo, bool) {
-	return t.access(func(_ Role, n *platform.AccessNode) bool { return n.Label == name })
+	return rtAccess(t.rt, func(_ Role, n *platform.AccessNode) bool { return n.Label == name })
 }
 
 // AccessByRole returns what assistive technology sees of the first
@@ -121,7 +121,7 @@ func (t *Tester) Access(name string) (AccessInfo, bool) {
 // Testing Library's getByRole(role, {name}) finds it; "" for name finds
 // the first element of the role whatever its name.
 func (t *Tester) AccessByRole(r Role, name string) (AccessInfo, bool) {
-	return t.access(func(role Role, n *platform.AccessNode) bool {
+	return rtAccess(t.rt, func(role Role, n *platform.AccessNode) bool {
 		return role == r && (name == "" || n.Label == name)
 	})
 }
@@ -129,10 +129,14 @@ func (t *Tester) AccessByRole(r Role, name string) (AccessInfo, bool) {
 // access describes the last frame as it would for assistive technology,
 // and returns the first node that match takes, given its role.
 func (t *Tester) access(match func(r Role, n *platform.AccessNode) bool) (AccessInfo, bool) {
+	return rtAccess(t.rt, match)
+}
+
+func rtAccess(rt *engine, match func(r Role, n *platform.AccessNode) bool) (AccessInfo, bool) {
 	// Reading the window's focus would have its next change rebuild the
 	// frame.
-	defer func(read bool) { t.rt.focusRead = read }(t.rt.focusRead)
-	tree := t.rt.windowAccess(t.rt.accessTree())
+	defer func(read bool) { rt.focusRead = read }(rt.focusRead)
+	tree := rt.windowAccess(rt.accessTree())
 	// The roles elements were given, by their IDs: several may share a
 	// node's role, as a list box and a list do.
 	given := map[uint64]Role{}
@@ -150,7 +154,7 @@ func (t *Tester) access(match func(r Role, n *platform.AccessNode) bool) (Access
 			walk(ch)
 		}
 	}
-	if root := t.rt.c.root; root != nil {
+	if root := rt.c.root; root != nil {
 		walk(root)
 	}
 	for i := range tree.Nodes {

@@ -133,6 +133,40 @@ func (l *UILayer) HandleInput(ev InputEvent) bool {
 	return l.rt.event(pe)
 }
 
+// Access returns what assistive technology sees of the layer's last
+// frame, by accessible name, as Tester.Access does.
+func (l *UILayer) Access(name string) (AccessInfo, bool) {
+	if l.closed {
+		return AccessInfo{}, false
+	}
+	return rtAccess(l.rt, func(_ Role, n *platform.AccessNode) bool { return n.Label == name })
+}
+
+// AccessByRole returns what assistive technology sees of the layer's last
+// frame, by role and accessible name, as Tester.AccessByRole does.
+func (l *UILayer) AccessByRole(r Role, name string) (AccessInfo, bool) {
+	if l.closed {
+		return AccessInfo{}, false
+	}
+	return rtAccess(l.rt, func(role Role, n *platform.AccessNode) bool {
+		return role == r && (name == "" || n.Label == name)
+	})
+}
+
+// TextCaret returns where an input method composes in the layer, and
+// whether one would, as Tester.TextCaret does.
+func (l *UILayer) TextCaret() (Rect, bool) {
+	c := l.host.ime.Caret
+	return Rect{float32(c.X), float32(c.Y), float32(c.W), float32(c.H)},
+		l.host.ime.Active && !l.host.ime.NoInputMethod
+}
+
+// TextInputActive reports whether the layer's focused element takes text
+// and whether it turned input methods off.
+func (l *UILayer) TextInputActive() (active, noInputMethod bool) {
+	return l.host.ime.Active, l.host.ime.NoInputMethod
+}
+
 // Close drops the layer's engine and rendered resources.
 func (l *UILayer) Close() {
 	if l.closed {

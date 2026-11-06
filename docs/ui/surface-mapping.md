@@ -56,4 +56,6 @@ and accessibility state. `Render` snapshots the display list, so later
 frames do not mutate a texture that another compositor is still showing.
 Use `ScreenToSurface` to turn a scene hit into a layer coordinate before
 calling `HandleInput`. Call `NeedsFrame` after rendering if the layer's
-view requested another frame.
+view requested another frame. `Access`, `AccessByRole`, `TextCaret` and
+`TextInputActive` expose the layer's accessibility and text-input state
+to the host that presents it.
