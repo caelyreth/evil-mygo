@@ -11,9 +11,11 @@ wire protocol, TypeScript generation, and the checklist for adding features.
 
 ## Hard rules
 
-- **No cgo.** Everything must build with `CGO_ENABLED=0`. Call native code
-  through purego (`internal/darwin`, `internal/linux`) or `syscall`
-  (`internal/windows`), never `import "C"`.
+- **No cgo by default.** The core must build with `CGO_ENABLED=0`. Call
+  native code through purego (`internal/darwin`, `internal/linux`) or
+  `syscall` (`internal/windows`), never `import "C"`. The macOS native
+  WebGPU exception is isolated behind its build tags and cgo is used only
+  where wgpu-native requires it.
 - **Bun is dev tooling only.** The repository is a Bun workspace
   (`packages/bridge`, `packages/runtime`, `packages/cli` with its platform
   packages, the plugins' packages in `plugins/`, and examples with a frontend, which keep it at their root like
