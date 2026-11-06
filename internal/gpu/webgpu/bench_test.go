@@ -94,6 +94,23 @@ func benchRender(b *testing.B, s *scene.Scene) {
 // reusable content target and copies it to a presentation-sized target,
 // exercising the scissored clear, clipped batches and native copy pass.
 func BenchmarkRenderPartial(b *testing.B) {
+	part := &gpu.Part{Rects: []gpu.Scissor{{Left: 100, Top: 100, Right: 300, Bottom: 260}}}
+	benchRenderPart(b, false, part)
+}
+
+// BenchmarkRenderPartialUnchanged measures the copy-only path of a frame
+// whose retained content did not change.
+func BenchmarkRenderPartialUnchanged(b *testing.B) {
+	benchRenderPart(b, true, nil)
+}
+
+// BenchmarkRenderPartialFull measures a whole-scene redraw in the partial
+// path, where gpu.Part.Set prefers drawing the frame whole.
+func BenchmarkRenderPartialFull(b *testing.B) {
+	benchRenderPart(b, false, nil)
+}
+
+func benchRenderPart(b *testing.B, copyOnly bool, part *gpu.Part) {
 	s := gputest.BoxesScene(1280, 800, 600, false)
 	g, err := Open()
 	if err != nil {
@@ -163,16 +180,22 @@ func BenchmarkRenderPartial(b *testing.B) {
 	}
 	command.Release()
 	r.FinishFrame()
-	part := &gpu.Part{Rects: []gpu.Scissor{{Left: 100, Top: 100, Right: 300, Bottom: 260}}}
 	b.ResetTimer()
 	for b.Loop() {
 		encoder, err := g.Device().CreateCommandEncoder(nil)
 		if err != nil {
 			b.Fatal(err)
 		}
-		if err := r.RenderTargetPart(s, encoder, content, contentView, part); err != nil {
-			encoder.Release()
-			b.Fatal(err)
+		if !copyOnly {
+			if part != nil {
+				if err := r.RenderTargetPart(s, encoder, content, contentView, part); err != nil {
+					encoder.Release()
+					b.Fatal(err)
+				}
+			} else if err := r.RenderTarget(s, encoder, content, contentView); err != nil {
+				encoder.Release()
+				b.Fatal(err)
+			}
 		}
 		if err := r.copyTexture(encoder, contentView, view, s.Width, s.Height); err != nil {
 			encoder.Release()

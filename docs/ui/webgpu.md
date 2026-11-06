@@ -79,7 +79,11 @@ to the presented surface. This does not depend on a swapchain preserving
 its contents. The offscreen `Renderer.RenderTargetPart` primitive is
 always available for targets whose contents the application owns. The copy
 has a fixed full-surface cost, so the mode remains opt-in; use it when the
-damage is small relative to the work saved in a complex frame.
+damage is small relative to the work saved in a complex frame. It also
+costs one full-size content texture. `BenchmarkRenderPartial` covers the
+small-damage path, `BenchmarkRenderPartialUnchanged` the copy-only path,
+and `BenchmarkRenderPartialFull` the fallback where damage is too large
+to scissor.
 
 ## Native UI
 
@@ -184,12 +188,12 @@ rasterizer on WebGPU.
 The direct Metal renderer and Metal-specific public APIs have been
 removed. Benchmark coverage now includes the renderer's empty, box,
 translated, sprite-heavy, fill-rate and partial paths, plus the native UI
-stress scenes. These WebGPU paths remain:
+stress scenes. Partial presentation remains an explicit opt-in because
+it trades one full-size texture and a full-surface copy for fewer redrawn
+pixels; the appropriate choice depends on the application's frame shape.
 
-- deciding from workload measurements whether native-surface damage should
-  remain opt-in or become adaptive by default;
-- removal of the `nofakecgo` requirement for fully cgo-free WebGPU builds,
-  which is blocked by the upstream callback limitation below.
+The remaining cgo-free build issue is removal of the `nofakecgo`
+requirement, which is blocked by the upstream callback limitation below.
 
 ## `purego` build tag
 
