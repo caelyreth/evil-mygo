@@ -96,3 +96,15 @@ func TestUILayerTextInputThroughSurface(t *testing.T) {
 		t.Fatal("text input is not active after the surface click")
 	}
 }
+
+func TestUILayerCanFeedMetalCanvasSource(t *testing.T) {
+	layer := NewUILayer(func(c *Context) {
+		Text(c, "Layer source")
+	}, 120, 40)
+	defer layer.Close()
+	canvas := NewMetalCanvas(120, 40, nil)
+	canvas.SetSource(layer.Bitmap())
+	if got := canvas.img.GPU.Source.Value(); got != layer.img {
+		t.Fatalf("Metal source = %p, want layer image %p", got, layer.img)
+	}
+}

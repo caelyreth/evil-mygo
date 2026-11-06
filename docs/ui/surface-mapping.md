@@ -65,3 +65,13 @@ snapshot and should match the version of the `SurfaceMap` used for input.
 while a press moves beyond the surface. It never performs GPU picking or
 readback; the supplied `SurfaceMap` must be updated from the same scene
 state that is being rendered.
+
+A `UILayer.Bitmap()` can also be passed to `MetalCanvas.SetSource`, so
+the same live layer can be sampled by an external Metal pass without
+first being attached to the window tree:
+
+```go
+layer := ui.NewUILayer(buildPanel, 900, 500)
+metal := ui.NewMetalCanvas(900, 500, drawMetalPass)
+metal.SetSource(layer.Bitmap())
+```
