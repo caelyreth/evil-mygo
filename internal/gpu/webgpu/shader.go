@@ -3,9 +3,10 @@ package webgpu
 // sceneShader is the beginning of the WGSL port of the native scene
 // shader. It reads the same fourteen-float4 gpu.Instance stream as the
 // Metal, Direct3D and OpenGL renderers. This stage covers solid rounded
-// fills, linear gradients, solid borders, projective transforms, image
-// batches and grayscale mask glyphs; unsupported scene features are
-// rejected by Renderer.Render until their paths are ported.
+// fills, linear gradients, solid borders, non-continuous shadows,
+// projective transforms, image batches and grayscale mask glyphs;
+// unsupported scene features are rejected by Renderer.Render until their
+// paths are ported.
 const sceneShader = `
 struct Globals {
 	size: vec4<f32>,
@@ -42,6 +43,9 @@ struct VertexOut {
 	@location(9) @interpolate(flat) border: vec4<f32>,
 	@location(10) @interpolate(flat) inner: vec4<f32>,
 	@location(11) @interpolate(flat) uv_border: vec4<f32>,
+	@location(12) world: vec3<f32>,
+	@location(13) @interpolate(flat) clip_mode: f32,
+	@location(14) @interpolate(flat) clip_radii: vec4<f32>,
 }
 
 @group(0) @binding(0) var<uniform> globals: Globals;
@@ -50,6 +54,7 @@ struct VertexOut {
 @group(0) @binding(3) var mask_tex: texture_2d<f32>;
 @group(0) @binding(4) var color_tex: texture_2d<f32>;
 @group(0) @binding(5) var texture_sampler: sampler;
+@group(0) @binding(6) var clip_tex: texture_2d<f32>;
 
 fn frame_h(inst: Instance, p: vec2<f32>) -> vec3<f32> {
 	return vec3<f32>(
@@ -70,6 +75,9 @@ fn vs(
 	let kind = inst.params.x;
 	if (kind < 0.5 || kind > 5.5) {
 		r = vec4<f32>(r.xy - vec2<f32>(1.0), r.zw + vec2<f32>(2.0));
+	} else if (kind < 1.5) {
+		let e = 3.0 * inst.params.z + 1.0;
+		r = vec4<f32>(r.xy - vec2<f32>(e), r.zw + vec2<f32>(2.0 * e));
 	}
 	var p = r.xy + corner * r.zw;
 	var h = frame_h(inst, p);
@@ -102,6 +110,9 @@ fn vs(
 	out.border = inst.border;
 	out.inner = inst.inner;
 	out.uv_border = inst.uv;
+	out.world = h;
+	out.clip_mode = inst.transform1.w;
+	out.clip_radii = inst.clip_radii;
 	return out;
 }
 
@@ -122,12 +133,29 @@ fn coverage(d: f32) -> f32 {
 	return clamp(0.5 - d, 0.0, 1.0);
 }
 
-fn clip_coverage(p: vec2<f32>, clip: vec4<f32>) -> f32 {
+fn clip_rect(p: vec2<f32>, clip: vec4<f32>) -> f32 {
 	if (clip.z <= 0.0 || clip.w <= 0.0) {
 		return 1.0;
 	}
 	let c = saturate(min(clip.xy + clip.zw, p + vec2<f32>(0.5)) - max(clip.xy, p - vec2<f32>(0.5)));
 	return c.x * c.y;
+}
+
+fn clip_coverage(in: VertexOut) -> f32 {
+	if (in.clip_mode > 2.5) {
+		return 1.0;
+	}
+	let world = in.world.xy / in.world.z;
+	if (in.clip_mode < 0.5) {
+		return clip_rect(world, in.clip);
+	}
+	if (in.clip_mode > 1.5) {
+		return clip_rect(in.local, in.clip) *
+			textureSampleLevel(clip_tex, texture_sampler,
+				clamp((world - in.clip.xy) / in.clip_radii.zw, vec2<f32>(0.0), vec2<f32>(1.0)), 0.0).a;
+	}
+	return textureSampleLevel(clip_tex, texture_sampler,
+		clamp((world - in.clip.xy) / in.clip.zw, vec2<f32>(0.0), vec2<f32>(1.0)), 0.0).a;
 }
 
 fn tint(c: vec4<f32>, t: vec4<f32>) -> vec4<f32> {
@@ -148,11 +176,48 @@ fn paint(p: vec2<f32>, mode: f32, c1: vec4<f32>, c2: vec4<f32>, grad: vec4<f32>)
 	return mix(premul(c1), premul(c2), t);
 }
 
+fn erf(x: f32) -> f32 {
+	let s = sign(x);
+	let a = abs(x);
+	var v = 1.0 + (0.278393 + (0.230389 + 0.078108 * (a * a)) * a) * a;
+	v *= v;
+	return s - s / (v * v);
+}
+
+fn gaussian(x: f32, sigma: f32) -> f32 {
+	return exp(-(x * x) / (2.0 * sigma * sigma)) / (2.50662827463 * sigma);
+}
+
+fn shadow_x(x: f32, y: f32, sigma: f32, corner: f32, half: vec2<f32>) -> f32 {
+	let delta = min(half.y - corner - abs(y), 0.0);
+	let curved = half.x - corner + sqrt(max(0.0, corner * corner - delta * delta));
+	let lo = 0.5 + 0.5 * erf((x - curved) * (sqrt(0.5) / sigma));
+	let hi = 0.5 + 0.5 * erf((x + curved) * (sqrt(0.5) / sigma));
+	return hi - lo;
+}
+
+fn box_shadow(p: vec2<f32>, rect: vec4<f32>, sigma: f32, radii: vec4<f32>) -> f32 {
+	let r = abs(radii);
+	let corner = max(max(r.x, r.y), max(r.z, r.w));
+	let half = rect.zw * 0.5;
+	let q = p - rect.xy - half;
+	let start = clamp(-3.0 * sigma, q.y - half.y, q.y + half.y);
+	let to = clamp(3.0 * sigma, q.y - half.y, q.y + half.y);
+	let dy = (to - start) / 4.0;
+	var y = start + dy * 0.5;
+	var sum = 0.0;
+	for (var n = 0; n < 4; n++) {
+		sum += shadow_x(q.x, q.y - y, sigma, corner, half) * gaussian(y, sigma) * dy;
+		y += dy;
+	}
+	return sum;
+}
+
 @fragment
 fn fs(in: VertexOut) -> @location(0) vec4<f32> {
 	let kind = in.params.x;
 	let shape = coverage(sd_round_rect(in.local, in.rect, max(in.radii, vec4<f32>(0.0))));
-	let clip = clip_coverage(in.local, in.clip);
+	let clip = clip_coverage(in);
 	let opacity = in.params.w * shape * clip;
 	if (kind < 0.5) {
 		var c = paint(in.local, in.params.z, in.color, in.color2, in.grad) * opacity;
@@ -168,6 +233,18 @@ fn fs(in: VertexOut) -> @location(0) vec4<f32> {
 			c = border + c * (1.0 - border.a);
 		}
 		return c;
+	}
+	if (kind < 1.5) {
+		let sigma = in.params.z;
+		var shadow = shape;
+		if (sigma > 0.0) {
+			shadow = box_shadow(in.local, in.rect, sigma, in.radii);
+		}
+		let cast_rect = in.uv_border;
+		if (cast_rect.z > 0.0 && cast_rect.w > 0.0) {
+			shadow *= 1.0 - coverage(sd_round_rect(in.local, cast_rect, max(in.inner, vec4<f32>(0.0))));
+		}
+		return premul(in.color) * shadow * in.params.w * clip;
 	}
 	if (kind < 2.5) {
 		let a = textureSampleLevel(mask_tex, texture_sampler, clamp(in.tex, vec2<f32>(0.0), vec2<f32>(1.0)), 0.0).r;

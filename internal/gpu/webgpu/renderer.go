@@ -19,8 +19,9 @@ const (
 
 // Renderer draws the growing WebGPU portion of MyGo's scene language. The
 // first stage handles rounded fills, linear gradients, solid borders,
-// projective transforms, image batches and grayscale mask glyphs. It
-// rejects features not ported yet instead of silently dropping them.
+// non-continuous shadows, projective transforms, image batches and
+// grayscale mask glyphs. It rejects features not ported yet instead of
+// silently dropping them.
 type Renderer struct {
 	gpu      *GPU
 	format   wgpu.TextureFormat
@@ -38,10 +39,11 @@ type Renderer struct {
 	defaultImage *textureEntry
 	defaultMask  *textureEntry
 	defaultColor *textureEntry
+	defaultClip  *textureEntry
 	mask         *textureEntry
 	color        *textureEntry
 	images       map[uintptr]*textureEntry
-	binds        map[*wgpu.TextureView]*wgpu.BindGroup
+	binds        map[bindKey]*wgpu.BindGroup
 }
 
 // NewRenderer creates a scene renderer for targets of format.
@@ -121,9 +123,13 @@ func NewRenderer(g *GPU, format wgpu.TextureFormat) (*Renderer, error) {
 		r.Release()
 		return nil, err
 	}
+	if r.defaultClip, err = r.solidTexture("MyGo empty clip", wgpu.TextureFormatRGBA8Unorm, [4]byte{255, 255, 255, 255}); err != nil {
+		r.Release()
+		return nil, err
+	}
 	r.mask, r.color = r.defaultMask, r.defaultColor
 	r.images = map[uintptr]*textureEntry{}
-	r.binds = map[*wgpu.TextureView]*wgpu.BindGroup{}
+	r.binds = map[bindKey]*wgpu.BindGroup{}
 	if err := r.ensureInstances(initialCapacity); err != nil {
 		r.Release()
 		return nil, err
@@ -216,7 +222,15 @@ func (r *Renderer) Render(s *scene.Scene, encoder *wgpu.CommandEncoder, view *wg
 				}
 				image = t.view
 			}
-			bind, err := r.bindFor(image)
+			clip := r.defaultClip.view
+			if batch.ClipMask != 0 {
+				t := r.images[batch.ClipMask]
+				if t == nil {
+					return fmt.Errorf("webgpu: batch references unknown clip mask %#x", batch.ClipMask)
+				}
+				clip = t.view
+			}
+			bind, err := r.bindFor(image, clip)
 			if err != nil {
 				return fmt.Errorf("webgpu: scene bind group: %w", err)
 			}
@@ -236,7 +250,7 @@ func (r *Renderer) Render(s *scene.Scene, encoder *wgpu.CommandEncoder, view *wg
 
 func supported(batches []gpu.Batch, instances []gpu.Instance) error {
 	for _, b := range batches {
-		if b.ClipMask != 0 || b.Effect != nil || b.Shader != nil || b.Hole {
+		if b.Effect != nil || b.Shader != nil || b.Hole {
 			return errors.New("webgpu: scene feature not ported yet")
 		}
 	}
@@ -249,6 +263,11 @@ func supported(batches []gpu.Batch, instances []gpu.Instance) error {
 			}
 			if in.Radii[0] < 0 || in.Radii[1] < 0 || in.Radii[2] < 0 || in.Radii[3] < 0 {
 				return errors.New("webgpu: continuous corners are not ported yet")
+			}
+		case kind >= 1 && kind < 2:
+			if in.Params[1] != 0 || in.Radii[0] < 0 || in.Radii[1] < 0 ||
+				in.Radii[2] < 0 || in.Radii[3] < 0 {
+				return errors.New("webgpu: this shadow is not ported yet")
 			}
 		case kind >= 2 && kind <= 5:
 			if kind < 4.5 && in.Params[2] > 1 {
@@ -318,6 +337,10 @@ func (r *Renderer) Release() {
 	if r.defaultColor != nil {
 		r.defaultColor.Release()
 		r.defaultColor = nil
+	}
+	if r.defaultClip != nil {
+		r.defaultClip.Release()
+		r.defaultClip = nil
 	}
 	if r.instBuf != nil {
 		r.instBuf.Release()

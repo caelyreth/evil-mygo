@@ -18,6 +18,11 @@ type textureEntry struct {
 	version    uint64
 }
 
+type bindKey struct {
+	image *wgpu.TextureView
+	clip  *wgpu.TextureView
+}
+
 func (t *textureEntry) Release() {
 	if t == nil {
 		return
@@ -177,11 +182,15 @@ func (r *Renderer) syncImage(img *scene.Image) (uintptr, error) {
 	return token, nil
 }
 
-func (r *Renderer) bindFor(image *wgpu.TextureView) (*wgpu.BindGroup, error) {
+func (r *Renderer) bindFor(image, clip *wgpu.TextureView) (*wgpu.BindGroup, error) {
 	if image == nil {
 		image = r.defaultImage.view
 	}
-	if bind := r.binds[image]; bind != nil {
+	if clip == nil {
+		clip = r.defaultClip.view
+	}
+	key := bindKey{image: image, clip: clip}
+	if bind := r.binds[key]; bind != nil {
 		return bind, nil
 	}
 	bind, err := r.gpu.device.CreateBindGroupSimple(r.layout, []wgpu.BindGroupEntry{
@@ -191,17 +200,18 @@ func (r *Renderer) bindFor(image *wgpu.TextureView) (*wgpu.BindGroup, error) {
 		wgpu.TextureBindingEntry(3, r.mask.view),
 		wgpu.TextureBindingEntry(4, r.color.view),
 		wgpu.SamplerBindingEntry(5, r.sampler),
+		wgpu.TextureBindingEntry(6, clip),
 	})
 	if err != nil {
 		return nil, err
 	}
-	r.binds[image] = bind
+	r.binds[key] = bind
 	return bind, nil
 }
 
 func (r *Renderer) forgetBindings() {
-	for view, bind := range r.binds {
+	for key, bind := range r.binds {
 		bind.Release()
-		delete(r.binds, view)
+		delete(r.binds, key)
 	}
 }
