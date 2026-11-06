@@ -1100,6 +1100,16 @@ func TestRendererEnablesWideColorsForRGBA16Target(t *testing.T) {
 	if !renderer.root.builder.Wide {
 		t.Fatal("RGBA16 target did not enable wide shader colors")
 	}
+	command, err := encoder.Finish(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := g.Queue().Submit(command); err != nil {
+		command.Release()
+		t.Fatal(err)
+	}
+	command.Release()
+	renderer.FinishFrame()
 }
 
 func TestRendererSamplesBackdrop(t *testing.T) {
