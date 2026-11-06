@@ -28,6 +28,15 @@ func TestLiveNativeLayerControls(t *testing.T) {
 	if !a.done || !tt.HasText("Acknowledged") {
 		t.Fatal("the native button did not update the source tree")
 	}
+	scroll, ok := tt.Find("Recent activity list")
+	if !ok {
+		t.Fatal("the native scroll area is not visible")
+	}
+	tt.Scroll(scroll.X+scroll.W/2, scroll.Y+scroll.H/2, 0, 20)
+	tt.Frame()
+	if a.scroll.Y <= 0 {
+		t.Fatalf("scroll offset after wheel = %+v, want a scrolled content area", a.scroll)
+	}
 	before, ok := tt.Access("Display name")
 	if !ok {
 		t.Fatal("the native source field has no accessibility node")

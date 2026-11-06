@@ -22,6 +22,7 @@ type app struct {
 	tilt    float64
 	name    string
 	volume  float64
+	scroll  ui.ScrollState
 	done    bool
 }
 
@@ -103,6 +104,17 @@ func (a *app) form(c *ui.Context) {
 				ui.Textf(c, "%d%%", int(a.volume*100)).Font("monospace").FontSize(11).TextColor(ui.Hex("#507c70"))
 			})
 			ui.Slider(c.Key("volume"), &a.volume, 0, 1)
+		})
+		ui.Column(c).Gap(3).Children(func() {
+			ui.Text(c, "Recent activity").FontSize(12).TextColor(t.TextMuted)
+			ui.Scroll(c).TrackScroll(&a.scroll).Height(55).Label("Recent activity list").Children(func() {
+				for i, s := range []string{"Listening session started", "Playlist updated", "Volume adjusted", "Marked for later", "Shared with a friend", "Saved to library"} {
+					ui.Row(c).Height(18).Shrink(0).Children(func() {
+						ui.Textf(c, "%02d", i+1).Font("monospace").FontSize(10).TextColor(ui.Hex("#a55b3d"))
+						ui.Text(c, s).FontSize(11).TextColor(ui.Hex("#697168"))
+					})
+				}
+			})
 		})
 		ui.Row(c).Gap(9).Children(func() {
 			if ui.PrimaryButton(c.Key("done"), "Acknowledge").Label("Acknowledge profile").Clicked() {
