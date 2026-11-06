@@ -551,11 +551,23 @@ type GPUCanvas struct {
 type ExternalTexture struct {
 	Device, Texture unsafe.Pointer
 	KeepAlive       any
+	Sync            ExternalTextureSync
 	// OwnerVersion changes when SetTexture replaces KeepAlive. Retired
 	// holds owners whose replaceable texture may still be read by a frame
 	// in flight.
 	OwnerVersion uint64
 	Retired      []any
+}
+
+// ExternalTextureSync lets a GPU renderer order its reads with an
+// application-owned texture's producer. Wait runs before the texture is
+// first sampled in a command buffer; Signal runs after all sampling in
+// that command buffer has been encoded. Both receive the renderer's
+// device, command buffer and texture as native handles. Neither may
+// commit or wait on the command buffer.
+type ExternalTextureSync struct {
+	Wait   func(device, commandBuffer, texture unsafe.Pointer) error
+	Signal func(device, commandBuffer, texture unsafe.Pointer) error
 }
 
 // NewCanvas returns a w×h image that renderers draw from a scene of its

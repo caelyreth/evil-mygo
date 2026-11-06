@@ -4206,8 +4206,12 @@ either.
   it does not commit or wait. `ui.MetalTexture` also lets an
   application-owned same-device `MTLTexture` be sampled without an
   upload. Other renderers leave these images transparent. This is the
-  current opt-in Metal interoperability seam; it does not yet map
-  interaction through a non-affine presentation.
+  current opt-in Metal interoperability seam. An imported texture may
+  provide `MetalTextureSync.Wait`/`Signal` callbacks to order reads with
+  another command buffer or queue. Off-window native UI and non-affine
+  interaction are separate opt-in contracts: `ui.NewUILayer`,
+  `ui.SurfaceMap`, `UILayer.HandleSurfaceInput` and
+  `UILayer.TextInputClient`.
 - **Effects** (`scene.Effect`) are drawings that packages outside the
   renderers define, as the official plugins do (the glass plugin's Liquid
   Glass): a fragment shader for each GPU renderer, in Metal Shading

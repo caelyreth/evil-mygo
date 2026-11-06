@@ -475,6 +475,11 @@ type Renderer struct {
 	gpuCanvases map[uint64]*gpuCanvasTexture
 	// externals are application-owned textures, by image ID.
 	externals map[uint64]*externalTexture
+	// usedExternals are the synchronized external textures that must see
+	// Signal after this frame's sampling is encoded.
+	usedExternals []*scene.ExternalTexture
+	externalSeen  map[uint64]bool
+	frameCB       id
 	// drawingGPU marks GPU canvases whose source chain is being built.
 	drawingGPU map[uint64]bool
 	// blurred are the textures of the images the frame draws blurred
@@ -490,6 +495,7 @@ type Renderer struct {
 	inflight    [ringSize]id
 	slot, inUse int
 	err         error
+	frameErr    error
 	checked     bool
 
 	// lastRender is when the last frame drew; trimTimer trims the
@@ -1004,6 +1010,9 @@ func (r *Renderer) imageTexture(img *scene.Image) uintptr {
 		t.ownerVersion, t.device, t.texture = img.External.OwnerVersion, img.External.Device, img.External.Texture
 		t.keepAlive = img.External.KeepAlive
 		t.lastFrame = r.frame
+		if !r.useExternal(img) {
+			return 0
+		}
 		return uintptr(img.External.Texture)
 	}
 	if img.GPU != nil {
@@ -1056,6 +1065,48 @@ func (r *Renderer) imageTexture(img *scene.Image) uintptr {
 	return t.tex
 }
 
+// useExternal orders this frame's first read of an application-owned
+// texture with its producer. The matching Signal is encoded once after
+// all sampling in the command buffer has been encoded.
+func (r *Renderer) useExternal(img *scene.Image) bool {
+	if img == nil || img.External == nil || r.frameCB == 0 {
+		return true
+	}
+	e := img.External
+	if e.Sync.Wait == nil && e.Sync.Signal == nil {
+		return true
+	}
+	if r.externalSeen == nil {
+		r.externalSeen = map[uint64]bool{}
+	}
+	if r.externalSeen[img.ID()] {
+		return true
+	}
+	r.externalSeen[img.ID()] = true
+	r.usedExternals = append(r.usedExternals, e)
+	if e.Sync.Wait != nil {
+		if err := e.Sync.Wait(e.Device, ptr(r.frameCB), e.Texture); err != nil {
+			r.frameErr = fmt.Errorf("metal: waiting for an external texture: %w", err)
+			return false
+		}
+	}
+	return true
+}
+
+// finishExternals encodes the producer signals after the frame has
+// encoded every read of the synchronized external textures.
+func (r *Renderer) finishExternals(cb id) error {
+	for _, e := range r.usedExternals {
+		if e.Sync.Signal == nil {
+			continue
+		}
+		if err := e.Sync.Signal(e.Device, ptr(cb), e.Texture); err != nil {
+			return fmt.Errorf("metal: signaling an external texture: %w", err)
+		}
+	}
+	return nil
+}
+
 // ringSize bounds frames in flight. Each slot owns the main target's and
 // every canvas's instance buffer, so CPU encoding can overlap GPU drawing.
 // A slot is reused only after its previous frame completes; in-place atlas
@@ -1102,7 +1153,13 @@ func (r *Renderer) encode(s *scene.Scene, target id) (id, error) {
 	if err != nil {
 		return 0, err
 	}
-	return cb, r.drawBuilt(cb, built, target, &r.drawState, nil)
+	if err := r.drawBuilt(cb, built, target, &r.drawState, nil); err != nil {
+		return 0, err
+	}
+	if err := r.finishExternals(cb); err != nil {
+		return 0, err
+	}
+	return cb, nil
 }
 
 // prepare starts the command buffer of a frame of s, with its canvases,
@@ -1122,6 +1179,9 @@ func (r *Renderer) prepare(s *scene.Scene) (cb id, built *scene.Scene, err error
 		return 0, nil, r.err
 	}
 	r.frame++
+	r.frameErr = nil
+	r.usedExternals = r.usedExternals[:0]
+	clear(r.externalSeen)
 	if err := r.syncAtlas(&r.mask, s.MaskAtlas, pixelFormatR8Unorm); err != nil {
 		return 0, nil, err
 	}
@@ -1131,6 +1191,7 @@ func (r *Renderer) prepare(s *scene.Scene) (cb id, built *scene.Scene, err error
 	r.pipes.fallbacks = 0
 	r.used = 0
 	cb = send(r.queue, "commandBuffer")
+	r.frameCB = cb
 	if !r.checked {
 		if err := need(cb, "command buffer", "renderCommandEncoderWithDescriptor:", "commit", "presentDrawable:", "waitUntilScheduled", "waitUntilCompleted", "status", "blitCommandEncoder"); err != nil {
 			return 0, nil, err
@@ -1220,6 +1281,9 @@ func (r *Renderer) drawGPUCanvas(cb id, c *scene.Image) error {
 			source = ptr(tex)
 			sourceWidth, sourceHeight = sourceImg.W, sourceImg.H
 		}
+		if r.frameErr != nil {
+			return r.frameErr
+		}
 	}
 	if c.GPU.Draw != nil {
 		if err := c.GPU.Draw(scene.GPUFrame{
@@ -1296,6 +1360,9 @@ func (r *Renderer) build(cb id, s *scene.Scene, d *drawState) (*scene.Scene, err
 	d.b.SplitCorners() // only Metal's shader draws continuous corners
 	d.b.BlurredImage = func(img *scene.Image, bk scene.Backdrop) uintptr { return r.blurImage(cb, img, bk) }
 	s = d.b.Build(s, r.imageTexture)
+	if r.frameErr != nil {
+		return nil, r.frameErr
+	}
 	d.b.BlurredImage = nil
 	if err := r.syncStops(d); err != nil {
 		return nil, err
@@ -1887,6 +1954,10 @@ func (r *Renderer) drawFrame(s *scene.Scene, damage []image.Rectangle, known boo
 		return cb, nil
 	}
 	if err := r.drawBuilt(cb, built, target, &r.drawState, r.partOf(s, target)); err != nil {
+		r.forgetFrames()
+		return 0, err
+	}
+	if err := r.finishExternals(cb); err != nil {
 		r.forgetFrames()
 		return 0, err
 	}

@@ -35,3 +35,22 @@ func TestMetalTextureIsAnImage(t *testing.T) {
 		t.Fatal("Render returned no image")
 	}
 }
+
+func TestMetalTextureSynchronizationIsPublished(t *testing.T) {
+	wait := func(device, commandBuffer, texture unsafe.Pointer) error { return nil }
+	signal := func(device, commandBuffer, texture unsafe.Pointer) error { return nil }
+	tx := NewMetalTextureWithSync(4, 3, nil, nil, "owner", MetalTextureSync{
+		Wait: wait, Signal: signal,
+	})
+	if tx.img.External.Sync.Wait == nil || tx.img.External.Sync.Signal == nil {
+		t.Fatal("constructor dropped synchronization callbacks")
+	}
+	tx.SetSync(MetalTextureSync{Wait: signal})
+	if tx.img.External.Sync.Wait == nil || tx.img.External.Sync.Signal != nil {
+		t.Fatal("SetSync did not replace synchronization callbacks")
+	}
+	tx.SetTextureWithSync(nil, nil, "new owner", MetalTextureSync{Signal: wait})
+	if tx.img.External.Sync.Wait != nil || tx.img.External.Sync.Signal == nil || tx.sync.Signal == nil {
+		t.Fatal("SetTextureWithSync did not replace synchronization callbacks")
+	}
+}

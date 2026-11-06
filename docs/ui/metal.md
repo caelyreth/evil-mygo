@@ -72,6 +72,33 @@ use RGBA8 with premultiplied alpha, and remain alive while it is shown.
 handle. Call `SetTexture` when the producer recreates a texture of the
 same size, and `Invalidate` when its contents change.
 
+When the producer writes on another command buffer or queue, pass
+`MetalTextureSync` so MyGo can order the read:
+
+```go
+texture := ui.NewMetalTextureWithSync(
+	width, height, device, nativeTexture, owner,
+	ui.MetalTextureSync{
+		Wait:   encodeSharedEventWait,
+		Signal: encodeSharedEventSignal,
+	},
+)
+```
+
+`Wait` runs once before MyGo first samples the texture in a frame's
+command buffer. `Signal` runs after every sample of the texture in that
+command buffer has been encoded. Both callbacks receive the renderer's
+device, command buffer and native texture. They may encode an
+`MTLSharedEvent` wait/signal or a fence, but must not commit or wait on
+the command buffer. A Wait error fails the frame. `SetSync` replaces the
+callbacks, and `SetTextureWithSync` replaces the texture and its
+synchronization together.
+
+The application still owns the native texture and its synchronization
+objects. MyGo retains the Go `owner`, does not wait for the GPU to finish
+sampling, and retires a replaced owner only after frames in flight that
+could read the old texture have completed.
+
 ## Scope
 
 This is a same-device, same-process Metal seam. The application must use
