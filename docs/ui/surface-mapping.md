@@ -76,6 +76,12 @@ metal := ui.NewMetalCanvas(900, 500, drawMetalPass)
 metal.SetSource(layer.Bitmap())
 ```
 
+`UILayer`, `MetalCanvas`, and `MetalTexture` all satisfy the
+backend-neutral `ui.GPUTexture` contract (`Size`, `Bitmap`,
+`Invalidate`). It gives host code a common handle for composition and
+lifecycle without hiding the backend-specific constructor needed to
+create the resource.
+
 The layer benchmarks are:
 
 ```sh
