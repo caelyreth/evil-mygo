@@ -3,9 +3,9 @@ package webgpu
 // sceneShader is the beginning of the WGSL port of the native scene
 // shader. It reads the same fourteen-float4 gpu.Instance stream as the
 // Metal, Direct3D and OpenGL renderers. This stage covers solid rounded
-// fills, projective transforms, image batches and grayscale mask glyphs;
-// unsupported scene features are rejected by Renderer.Render until their
-// paths are ported.
+// fills, linear gradients, solid borders, projective transforms, image
+// batches and grayscale mask glyphs; unsupported scene features are
+// rejected by Renderer.Render until their paths are ported.
 const sceneShader = `
 struct Globals {
 	size: vec4<f32>,
@@ -37,6 +37,11 @@ struct VertexOut {
 	@location(4) @interpolate(flat) params: vec4<f32>,
 	@location(5) tex: vec2<f32>,
 	@location(6) @interpolate(flat) clip: vec4<f32>,
+	@location(7) @interpolate(flat) color2: vec4<f32>,
+	@location(8) @interpolate(flat) grad: vec4<f32>,
+	@location(9) @interpolate(flat) border: vec4<f32>,
+	@location(10) @interpolate(flat) inner: vec4<f32>,
+	@location(11) @interpolate(flat) uv_border: vec4<f32>,
 }
 
 @group(0) @binding(0) var<uniform> globals: Globals;
@@ -92,6 +97,11 @@ fn vs(
 	out.params = inst.params;
 	out.tex = inst.uv.xy + (p - inst.rect.xy) / inst.rect.zw * (inst.uv.zw - inst.uv.xy);
 	out.clip = inst.clip;
+	out.color2 = inst.color2;
+	out.grad = inst.grad;
+	out.border = inst.border;
+	out.inner = inst.inner;
+	out.uv_border = inst.uv;
 	return out;
 }
 
@@ -124,6 +134,20 @@ fn tint(c: vec4<f32>, t: vec4<f32>) -> vec4<f32> {
 	return c * vec4<f32>(t.rgb * t.a, t.a);
 }
 
+fn premul(c: vec4<f32>) -> vec4<f32> {
+	return vec4<f32>(c.rgb * c.a, c.a);
+}
+
+fn paint(p: vec2<f32>, mode: f32, c1: vec4<f32>, c2: vec4<f32>, grad: vec4<f32>) -> vec4<f32> {
+	if (mode > 1.5) {
+		return premul(c1);
+	}
+	let d = grad.zw - grad.xy;
+	let denom = max(dot(d, d), 1e-6);
+	let t = saturate(dot(p - grad.xy, d) / denom);
+	return mix(premul(c1), premul(c2), t);
+}
+
 @fragment
 fn fs(in: VertexOut) -> @location(0) vec4<f32> {
 	let kind = in.params.x;
@@ -131,11 +155,23 @@ fn fs(in: VertexOut) -> @location(0) vec4<f32> {
 	let clip = clip_coverage(in.local, in.clip);
 	let opacity = in.params.w * shape * clip;
 	if (kind < 0.5) {
-		return vec4<f32>(in.color.rgb * in.color.a, in.color.a) * opacity;
+		var c = paint(in.local, in.params.z, in.color, in.color2, in.grad) * opacity;
+		let bw = in.uv_border;
+		if (any(bw > vec4<f32>(0.0))) {
+			let inner = vec4<f32>(
+				in.rect.xy + vec2<f32>(bw.w, bw.x),
+				in.rect.zw - vec2<f32>(bw.y + bw.w, bw.x + bw.z),
+			);
+			let innerShape = coverage(sd_round_rect(in.local, inner, max(in.inner, vec4<f32>(0.0))));
+			let borderShape = saturate(shape - innerShape);
+			let border = premul(in.border) * borderShape * in.params.w * clip;
+			c = border + c * (1.0 - border.a);
+		}
+		return c;
 	}
 	if (kind < 2.5) {
 		let a = textureSampleLevel(mask_tex, texture_sampler, clamp(in.tex, vec2<f32>(0.0), vec2<f32>(1.0)), 0.0).r;
-		return vec4<f32>(in.color.rgb * in.color.a, in.color.a) * (a * opacity);
+		return paint(in.local, in.params.z, in.color, in.color2, in.grad) * (a * opacity);
 	}
 	if (kind < 3.5) {
 		let c = textureSampleLevel(color_tex, texture_sampler, clamp(in.tex, vec2<f32>(0.0), vec2<f32>(1.0)), 0.0);

@@ -321,3 +321,97 @@ func TestRendererDrawsMaskGlyph(t *testing.T) {
 		t.Fatalf("glyph pixel = %v, want [220 30 20 255]", pixel)
 	}
 }
+
+func TestRendererDrawsLinearGradient(t *testing.T) {
+	if _, ok := RuntimePath(); !ok {
+		t.Skip("wgpu-native is not installed")
+	}
+	g, err := Open()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer g.Release()
+
+	const width, height = 64, 32
+	target, err := g.Device().CreateTexture(&wgpu.TextureDescriptor{
+		Usage:         wgpu.TextureUsageRenderAttachment | wgpu.TextureUsageCopySrc,
+		Size:          wgpu.Extent3D{Width: width, Height: height, DepthOrArrayLayers: 1},
+		Format:        wgpu.TextureFormatRGBA8Unorm,
+		MipLevelCount: 1,
+		SampleCount:   1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer target.Release()
+	view, err := target.CreateView(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer view.Release()
+	renderer, err := NewRenderer(g, wgpu.TextureFormatRGBA8Unorm)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer renderer.Release()
+	s := &scene.Scene{
+		Width: width, Height: height,
+		Ops: []scene.Op{{
+			Kind: scene.OpFill, Rect: scene.Rect{W: width, H: height},
+			Color:  scene.Color{R: 255, A: 255},
+			Color2: scene.Color{B: 255, A: 255},
+			Paint:  scene.PaintLinear, Gradient: [4]float32{0, 0, width, 0},
+			Border: scene.Uniform(2), BorderColor: scene.Color{G: 255, A: 255},
+		}},
+	}
+	encoder, err := g.Device().CreateCommandEncoder(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := renderer.Render(s, encoder, view); err != nil {
+		t.Fatal(err)
+	}
+	const size = width * height * 4
+	readback, err := g.Device().CreateBuffer(&wgpu.BufferDescriptor{
+		Usage: wgpu.BufferUsageMapRead | wgpu.BufferUsageCopyDst,
+		Size:  size,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer readback.Release()
+	encoder.CopyTextureToBuffer(target, readback, []wgpu.BufferTextureCopy{{
+		TextureBase: wgpu.ImageCopyTexture{Texture: target, Aspect: wgpu.TextureAspectAll},
+		BufferLayout: wgpu.ImageDataLayout{
+			BytesPerRow: width * 4, RowsPerImage: height,
+		},
+		Size: wgpu.Extent3D{Width: width, Height: height, DepthOrArrayLayers: 1},
+	}})
+	command, err := encoder.Finish(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := g.Queue().Submit(command); err != nil {
+		t.Fatal(err)
+	}
+	command.Release()
+	encoder.Release()
+	if err := readback.Map(context.Background(), wgpu.MapModeRead, 0, size); err != nil {
+		t.Fatal(err)
+	}
+	defer readback.Unmap()
+	ptr := readback.GetMappedRange(0, size)
+	if ptr == nil {
+		t.Fatal("no mapped pixels")
+	}
+	pixels := unsafe.Slice((*byte)(ptr), size)
+	left := pixels[(16*width+2)*4:][:4]
+	right := pixels[(16*width+61)*4:][:4]
+	border := pixels[(16*width+1)*4:][:4]
+	if left[0] <= left[2] || right[2] <= right[0] {
+		t.Fatalf("gradient endpoints left=%v right=%v", left, right)
+	}
+	if border[1] <= border[0] || border[1] <= border[2] {
+		t.Fatalf("border pixel = %v, want green", border)
+	}
+}

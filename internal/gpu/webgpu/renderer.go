@@ -18,9 +18,9 @@ const (
 )
 
 // Renderer draws the growing WebGPU portion of MyGo's scene language. The
-// first stage handles solid rounded fills, projective transforms, image
-// batches and grayscale mask glyphs. It rejects features not ported yet
-// instead of silently dropping them.
+// first stage handles rounded fills, linear gradients, solid borders,
+// projective transforms, image batches and grayscale mask glyphs. It
+// rejects features not ported yet instead of silently dropping them.
 type Renderer struct {
 	gpu      *GPU
 	format   wgpu.TextureFormat
@@ -244,15 +244,15 @@ func supported(batches []gpu.Batch, instances []gpu.Instance) error {
 		kind := in.Params[0]
 		switch {
 		case kind == 0:
-			if in.Params[2] != 0 || in.UV != [4]float32{} {
-				return errors.New("webgpu: gradients, borders and dashed fills are not ported yet")
+			if in.Params[2] > 1 || in.Params[1] != 0 {
+				return errors.New("webgpu: this fill paint is not ported yet")
 			}
 			if in.Radii[0] < 0 || in.Radii[1] < 0 || in.Radii[2] < 0 || in.Radii[3] < 0 {
 				return errors.New("webgpu: continuous corners are not ported yet")
 			}
 		case kind >= 2 && kind <= 5:
-			if in.Params[2] != 0 {
-				return errors.New("webgpu: textured gradients are not ported yet")
+			if kind < 4.5 && in.Params[2] > 1 {
+				return errors.New("webgpu: this glyph paint is not ported yet")
 			}
 		default:
 			return errors.New("webgpu: scene instance kind is not ported yet")
