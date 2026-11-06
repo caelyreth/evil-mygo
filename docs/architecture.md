@@ -95,10 +95,11 @@ framework safely. Read it before changing anything under `internal/`.
 │   ├── raster/         the CPU renderer of scenes
 │   ├── gpu/            the instances GPU renderers draw, and gputest/ for their tests
 │   ├── gpu/d3d11/      the Direct3D 11 renderer of scenes, and device/ for its devices
-│   ├── gpu/metal/      the Metal renderer of scenes
+│   ├── gpu/metal/      the legacy direct Metal renderer of scenes
+│   ├── gpu/webgpu/     the go-webgpu renderer, surfaces, effects and native targets
 │   ├── gpu/gl/         the OpenGL and WebGL 2 renderer of scenes
 │   ├── shader/         the compiler of shaders in Go's syntax, forked from Ebitengine's Kage
-│   ├── shaderir/       its IR; glsl/, hlsl/ and msl/ write it for the GPU renderers, interp/ runs it on the CPU
+│   ├── shaderir/       its IR; glsl/, hlsl/, msl/ and wgsl/ write it for the GPU renderers, interp/ runs it on the CPU
 │   ├── svg/            SVG parsing and drawing, for icons and images
 │   ├── tsgen/          TypeScript client generator
 │   ├── i18ngen/        checks catalogs of messages, writes their Go and TypeScript functions
@@ -4201,19 +4202,16 @@ either.
   views; and pushed and popped clips.
   Renderers draw the whole scene each frame and retain only textures.
   Wavy underlines are stroked paths.
-- **Metal canvases** (`ui.MetalCanvas`) are images whose texture the
-  application encodes into through `ui.MetalFrame`. The Metal renderer
-  owns a per-frame-slot render target, calls the application's callback
-  before the frame samples it, and can pass a captured native layer as
-  `Source`. The callback uses the renderer's device and command buffer;
-  it does not commit or wait. `ui.MetalTexture` also lets an
-  application-owned same-device `MTLTexture` be sampled without an
-  upload. Other renderers leave these images transparent. This is the
-  current opt-in Metal interoperability seam. An imported texture may
-  provide `MetalTextureSync.Wait`/`Signal` callbacks to order reads with
-  another command buffer or queue. Off-window native UI and non-affine
-  interaction are separate opt-in contracts: `ui.NewUILayer`,
-  `ui.SurfaceMap`, `UILayer.HandleSurfaceInput` and
+- **WebGPU canvases** (`ui.WebGPUCanvas`) are images whose texture the
+  application encodes into through `ui.WebGPUFrame`. The WebGPU renderer
+  owns a render target, calls the application's callback before the
+  frame samples it, and can pass a captured native layer as `Source`.
+  The callback uses the renderer's device and command encoder; it does
+  not submit or wait. `ui.WebGPUTexture` samples an application-owned
+  same-device `*wgpu.Texture` without an upload. The direct Metal canvas
+  API remains only as the current cgo-free fallback. Off-window native UI
+  and non-affine interaction are separate opt-in contracts:
+  `ui.NewUILayer`, `ui.SurfaceMap`, `UILayer.HandleSurfaceInput` and
   `UILayer.TextInputClient`. `Element.HostLayer` bridges focus, IME,
   cursor and accessibility from that off-window engine into the element
   presenting its pixels.
@@ -5152,7 +5150,10 @@ gets a test with `Tester`. A new GPU renderer draws the instances of
 `gpu.Builder` with a port of the shader, syncs atlases with
 `Atlas.Changes`, is created in `ui/gpu_<os>.go` behind `gpuRenderer`, and
 has a test that compares its drawing of `gputest.Scene` with the CPU
-renderer's (`gputest.Compare`).
+renderer's (`gputest.Compare`). On macOS, a cgo build selects the WebGPU
+renderer through `ui/gpu_darwin_webgpu.go`; `CGO_ENABLED=0` retains the
+legacy pure-Go Metal renderer until backdrop effects and the remaining
+public Metal names are migrated.
 
 ## CLI (`cmd/mygo`)
 
@@ -5466,7 +5467,7 @@ Native library and shader generation commands are listed in [AGENTS.md](../AGENT
 | CLI | `go test ./cmd/mygo` | config, Info.plist, icons, universal binaries, template, dev launch/ready/stop (the test binary plays the app), watcher and `go list` inputs, the console's output (replayed as a terminal shows it), resources (platform directories, universal pairs, exclusions, staging, conflicts, dev placement; builds for every OS), frontend embedding (compiles an app with the overlay), `.DS_Store` against a dmgbuild golden file, a real DMG (`hdiutil`); builds and tools are skipped with `-short` |
 | runtime | `bun run test` | the injected runtime, `mygo-runtime` and the plugins' packages (against a fake Go side on the real runtime, `plugins/fake-go.ts`) |
 | plugins | `go test ./plugins/...` | the fetch plugin against `httptest` servers, the WebSocket client against a test server (ordering, fragments, pings, closing handshakes); the terminal's binding of libghostty-vt (layouts, rendering, encoders, selections), its pseudo-terminals, and its view through `Tester` with real shells: typing, keys as programs ask, input methods, mouse reports, selecting and copying, pasting, scrollback, exits (the library is downloaded, or named by `MYGO_GHOSTTY_VT`; `-short` skips them); the automation plugin's protocol (requests, errors, elements as JSON, input events) against a fake app, and its socket (mode, stale and taken paths); `mygo-automation` (`go test ./internal/automationcli ./plugins/automation/cmd/...`): lines, refs and their staleness, diffs, sessions, and its commands against a fake socket; `skills` printing `SKILL.md` as it is |
-| native UI | `go test ./ui ./internal/text ./internal/scene ./internal/raster ./internal/svg ./internal/gpu/...` | the GPU renderers against the CPU renderer (Direct3D on Windows, Metal on macOS, OpenGL on Linux); views through `Tester`: input, focus, editing, lists, overlays, frames that fill the glyph atlas; text layout and caret geometry; atlas zones and repacking; the CPU renderer against its formulas; SVG parsing and drawing, with `FuzzParse`; `go test -run '^$' -bench . ./ui` times a frame |
+| native UI | `go test ./ui ./internal/text ./internal/scene ./internal/raster ./internal/svg ./internal/gpu/...` | the GPU renderers against the CPU renderer (Direct3D on Windows, WebGPU on cgo-enabled macOS, legacy Metal without cgo, OpenGL on Linux); views through `Tester`: input, focus, editing, lists, overlays, frames that fill the glyph atlas; text layout and caret geometry; atlas zones and repacking; the CPU renderer against its formulas; SVG parsing and drawing, with `FuzzParse`; `go test -run '^$' -bench . ./ui` times a frame |
 | GUI | `MYGO_E2E=1 go test ./internal/e2e` | the real backend: an app driven from another process through `plugins/automation`, and with `mygo-automation`'s commands, IPC, channels, protocol, Eval, geometry, capture, menus, window.open, native UI (frames, clicks, input methods replacing typed text, file drops, assistive technology reading and acting; on macOS typing, skipped while an input method is selected, and composing; on Linux with `MYGO_GPU=1`, what OpenGL drew in the GtkGLArea, from the first frame and once a window drawing in memory asks for the GPU); on Windows too (a GitHub Actions `windows-latest` runner has WebView2) |
 
 Browsers run the `js` tests of the renderer, the text engine and package
