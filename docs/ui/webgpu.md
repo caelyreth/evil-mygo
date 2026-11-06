@@ -141,8 +141,18 @@ backdrop area fields. The effect returns premultiplied color; MyGo applies
 the shape, clip and opacity afterward.
 
 Effects that need a backdrop or a generated `ui/shader` library are still
-pending. The WebGPU path currently rejects them with a useful error
-instead of silently drawing a different result.
+pending only for backdrops; generated `ui/shader` libraries now emit WGSL
+through `internal/shaderir/wgsl` and share the Metal uniform layout with a
+byte-addressable `shader_uniforms` storage buffer. The basic uniform,
+bool, derivative, masked-glyph and distortion-effect paths have WebGPU
+tests; the full multi-image shader parity test is opt-in:
+
+```sh
+MYGO_GPU_STRICT=1 CGO_ENABLED=1 go test ./ui/shader
+```
+
+Backdrop-reading effects and the glass plugin still use the legacy
+direct-Metal fallback while their WebGPU backdrop passes are ported.
 
 ## Remaining parity work
 
@@ -150,7 +160,7 @@ The direct Metal renderer remains temporarily as the default until these
 WebGPU paths are complete:
 
 - backdrop textures for effects that read them;
-- the `ui/shader`-generated shader libraries and the glass plugin;
+- the glass plugin and backdrop-reading shader effects;
 - holes, wide-gamut presentation and damage-aware presentation;
 - benchmark parity and the purego/goffi build-tag removal;
 - migration of the Metal examples and public names to WebGPU.

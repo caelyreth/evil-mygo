@@ -58,6 +58,7 @@ type drawState struct {
 	color                   *textureEntry
 	binds                   map[bindKey]*wgpu.BindGroup
 	sceneWidth, sceneHeight int
+	sceneScale              float32
 }
 
 type canvasEntry struct {
@@ -177,6 +178,10 @@ func (r *Renderer) Render(s *scene.Scene, encoder *wgpu.CommandEncoder, view *wg
 
 func (r *Renderer) renderScene(s *scene.Scene, encoder *wgpu.CommandEncoder, view *wgpu.TextureView, st *drawState) error {
 	st.sceneWidth, st.sceneHeight = s.Width, s.Height
+	st.sceneScale = s.Scale
+	if st.sceneScale <= 0 {
+		st.sceneScale = 1
+	}
 	if err := r.syncAtlas(s.MaskAtlas, wgpu.TextureFormatR8Unorm, &st.mask); err != nil {
 		return err
 	}
@@ -252,7 +257,6 @@ func (r *Renderer) renderScene(s *scene.Scene, encoder *wgpu.CommandEncoder, vie
 	}
 	defer pass.Release()
 	if len(st.builder.Instances) > 0 {
-		pass.SetPipeline(r.pipe)
 		for _, batch := range st.builder.Batches {
 			if batch.Count == 0 {
 				continue
@@ -263,6 +267,9 @@ func (r *Renderer) renderScene(s *scene.Scene, encoder *wgpu.CommandEncoder, vie
 				}
 				continue
 			}
+			// An effect batch changes the pipeline; restore the scene
+			// pipeline before a following fill, glyph or image batch.
+			pass.SetPipeline(r.pipe)
 			image := r.defaultImage.view
 			if batch.Image != 0 {
 				t := r.texture(batch.Image)

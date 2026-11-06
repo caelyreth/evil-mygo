@@ -60,7 +60,7 @@ struct EffectVary {
 @group(0) @binding(6) var effect_sampler: sampler;
 @group(0) @binding(7) var clip_tex: texture_2d<f32>;
 @group(0) @binding(8) var mask_tex: texture_2d<f32>;
-@group(0) @binding(9) var<storage, read> shader_uniforms: array<vec4<f32>>;
+@group(0) @binding(9) var<storage, read> shader_uniforms: array<u32>;
 
 fn effect_frame_h(inst: EffectInstance, p: vec2<f32>) -> vec3<f32> {
 	return vec3<f32>(
@@ -182,7 +182,7 @@ fn effect_fs(in: EffectVary) -> @location(0) vec4<f32> {
 		+ textureSampleLevel(T3, effect_sampler, vec2<f32>(0.5), 0.0).x
 		+ textureSampleLevel(clip_tex, effect_sampler, vec2<f32>(0.5), 0.0).x
 		+ textureSampleLevel(mask_tex, effect_sampler, vec2<f32>(0.5), 0.0).x
-		+ shader_uniforms[0].x;
+		+ bitcast<f32>(shader_uniforms[0]);
 	if (effect_params.params.x < -1.0) {
 		return vec4<f32>(keep);
 	}

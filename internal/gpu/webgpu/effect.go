@@ -97,8 +97,11 @@ func (r *Renderer) drawEffect(pass *wgpu.RenderPassEncoder, st *drawState, batch
 	}
 	in := st.builder.Instances[batch.Start]
 	var params [17][4]float32
-	params[0] = [4]float32{float32(st.sceneWidth), float32(st.sceneHeight), 0, 0}
+	params[0] = [4]float32{float32(st.sceneWidth), float32(st.sceneHeight), st.sceneScale, 0}
 	params[1] = in.Rect
+	if in.Params[1] > 0.5 {
+		params[1] = [4]float32{in.Grad[0], in.Grad[1], in.Rect[2], in.Rect[3]}
+	}
 	params[2] = absRadii(in.Radii)
 	params[3], params[4], params[5], params[6], params[7] = in.Inner, in.Color, in.Color2, in.Border, in.Grad
 	params[8] = in.UV

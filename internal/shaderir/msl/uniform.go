@@ -37,6 +37,13 @@ func UniformLanes(p *shaderir.Program) (lanes []int, size int) {
 	return lanes, size
 }
 
+// TypeLanes returns the byte offsets of a value's lanes in the Metal
+// uniform layout. It is used by language backends that share Metal's
+// packed byte layout with a byte-addressable WebGPU storage buffer.
+func TypeLanes(t *shaderir.Type) []int {
+	return typeLanes(t)
+}
+
 // typeLanes returns the offset in bytes of each lane of a value of type t
 // in its Metal layout.
 func typeLanes(t *shaderir.Type) []int {
