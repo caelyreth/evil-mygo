@@ -584,6 +584,13 @@ type ExternalTexture struct {
 type ExternalTextureSync struct {
 	Wait   func(device, commandBuffer, texture unsafe.Pointer) error
 	Signal func(device, commandBuffer, texture unsafe.Pointer) error
+	// WaitObject and SignalObject are the object-based counterpart for
+	// renderers whose native handles are Go values, as WebGPU's are. Wait
+	// runs before the texture is first sampled; Signal runs after all
+	// sampling in the frame has been encoded. Neither may submit or wait on
+	// the renderer's command encoder.
+	WaitObject   func(device, encoder, texture any) error
+	SignalObject func(device, encoder, texture any) error
 }
 
 // NewCanvas returns a w×h image that renderers draw from a scene of its

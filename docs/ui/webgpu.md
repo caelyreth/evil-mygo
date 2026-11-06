@@ -123,7 +123,10 @@ image. MyGo creates only a view and samples it; there is no CPU upload or
 readback. The texture and device must belong to the window renderer, and
 the texture must be premultiplied RGBA8 in MyGo's row order. Commands
 submitted through the device's default queue are ordered with MyGo's
-frame.
+frame. `WebGPUTexture.SetSync` adds explicit `Wait` and `Signal` callbacks
+for a producer that is not already ordered with that queue. `Wait` runs
+before first sampling; `Signal` runs after all sampling has been encoded.
+Neither callback may submit the frame or block the main thread.
 
 [`examples/flagscape`](../../examples/flagscape) shows the whole path: a
 3D WebGPU scene samples a captured native MyGo face, while WASD,

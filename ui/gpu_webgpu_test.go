@@ -115,3 +115,27 @@ func TestWebGPUDrawsNativeUILayer(t *testing.T) {
 		t.Fatalf("native UI pixel = %v, want the red box", px)
 	}
 }
+
+func TestWebGPUTextureSync(t *testing.T) {
+	tex := NewWebGPUTexture(1, 1, nil, nil, nil)
+	called := false
+	tex.SetSync(WebGPUTextureSync{
+		Wait: func(device *wgpu.Device, encoder *wgpu.CommandEncoder, texture *wgpu.Texture) error {
+			called = true
+			return nil
+		},
+	})
+	if tex.img.External.Sync.WaitObject == nil {
+		t.Fatal("SetSync did not install WaitObject")
+	}
+	if err := tex.img.External.Sync.WaitObject(nil, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if !called {
+		t.Fatal("WaitObject did not call Wait")
+	}
+	tex.SetSync(WebGPUTextureSync{})
+	if tex.img.External.Sync.WaitObject != nil {
+		t.Fatal("zero SetSync did not clear WaitObject")
+	}
+}

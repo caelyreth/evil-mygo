@@ -47,6 +47,9 @@ type Renderer struct {
 	effects  map[string]*effectPipeline
 	blurred  map[uintptr]*textureEntry
 	blurID   uint64
+	encoder  *wgpu.CommandEncoder
+	waited   map[*scene.ExternalTexture]bool
+	signals  map[*scene.ExternalTexture]any
 	pending  []func()
 	frame    uint64
 }
@@ -203,6 +206,8 @@ func NewRenderer(g *GPU, format wgpu.TextureFormat) (*Renderer, error) {
 	r.canvases = map[uint64]*canvasEntry{}
 	r.effects = map[string]*effectPipeline{}
 	r.blurred = map[uintptr]*textureEntry{}
+	r.waited = map[*scene.ExternalTexture]bool{}
+	r.signals = map[*scene.ExternalTexture]any{}
 	r.root.reset(r, r.defaultMask, r.defaultColor)
 	if err := r.root.ensureInstances(r, initialCapacity); err != nil {
 		r.Release()
@@ -235,10 +240,32 @@ func (r *Renderer) render(s *scene.Scene, encoder *wgpu.CommandEncoder, target *
 		return nil
 	}
 	r.frame++
+	r.encoder = encoder
+	clear(r.waited)
+	clear(r.signals)
 	if err := r.renderScene(s, encoder, r.format, target, view, &r.root); err != nil {
+		r.encoder = nil
 		return err
 	}
+	if err := r.signalExternalTextures(); err != nil {
+		r.encoder = nil
+		return err
+	}
+	r.encoder = nil
 	r.sweepCanvases()
+	return nil
+}
+
+func (r *Renderer) signalExternalTextures() error {
+	for external, texture := range r.signals {
+		if external.Sync.SignalObject == nil {
+			continue
+		}
+		if err := external.Sync.SignalObject(r.gpu.device, r.encoder, texture); err != nil {
+			return fmt.Errorf("webgpu: signal external texture: %w", err)
+		}
+	}
+	clear(r.signals)
 	return nil
 }
 
@@ -518,6 +545,7 @@ func (r *Renderer) drawGPUCanvas(img *scene.Image, encoder *wgpu.CommandEncoder)
 	if img == nil || img.GPU == nil {
 		return nil
 	}
+	r.encoder = encoder
 	entry := r.canvases[img.ID()]
 	if entry == nil {
 		entry = &canvasEntry{}

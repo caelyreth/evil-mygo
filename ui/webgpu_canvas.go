@@ -126,6 +126,15 @@ type WebGPUTexture struct {
 	owner any
 }
 
+// WebGPUTextureSync orders an imported texture's producer with MyGo's
+// WebGPU frame. Wait runs before the texture is first sampled; Signal runs
+// after all sampling in the frame has been encoded. Neither callback may
+// submit the encoder or block waiting for the GPU.
+type WebGPUTextureSync struct {
+	Wait   func(device *wgpu.Device, encoder *wgpu.CommandEncoder, texture *wgpu.Texture) error
+	Signal func(device *wgpu.Device, encoder *wgpu.CommandEncoder, texture *wgpu.Texture) error
+}
+
 // NewWebGPUTexture returns a w×h image showing texture on device. owner is
 // retained with the image.
 func NewWebGPUTexture(w, h int, device *wgpu.Device, texture *wgpu.Texture, owner any) *WebGPUTexture {
@@ -162,6 +171,29 @@ func (t *WebGPUTexture) SetTexture(device *wgpu.Device, texture *wgpu.Texture, o
 
 // Invalidate marks externally changed texture contents for another frame.
 func (t *WebGPUTexture) Invalidate() { t.img.Changed() }
+
+// SetSync installs the producer synchronization callbacks for texture.
+// Passing the zero value removes them.
+func (t *WebGPUTexture) SetSync(sync WebGPUTextureSync) {
+	if t == nil || t.img.External == nil {
+		return
+	}
+	t.img.External.Sync.WaitObject = wrapWebGPUTextureSync(sync.Wait)
+	t.img.External.Sync.SignalObject = wrapWebGPUTextureSync(sync.Signal)
+	t.img.Changed()
+}
+
+func wrapWebGPUTextureSync(fn func(device *wgpu.Device, encoder *wgpu.CommandEncoder, texture *wgpu.Texture) error) func(device, encoder, texture any) error {
+	if fn == nil {
+		return nil
+	}
+	return func(device, encoder, texture any) error {
+		d, _ := device.(*wgpu.Device)
+		e, _ := encoder.(*wgpu.CommandEncoder)
+		t, _ := texture.(*wgpu.Texture)
+		return fn(d, e, t)
+	}
+}
 
 var _ GPUTexture = (*WebGPUCanvas)(nil)
 var _ GPUTexture = (*WebGPUTexture)(nil)

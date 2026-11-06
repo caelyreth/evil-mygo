@@ -223,6 +223,20 @@ func (r *Renderer) syncExternalImage(img *scene.Image) (uintptr, error) {
 	if device, ok := e.DeviceObject.(*wgpu.Device); ok && device != nil && device != r.gpu.device {
 		return 0, errors.New("webgpu: external texture belongs to another device")
 	}
+	if !r.waited[e] {
+		if e.Sync.WaitObject != nil {
+			if r.encoder == nil {
+				return 0, errors.New("webgpu: external texture sync needs a command encoder")
+			}
+			if err := e.Sync.WaitObject(r.gpu.device, r.encoder, e.TextureObject); err != nil {
+				return 0, fmt.Errorf("webgpu: wait for external texture: %w", err)
+			}
+		}
+		r.waited[e] = true
+	}
+	if e.Sync.SignalObject != nil {
+		r.signals[e] = e.TextureObject
+	}
 	token := uintptr(img.ID())
 	t := r.images[token]
 	if t == nil || t.tex != tex || t.w != img.W || t.h != img.H {

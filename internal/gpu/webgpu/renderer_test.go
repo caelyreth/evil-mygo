@@ -876,6 +876,21 @@ func TestRendererSamplesExternalWebGPUTexture(t *testing.T) {
 		t.Fatal(err)
 	}
 	img := scene.NewExternalObjectImage(1, 1, g.Device(), external, nil)
+	waits, signals := 0, 0
+	img.External.Sync.WaitObject = func(device, encoder, texture any) error {
+		waits++
+		if device == nil || encoder == nil || texture == nil {
+			t.Fatal("external texture sync received a nil handle")
+		}
+		return nil
+	}
+	img.External.Sync.SignalObject = func(device, encoder, texture any) error {
+		signals++
+		if device == nil || encoder == nil || texture == nil {
+			t.Fatal("external texture signal received a nil handle")
+		}
+		return nil
+	}
 
 	const width, height = 64, 32
 	target, view := testTarget(t, g, width, height)
@@ -901,6 +916,9 @@ func TestRendererSamplesExternalWebGPUTexture(t *testing.T) {
 	g.Device().PushErrorScope(wgpu.ErrorFilterValidation)
 	if err := renderer.Render(s, encoder, view); err != nil {
 		t.Fatal(err)
+	}
+	if waits != 1 || signals != 1 {
+		t.Fatalf("external sync counts wait=%d signal=%d, want 1 and 1", waits, signals)
 	}
 	pixels := readTarget(t, g, target, encoder, width, height)
 	if typ, message, err := g.Device().PopErrorScopeAsync(g.Instance()); err != nil {
