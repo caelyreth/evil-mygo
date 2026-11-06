@@ -22,6 +22,7 @@ type UILayer struct {
 	closed         bool
 	surfacePressed bool
 	lastUV         UV
+	version        uint64
 }
 
 // NewUILayer creates a native UI layer of width×height DIPs and renders
@@ -69,7 +70,12 @@ func (l *UILayer) Render() {
 	l.img.W, l.img.H = snapshot.Width, snapshot.Height
 	l.bm.w, l.bm.h = l.img.W, l.img.H
 	l.img.Changed()
+	l.version++
 }
+
+// Version identifies the rendered layer snapshot. A SurfaceMap used to
+// resolve input for this snapshot should carry the same version.
+func (l *UILayer) Version() uint64 { return l.version }
 
 // NeedsFrame reports whether the view asked for another frame.
 func (l *UILayer) NeedsFrame() bool {

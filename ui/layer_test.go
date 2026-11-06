@@ -75,3 +75,24 @@ func TestUILayerSurfaceInput(t *testing.T) {
 		t.Fatalf("surface click count = %d, want 1", clicks)
 	}
 }
+
+func TestUILayerTextInputThroughSurface(t *testing.T) {
+	name := ""
+	layer := NewUILayer(func(c *Context) {
+		Column(c).Fill().Padding(10).Children(func() {
+			TextInput(c.Key("name"), &name).Width(140).Height(30).Label("Name")
+		})
+	}, 180, 60)
+	defer layer.Close()
+	m := NewPlanarSurface(Rect{W: 180, H: 60})
+	layer.HandleSurfaceInput(m, InputEvent{Kind: InputPointerDown, X: 20, Y: 20, Button: 0})
+	layer.HandleSurfaceInput(m, InputEvent{Kind: InputPointerUp, X: 20, Y: 20, Button: 0})
+	layer.HandleInput(InputEvent{Kind: InputText, Text: "Ada"})
+	layer.Render()
+	if name != "Ada" {
+		t.Fatalf("text field = %q, want Ada", name)
+	}
+	if active, _ := layer.TextInputActive(); !active {
+		t.Fatal("text input is not active after the surface click")
+	}
+}

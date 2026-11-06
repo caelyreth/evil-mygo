@@ -58,7 +58,8 @@ Use `ScreenToSurface` to turn a scene hit into a layer coordinate before
 calling `HandleInput`. Call `NeedsFrame` after rendering if the layer's
 view requested another frame. `Access`, `AccessByRole`, `TextCaret` and
 `TextInputActive` expose the layer's accessibility and text-input state
-to the host that presents it.
+to the host that presents it. `Version` identifies the current rendered
+snapshot and should match the version of the `SurfaceMap` used for input.
 
 `HandleSurfaceInput` combines the two steps and preserves pointer capture
 while a press moves beyond the surface. It never performs GPU picking or
