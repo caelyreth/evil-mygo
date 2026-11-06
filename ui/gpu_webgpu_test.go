@@ -139,3 +139,88 @@ func TestWebGPUTextureSync(t *testing.T) {
 		t.Fatal("zero SetSync did not clear WaitObject")
 	}
 }
+
+func TestWebGPUCanvasUsesUILayerSource(t *testing.T) {
+	if _, ok := webgpu.RuntimePath(); !ok {
+		t.Skip("wgpu-native is not installed")
+	}
+	layer := NewUILayer(func(c *Context) {
+		Text(c, "off-window source").FontSize(14)
+	}, 64, 32)
+	defer layer.Close()
+	layer.Render()
+	var sourceSeen bool
+	canvas := NewWebGPUCanvas(64, 32, func(f WebGPUFrame) error {
+		sourceSeen = f.Source != nil && f.SourceTexture != nil
+		view, err := f.Texture.CreateView(nil)
+		if err != nil {
+			return err
+		}
+		defer view.Release()
+		pass, err := f.Encoder.BeginRenderPass(&wgpu.RenderPassDescriptor{
+			ColorAttachments: []wgpu.RenderPassColorAttachment{{
+				View: view, LoadOp: wgpu.LoadOpClear, StoreOp: wgpu.StoreOpStore,
+				ClearValue: wgpu.Color{R: 0.1, G: 0.1, B: 0.1, A: 1},
+			}},
+		})
+		if err != nil {
+			return err
+		}
+		pass.End()
+		pass.Release()
+		return nil
+	})
+	canvas.SetSource(layer.Bitmap())
+	g, err := webgpu.Open()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer g.Release()
+	target, err := g.Device().CreateTexture(&wgpu.TextureDescriptor{
+		Usage:         wgpu.TextureUsageRenderAttachment | wgpu.TextureUsageCopySrc,
+		Size:          wgpu.Extent3D{Width: 64, Height: 32, DepthOrArrayLayers: 1},
+		Format:        wgpu.TextureFormatRGBA8Unorm,
+		MipLevelCount: 1,
+		SampleCount:   1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer target.Release()
+	view, err := target.CreateView(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer view.Release()
+	renderer, err := webgpu.NewRenderer(g, wgpu.TextureFormatRGBA8Unorm)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer renderer.Release()
+	root := &scene.Scene{
+		Width: 64, Height: 32,
+		Ops: []scene.Op{{Kind: scene.OpImage, Image: canvas.img,
+			Rect: scene.Rect{W: 64, H: 32}, Src: scene.Rect{W: 64, H: 32}}},
+	}
+	encoder, err := g.Device().CreateCommandEncoder(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := renderer.Render(root, encoder, view); err != nil {
+		t.Fatal(err)
+	}
+	if !sourceSeen {
+		t.Fatal("WebGPU canvas did not receive its UILayer source")
+	}
+	command, err := encoder.Finish(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := g.Queue().Submit(command); err != nil {
+		command.Release()
+		t.Fatal(err)
+	}
+	command.Release()
+	encoder.Release()
+	renderer.FinishFrame()
+}
