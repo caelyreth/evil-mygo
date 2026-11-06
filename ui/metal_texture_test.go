@@ -24,7 +24,8 @@ func TestMetalTextureIsAnImage(t *testing.T) {
 	}
 	replaced := tx.img.Version()
 	tx.SetTexture(nil, nil, "new owner")
-	if tx.img.Version() == replaced || tx.img.External.KeepAlive != "new owner" {
+	if tx.img.Version() == replaced || tx.img.External.KeepAlive != "new owner" ||
+		len(tx.img.External.Retired) != 1 || tx.img.External.Retired[0] != "owner" {
 		t.Fatal("SetTexture did not publish the new texture owner")
 	}
 	img := Render(func(c *Context) {

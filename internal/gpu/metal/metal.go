@@ -389,6 +389,16 @@ type gpuCanvasTexture struct {
 	lastFrame uint64
 }
 
+// externalTexture retains an application-owned texture while frames in
+// flight may read it, and waits once when its owner is replaced.
+type externalTexture struct {
+	ownerVersion uint64
+	device       unsafe.Pointer
+	texture      unsafe.Pointer
+	keepAlive    any
+	lastFrame    uint64
+}
+
 // formatState is what a renderer draws into targets of a pixel format
 // with.
 type formatState struct {
@@ -463,6 +473,8 @@ type Renderer struct {
 	canvases map[uint64]*canvasTexture
 	// gpuCanvases are render targets encoded by application Metal code.
 	gpuCanvases map[uint64]*gpuCanvasTexture
+	// externals are application-owned textures, by image ID.
+	externals map[uint64]*externalTexture
 	// drawingGPU marks GPU canvases whose source chain is being built.
 	drawingGPU map[uint64]bool
 	// blurred are the textures of the images the frame draws blurred
@@ -977,6 +989,21 @@ func (r *Renderer) imageTexture(img *scene.Image) uintptr {
 		if img.External.Texture == nil || img.External.Device != ptr(r.device) {
 			return 0
 		}
+		if r.externals == nil {
+			r.externals = map[uint64]*externalTexture{}
+		}
+		t := r.externals[img.ID()]
+		if t == nil {
+			t = &externalTexture{}
+			r.externals[img.ID()] = t
+			img.External.Retired = nil
+		} else if t.ownerVersion != img.External.OwnerVersion {
+			r.waitLast()
+			img.External.Retired = nil
+		}
+		t.ownerVersion, t.device, t.texture = img.External.OwnerVersion, img.External.Device, img.External.Texture
+		t.keepAlive = img.External.KeepAlive
+		t.lastFrame = r.frame
 		return uintptr(img.External.Texture)
 	}
 	if img.GPU != nil {
@@ -1961,6 +1988,10 @@ func (r *Renderer) releaseTextures() {
 		}
 		delete(r.gpuCanvases, key)
 	}
+	for key, t := range r.externals {
+		t.keepAlive = nil
+		delete(r.externals, key)
+	}
 	r.drawState.release()
 	for i := range r.blurred {
 		release(&r.blurred[i].tex)
@@ -2157,6 +2188,12 @@ func (r *Renderer) sweep() {
 				release(&t.textures[i].tex)
 			}
 			delete(r.gpuCanvases, key)
+		}
+	}
+	for key, t := range r.externals {
+		if t.lastFrame+240 < r.frame {
+			t.keepAlive = nil
+			delete(r.externals, key)
 		}
 	}
 }

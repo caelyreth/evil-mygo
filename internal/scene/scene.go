@@ -551,6 +551,11 @@ type GPUCanvas struct {
 type ExternalTexture struct {
 	Device, Texture unsafe.Pointer
 	KeepAlive       any
+	// OwnerVersion changes when SetTexture replaces KeepAlive. Retired
+	// holds owners whose replaceable texture may still be read by a frame
+	// in flight.
+	OwnerVersion uint64
+	Retired      []any
 }
 
 // NewCanvas returns a w×h image that renderers draw from a scene of its

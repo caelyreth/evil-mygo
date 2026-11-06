@@ -44,7 +44,11 @@ func (t *MetalTexture) SetTexture(device, texture unsafe.Pointer, owner any) {
 	if t.img.External == nil {
 		return
 	}
+	if t.img.External.KeepAlive != nil {
+		t.img.External.Retired = append(t.img.External.Retired, t.img.External.KeepAlive)
+	}
 	t.img.External.Device, t.img.External.Texture, t.img.External.KeepAlive = device, texture, owner
+	t.img.External.OwnerVersion++
 	t.img.Changed()
 }
 
