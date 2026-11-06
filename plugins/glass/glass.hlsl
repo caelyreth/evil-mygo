@@ -1,5 +1,5 @@
-// The glass's effect in HLSL (see scene.Effect), as glass.metal is in
-// Metal Shading Language and pixels.go draws it on the CPU.
+// The glass's effect in HLSL (see scene.Effect), as glass.wgsl is in WGSL
+// and pixels.go draws it on the CPU.
 
 float glassLens(float t, float bezel) {
 	if (bezel <= 0 || t >= bezel) {

@@ -8,7 +8,7 @@ import (
 // UILayer is a native UI engine rendered off-window into a reusable
 // bitmap. It has its own layout, focus, input method, scrolling and
 // accessibility state, so the same tree can be presented by a window, a
-// Metal surface, or another compositor.
+// WebGPU surface, or another compositor.
 //
 // Render and HandleInput run on the main thread. Render builds at most
 // one frame; call NeedsFrame to see whether the view asked for another.
@@ -58,7 +58,7 @@ type layerHost struct {
 func (h *layerHost) present(s *scene.Scene) { h.scene = s }
 
 // Bitmap returns the layer's bitmap for Image, Painter.Image,
-// MetalCanvas.SetSource, and ImageRegion.
+// WebGPUCanvas.SetSource, and ImageRegion.
 func (l *UILayer) Bitmap() *Bitmap { return l.bm }
 
 // Size returns the layer's size in DIPs.

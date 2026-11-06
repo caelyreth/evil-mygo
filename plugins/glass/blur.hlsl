@@ -1,5 +1,5 @@
-// A level of the blur's effect in HLSL (see scene.Effect), as blur.metal
-// is in Metal Shading Language and blur.go draws it on the CPU.
+// A level of the blur's effect in HLSL (see scene.Effect), as blur.wgsl
+// is in WGSL and blur.go draws it on the CPU.
 
 float4 blurAt(int2 p, int2 size) { return backdropTex.Load(int3(clamp(p, int2(0, 0), size - 1), 0)); }
 

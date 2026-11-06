@@ -1,4 +1,4 @@
-// The one shader of the OpenGL renderer, as shader.metal is the Metal one
+// The one shader of the OpenGL renderer, as scene.wgsl is the WebGPU one
 // and shader.hlsl the Direct3D one: every scene op is an instanced quad,
 // and the fragment shader computes the coverage of rounded rectangles,
 // borders, gradients, stripes and shadows from signed distances, as the

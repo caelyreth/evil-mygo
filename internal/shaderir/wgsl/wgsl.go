@@ -229,8 +229,11 @@ func (c *compileContext) function(p *shaderir.Program, f *shaderir.Func) []strin
 	for i, t := range f.InParams {
 		params = append(params, c.varDecl(p, &t, fmt.Sprintf("l%d", i)))
 	}
-	if len(f.OutParams) > 0 {
-		panic("wgsl: out parameters are not implemented")
+	for i, t := range f.OutParams {
+		// WGSL has no pass-by-reference parameters. Represent an out
+		// parameter as a pointer into function storage and dereference it
+		// wherever the IR names it; callers pass the address of an lvalue.
+		params = append(params, fmt.Sprintf("l%d: ptr<function, %s>", len(f.InParams)+i, c.typ(p, &t)))
 	}
 	ret := ""
 	if f.Return.Main != shaderir.None {
@@ -242,8 +245,26 @@ func (c *compileContext) function(p *shaderir.Program, f *shaderir.Func) []strin
 	return lines
 }
 
-func (c *compileContext) localName(p *shaderir.Program, topBlock *shaderir.Block, idx int) string {
+func (c *compileContext) isOutParam(p *shaderir.Program, topBlock *shaderir.Block, idx int) bool {
+	for _, f := range p.Funcs {
+		if f.Block != topBlock {
+			continue
+		}
+		return idx >= len(f.InParams) && idx < len(f.InParams)+len(f.OutParams)
+	}
+	return false
+}
+
+func (c *compileContext) rawLocalName(idx int) string {
 	return fmt.Sprintf("l%d", idx)
+}
+
+func (c *compileContext) localName(p *shaderir.Program, topBlock *shaderir.Block, idx int) string {
+	name := c.rawLocalName(idx)
+	if c.isOutParam(p, topBlock, idx) {
+		return "(*" + name + ")"
+	}
+	return name
 }
 
 func (c *compileContext) initVariable(p *shaderir.Program, topBlock, block *shaderir.Block, index int, decl bool, level int) []string {
@@ -302,8 +323,25 @@ func (c *compileContext) block(p *shaderir.Program, topBlock, block *shaderir.Bl
 			return fmt.Sprintf("select((%s), (%s), (%s))", expr(&e.Exprs[2]), expr(&e.Exprs[1]), expr(&e.Exprs[0]))
 		case shaderir.Call:
 			var args []string
-			for _, arg := range e.Exprs[1:] {
-				args = append(args, expr(&arg))
+			var calleeFn *shaderir.Func
+			if e.Exprs[0].Type == shaderir.FunctionExpr {
+				for i := range p.Funcs {
+					if p.Funcs[i].Index == e.Exprs[0].Index {
+						calleeFn = &p.Funcs[i]
+						break
+					}
+				}
+			}
+			for i, arg := range e.Exprs[1:] {
+				value := expr(&arg)
+				if calleeFn != nil && i >= len(calleeFn.InParams) && i < len(calleeFn.InParams)+len(calleeFn.OutParams) {
+					if arg.Type == shaderir.LocalVariable {
+						value = "&" + c.rawLocalName(arg.Index)
+					} else {
+						value = "&(" + value + ")"
+					}
+				}
+				args = append(args, value)
 			}
 			callee := e.Exprs[0]
 			if callee.Type == shaderir.BuiltinFuncExpr {

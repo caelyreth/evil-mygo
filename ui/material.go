@@ -52,7 +52,7 @@ func (p *Painter) Preferences() Preferences { return p.rt.preferences() }
 
 // EffectColor returns c as a parameter of an effect: straight RGBA from 0
 // to 1, its sRGB value, and wide, its color outside the sRGB gamut in
-// extended sRGB, which the effect's Metal shader takes where e.wide tells
+// extended sRGB, which an effect's wide-gamut shader can take where e.wide tells
 // that the target keeps it (wide is the sRGB value for a color inside the
 // gamut). Like a color an element paints, it has the frame drawn in a wide
 // gamut where the window shows one.

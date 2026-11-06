@@ -1,6 +1,6 @@
 // Package shader draws with shaders an app writes: fragment shaders in
 // Go's syntax, which run on the GPU, whichever renderer draws the window
-// (Metal, Direct3D 11, OpenGL or WebGL 2), and on the CPU where none can.
+// (WebGPU, Direct3D 11, OpenGL or WebGL 2), and on the CPU where none can.
 //
 // A shader is a Go file of package main whose function Fragment returns
 // the color of a pixel, premultiplied, from its position:

@@ -19,15 +19,15 @@ framework safely. Read it before changing anything under `internal/`.
   timer (`TestSettledWindowSleeps`): the display link pauses, Go's
   scheduler sleeps, and the counter example idles at about 0.005% of a
   core on macOS (an AppKit window, 0.002%) and wakes no thread under X11.
-- **No cgo.** Everything builds with `CGO_ENABLED=0`, so any platform can be
-  cross-compiled from any machine. Native APIs are called at run time through
+- **No cgo by default.** The core builds with `CGO_ENABLED=0`, so any
+  platform can be cross-compiled from any machine. Native APIs are called at run time through
   [purego](https://github.com/ebitengine/purego) (`dlopen` + assembly
   trampolines) on macOS and Linux and through the `syscall` package on
   Windows, never through `import "C"`.
 - **Two kinds of windows.** Web pages show in the system webview:
   WKWebView on macOS, WebKitGTK 4.1 (4.0 as a fallback) on Linux, WebView2
   on Windows (amd64 and arm64); no browser engine is bundled. Native UI is
-  drawn by MyGo itself, in Go, with Metal, Direct3D 11 or OpenGL, or on the
+  drawn by MyGo itself, in Go, with WebGPU (wgpu-native over Metal), Direct3D 11, OpenGL, or on the
   CPU, and text from the system's own engines (see [Native UI](#native-ui-ui));
   an app whose windows all show it needs no webview at all, and runs in
   browsers too, compiled to WebAssembly, on canvases drawn with WebGL 2
@@ -95,7 +95,6 @@ framework safely. Read it before changing anything under `internal/`.
 │   ├── raster/         the CPU renderer of scenes
 │   ├── gpu/            the instances GPU renderers draw, and gputest/ for their tests
 │   ├── gpu/d3d11/      the Direct3D 11 renderer of scenes, and device/ for its devices
-│   ├── gpu/metal/      the legacy direct Metal renderer of scenes
 │   ├── gpu/webgpu/     the go-webgpu renderer, surfaces, effects and native targets
 │   ├── gpu/gl/         the OpenGL and WebGL 2 renderer of scenes
 │   ├── shader/         the compiler of shaders in Go's syntax, forked from Ebitengine's Kage
@@ -1408,7 +1407,7 @@ build` like mygo-runtime and released with the same version.
   while pressed, as macOS 27's: by a fixed 1.1 DIPs left and right and
   0.45 above and below, measured from `NSGlassEffectView`), paints an
   effect (`glass.Effect`, see Effects under Native UI), whose parameters
-  are a pane's material in device pixels. Its shader (`glass.metal`,
+  are a pane's material in device pixels. Its shader (`glass.wgsl`,
   `glass.hlsl`, `glass.glsl`, and `pixels.go` for the CPU) takes what is
   behind the pane, blurred, sampled where the curved surface refracts it:
   displaced toward the middle within the bezel by Snell's law through
@@ -2472,7 +2471,7 @@ provides a surface to draw on and its input, and renderers know nothing of
 either.
 
 ```
- view (Go) ──► ui: build, layout, paint ──► internal/scene ──► internal/gpu: d3d11 | metal | gl, or internal/raster
+ view (Go) ──► ui: build, layout, paint ──► internal/scene ──► internal/gpu: d3d11 | webgpu | gl, or internal/raster
                  ▲       └─ internal/text: DirectWrite | Core Text | Pango | canvas, glyph and mask atlases
                  │
  internal/surface.Conn ◄── content.go (package mygo) ◄── platform.Surface: darwin | linux | windows | web | fake
@@ -2966,7 +2965,7 @@ either.
   widgets read through `context.emphasized` and `context.accent` where
   they would fill with the accent, and `Context.WindowActive`), told by
   `surface.Conn.ActiveChanged`. Each
-  frame matters on macOS, where the Metal driver takes 30 to 45 MB of the
+  frame matters on macOS, where the GPU driver takes 30 to 45 MB of the
   process's footprint ("owned unmapped (graphics)") for the first command
   buffer encoding anything after a pause, and gives them back a second or
   two after the last, as a bare Metal app does.
@@ -3016,8 +3015,9 @@ either.
   and clips around content only moved, evaluate on the GPU. Backdrop
   effects map local samples into the frame. With a GPU, every frame draws
   there, including resting changes to transformed content.
-  Metal retains wide colors under transforms. See
-  [Transforms](ui/transforms.md#rendering) for rendering details.
+  The WebGPU renderer keeps the target's configured color space under
+  transforms. See [Transforms](ui/transforms.md#rendering) for rendering
+  details.
 - **Masked clips** (`ui/mask.go`, `scene.ClipShapeOf`). A clip
   (`OpPushClip`) may carry a gradient paint, whose alpha masks it
   (`MaskLinearGradient` and the others, around the element's inset
@@ -4208,8 +4208,7 @@ either.
   frame samples it, and can pass a captured native layer as `Source`.
   The callback uses the renderer's device and command encoder; it does
   not submit or wait. `ui.WebGPUTexture` samples an application-owned
-  same-device `*wgpu.Texture` without an upload. The direct Metal canvas
-  API remains only as the current cgo-free fallback. Off-window native UI
+  same-device `*wgpu.Texture` without an upload. Off-window native UI
   and non-affine interaction are separate opt-in contracts:
   `ui.NewUILayer`, `ui.SurfaceMap`, `UILayer.HandleSurfaceInput` and
   `UILayer.TextInputClient`. `Element.HostLayer` bridges focus, IME,
@@ -4217,9 +4216,9 @@ either.
   presenting its pixels.
 - **Effects** (`scene.Effect`) are drawings that packages outside the
   renderers define, as the official plugins do (the glass plugin's Liquid
-  Glass): a fragment shader for each GPU renderer, in Metal Shading
-  Language, HLSL and GLSL, which the renderer puts between a head and a
-  tail of its own (`effect.metal`, `effect.hlsl`, `effect.glsl`, after its
+  Glass): a fragment shader for each GPU renderer, in WGSL, HLSL and
+  GLSL, which the renderer puts between a head and a
+  tail of its own (`effect.wgsl`, `effect.hlsl`, `effect.glsl`, after its
   shader's common part, with `EFFECT` defined: `EffectSource`), and a twin
   for the CPU renderer (`EffectPixels`), which must draw the same pixels.
   An effect paints its op's shape from five float4s of parameters
@@ -4248,15 +4247,14 @@ either.
   renderer's code to call (`Fragment` of `msl`, `hlsl` and `glsl`; only
   the platform's renderer's backend is linked), and whose interpreter
   (`interp`) is the CPU twin. A shader's effect (`Effect.Shader`) tells
-  where the words of its uniforms go in the buffer its code reads: Metal's
-  struct (buffer 2), HLSL's cbuffer (b2) or a std140 uniform block
+  where the words of its uniforms go in the buffer its code reads: the
+  WebGPU storage buffer, HLSL's cbuffer (b2) or a std140 uniform block
   (binding point 0); the op carries the words and up to four images,
   bitmaps or canvases (`EffectOp.Uniforms`, `Images`), bound to textures 5
   to 8 (t6 to t9 in Direct3D). GLSL and HLSL read them as globals, so a
-  shader goes between the effects' head and tail; Metal has no globals,
-  so its shaders are whole libraries with a tail of their own
-  (`ShaderSource`, `shader_ps`), which `ui/shader` builds, so that apps
-  drawing none do not carry it. `ui` itself only has `Painter.ShaderEffect`
+  shader goes between the effects' head and tail; WebGPU reads them as
+  bindings, and `ui/shader` emits WGSL that the WebGPU renderer compiles
+  into its effect pipeline. `ui` itself only has `Painter.ShaderEffect`
   and `Painter.ShaderFill`: the compiler, its package variables and
   go/parser stay out of apps that draw no shader. A shader filling text,
   paths and icons (`ShaderFill`) turns the glyph ops its function painted,
@@ -4334,12 +4332,8 @@ either.
   what it compiled from, one directory for the user as Windows' own
   D3DSCache is, the least recently used removed beyond 32 MB. Effects
   compiled ahead of time, and apps without shaders, do not link it. On
-  macOS, `metal.PrecompileShader` does the same with the system's default
-  device: Metal's library (about 85 ms the first time) and the pipeline
-  for BGRA8 windows (about 60 ms), which renderers on that device retain
-  (`sharedShader`) in place of making them; Metal's own disk cache keeps
-  them for later launches, and wide-gamut windows make their pipeline
-  from the shared library.
+  macOS, the WebGPU renderer compiles WGSL through wgpu-native and
+  caches its device pipelines with the renderer.
 - **Corners.** On macOS, rounded corners are continuous, as AppKit's and
   SwiftUI's (`scene.Op.Continuous`), and drawn as Core Animation draws
   them on screen, with the function of its shaders (QuartzCore's
@@ -4361,8 +4355,8 @@ either.
   radius and of the curve's extent, and keeps the rows' spans of a clip
   with continuous corners for the operations within it; a whole frame of
   `BenchmarkFrame` takes a fifth longer. Elsewhere corners are circular,
-  as Windows and GTK draw them, and only the CPU's renderer and Metal's
-  draw continuous ones.
+  as Windows and GTK draw them, and only the CPU's renderer and the WebGPU
+  renderer draw continuous ones.
 - **Text.** `internal/text` lays out text with the system's own text stack,
   behind a small `engine` interface: DirectWrite on Windows
   (`IDWriteTextLayout`, with an `IDWriteTextRenderer` implemented in Go
@@ -4739,7 +4733,7 @@ either.
   - `internal/gpu/d3d11` with a shader compiled to DXBC ahead of time
     (on Windows, with the system's `d3dcompiler_47.dll`), so apps carry no shader compiler. The
     generated file records the SHA-256 of the source it came from, line
-    endings aside (`gpu.SourceSum`), as Metal's does: bytecode older than
+    endings aside (`gpu.SourceSum`): bytecode older than
     `shader.hlsl` falls back to compiling that with the same DLL, which
     Windows has, and its test fails. Both compilation paths enable IEEE
     strictness with optimization, avoiding a native compiler optimizer crash
@@ -4817,7 +4811,7 @@ either.
     where the window grows within them. A swap chain that stretches, where
     the unscaled one is refused, shows the window's size of the buffers.
     The swap chain flips in sequence (`FLIP_SEQUENTIAL`), so that a frame
-    draws only what changed since the last, as Metal's (below): DXGI keeps
+    draws only what changed since the last: DXGI keeps
     what each buffer holds, and as a frame is presented with the
     rectangles it drew as its dirty rectangles (`Present1`), copies into
     it what the last frame changed outside them, so there is no buffer
@@ -4827,134 +4821,19 @@ either.
     is not presented. With WARP, on a runner
     without a GPU, a caret blinking in a window of 1280×760 pixels took a
     tenth of the CPU's time it took drawn whole;
-  - `internal/gpu/metal` with a shader in Metal Shading Language
-    compiled into a Metal library ahead of time (on macOS, with
-    Xcode's `metal` tools), which
-    spares a first launch the 100 to 150 ms Metal takes to compile the
-    source until it has cached it; a library older than `shader.metal`
-    falls back to that, and its test fails. It draws into a CAMetalLayer
-    it adds to the surface view's layer. The command queue, shaders,
-    sampler and placeholder texture are made on demand. A frame that
-    changes the layer (its size, scale or pixel format), or shows web
-    views, which move in the window's transaction, presents with the Core
-    Animation transaction (`presentsWithTransaction`), so a live resize
-    shows no stretched frames; the others present as soon as the GPU has
-    them (`presentDrawable:`), sparing a pass of AppKit's display cycle
-    and a commit of the transaction each: an animation at 120 Hz takes
-    about half the main thread's time it would. A resize's frame that
-    AppKit asks for (`updateLayer`) after one presented with the
-    transaction, outside a live resize, draws at the display link's next
-    tick, as for a window resized from its view, or right after the frame
-    that took back the drawables given back when idle: drawn in AppKit's
-    display of the view, presented with the transaction too, it did not
-    show, and the window kept the last frame stretched to its new size
-    (#1044). The main thread never
-    waits for the display: after each frame presented as soon as drawn, a
-    goroutine on a thread of its own (`present.go`) takes the next frame's
-    drawable, which `nextDrawable` holds back while the display holds the
-    others, most of a refresh at times. A frame that comes while it does
-    is built at once, its canvases and instances ready, and waits
-    (`pendingFrame`); once the goroutine has the drawable, it has the
-    main thread (`SetPost`, through `surface.Conn.Post`) draw the frame
-    into it and present it. Frames of the display link's ticks
-    (`platform.SurfaceEvent.Paced`) are not built while one waits
-    (`Renderer.Ready`, `windowHost.waitDisplay`): the next draws once it
-    was presented (`platform.PacedSurface.FrameNow`), at the time its tick
-    asked for it, so that what moves keeps its pace; the link keeps
-    ticking meanwhile. Other frames, as a resize's, draw the waiting one
-    first. Frames presented with the transaction, which change the layer,
-    take their drawable on the main thread, as the first after a pause
-    does, after any being taken. Building a frame before its drawable
-    comes, as blocking for it did, keeps the GPU as busy: building only
-    once the drawable came drew a sixth fewer frames where the GPU took
-    most of each refresh. Instances use two frame slots, for
-    the main target and each canvas, and a slot waits only for the command
-    buffer that last used it. Updating an atlas or image texture in place
-    still waits for every frame in flight. Rendering a canvas into its
-    texture stays ordered on the command queue. The layer keeps three
-    drawables, as Core Animation makes while a window animates: with two,
-    on a ProMotion display, frames waited for one most of each refresh,
-    and a fifth of the frames went undrawn. The third costs a frame of memory while a window animates.
-    Waiting for a drawable remains separate from waiting for an instance
-    buffer, so offscreen encode timings do not establish presentation latency.
-    Opaque fill cores use an unblended pipeline in BGRA8; float16 keeps
-    blending to preserve its interpolation rounding. Fragment functions are
-    specialized by batch class and continuous corners, with general shaders
-    as an identical fallback. Runs of small batches of different classes
-    (each covering at most 128×128 pixels, as a box's shadow then its
-    fill) join into one batch whose function holds just their classes'
-    paths (`Batch.Joined`): a draw call costs the CPU more than those
-    pixels cost the joined function. A worker compiles and warms these pipelines,
-    cached per device, outside the frame path. Renderer release stops and
-    joins that worker before releasing its shader library. Float16 shadows
-    stay general, and fills with fractional opacity avoid the plain class,
-    because specialization otherwise changes rounding. Function constant
-    indices 0 through 7 belong to the renderer; effects start their own at 8.
-    Two seconds after the last frame, as the
-    driver frees its own memory of frames, a timer shrinks the drawables,
-    which frees all but the one shown, until the next frame makes them
-    again, and releases GPU instance buffers, atlas/image textures and
-    backdrop textures: an idle window keeps one frame of memory. Its
-    drawables are not `framebufferOnly`, as effects sample the drawable
-    for their backdrops.
-    A frame draws only what changed since its drawable was drawn. Core
-    Animation hands the layer's drawables out in turn, and each holds the
-    frame drawn into it last: the renderer keeps, by the drawable's
-    texture (retained, so that no other takes its address), what changed
-    in the frames since (`gpu.Ages`, as EGL's buffer age says), found by
-    comparing each scene with the last (`scene.Differ`, as the CPU
-    renderer does), grows it by the backdrops of the effects it meets,
-    and, while that is less than half the frame, loads the drawable
-    rather than clearing it, copies a texel cleared to the frame's color
-    over the area (with the `down` pass, so that the GPU converts the
-    color as it does clearing), and draws the batches scissored to it,
-    leaving out those outside. The area is up to eight rectangles apart
-    from each other (`gpu.Part`, from the Differ's, which `gpu.Ages`
-    keeps for each drawable, those that meet or nearly do merged, and
-    past eight the two whose union grows least): a spinner in one corner
-    and a progress bar in the other redraw themselves, not all between,
-    each batch drawing once in each rectangle it meets, so that none is
-    blended twice. A backdrop an effect reads is within one rectangle,
-    drawn before the effect reads it. Apple's tile-based GPUs then load and store
-    only the tiles the pass draws in: a caret blinking in a window of
-    3200×2000 pixels takes 0.4 ms of the GPU a frame rather than 2.4,
-    and a spinner 0.4 rather than 2.9, on an M5. Copying the last frame
-    forward instead (a blit) costs about what drawing it whole does, 0.34
-    ms against 0.43 at 3456×2000. A frame whose scene is the last one's
-    draws nothing and takes no drawable. Apple does not document that
-    drawables keep what was drawn: a drawable not seen yet, the drawables
-    of a new size or format, and those after the timer shrank them draw
-    whole, and `MYGO_PARTIAL=0` draws every frame whole. The pixels are
-    those of the frame drawn whole, byte for byte: an op that the builder
-    puts under another pipeline than in the last frame (a batch
-    specialized for other classes, a pipeline made meanwhile) draws a
-    unit in the last place apart here and there, so its bounds count as
-    changed (`pipelineDamage`), as do those of a clip that starts or stops
-    holding an op drawn under a transform, which it then cuts with a mask
-    (`scene.Differ`); `TestPartialFramesMatchWhole` draws random scenes
-    changing frame after frame into three targets in turn and compares
-    each frame with it drawn whole. Colors
-    outside the sRGB gamut (`ui.Oklch`, as CSS's `oklch()`) are in a
-    table of the scene (`scene.Scene.Wide`), which ops and glyphs point
-    into with a 16-bit index (`Op.Wide`, in room the op's other fields
-    leave); their `Color`, `Color2` and `BorderColor` hold the nearest
-    sRGB colors, found as CSS Color 4 does (`internal/gamut`), which the
-    CPU, OpenGL and Direct3D renderers draw, as `gpu.Builder` does unless
-    `Wide`. The window host decides when a window draws them
-    (`wideHold`): on a screen showing more than sRGB
-    (`platform.WideGamutSurface`, `canRepresentDisplayGamut:` on macOS),
-    from a frame with some until none came for two seconds, so that a
-    blinking caret does not switch formats at every blink; those frames
-    are the GPU's, and a window on an sRGB screen keeps drawing the
-    nearest colors on the CPU. The Metal renderer (`SetWide`) then
-    switches the layer to `RGBA16Float` in the extended sRGB color space,
-    which keeps components outside 0 to 1 and which the system shows in
-    the display's gamut, and draws with pipelines and backdrop textures
-    of that format, made the first time. A uniform of the frame (the z of
-    the vertex and fragment globals) tells the shaders: Oklab gradients
-    then keep what their mix has outside sRGB, and effects read it as
-    `e.wide`, as the glass does to take its tint in extended sRGB
-    (`ui.Painter.EffectColor`);
+  - `internal/gpu/webgpu` is the native macOS renderer, using wgpu-native
+    through `github.com/go-webgpu/webgpu` and a Metal surface. The renderer
+    acquires a configured texture from the surface, encodes the scene and
+    nested canvases into the same command encoder, submits it on the
+    device's default queue and presents it. wgpu-native selects Metal on
+    macOS while the WebGPU resource, texture-view, bind-group and queue
+    model remains portable. The renderer uses WGSL scene, effect and
+    backdrop shaders, keeps per-target instance and atlas buffers, and
+    renders native UI canvases into WebGPU textures. Effects may sample a
+    copy of the target for backdrop blur; imported `wgpu.Texture` views are
+    sampled directly when they belong to the renderer's device. Presentation
+    follows the surface's format and alpha mode; wide-gamut and damage-aware
+    presentation remain parity items.
   - `internal/gpu/gl` with the shader in GLSL 3.30 or GLSL ES 3.00, which
     the driver compiles when the renderer starts, since these versions
     have no compiled form every driver takes, and drivers keep what they
@@ -4969,7 +4848,7 @@ either.
     [Browsers](#browsers-internalweb)): only where its functions come from
     differs, `load_linux.go` or `load_js.go`. A frame draws only what
     changed since the last (`Renderer.Partial`, with `scene.Differ` and
-    `gpu.Pipelines`, as Metal's), into a framebuffer that keeps what was
+    `gpu.Pipelines`), into a framebuffer that keeps what was
     drawn, so there is no buffer age to track: it clears the rectangles of
     the area with the scissor test on, which `glClear` keeps to, and
     draws the batches scissored to each. GTK keeps the GtkGLArea's framebuffer from render to
@@ -5151,9 +5030,9 @@ gets a test with `Tester`. A new GPU renderer draws the instances of
 `Atlas.Changes`, is created in `ui/gpu_<os>.go` behind `gpuRenderer`, and
 has a test that compares its drawing of `gputest.Scene` with the CPU
 renderer's (`gputest.Compare`). On macOS, a cgo build selects the WebGPU
-renderer through `ui/gpu_darwin_webgpu.go`; `CGO_ENABLED=0` retains the
-legacy pure-Go Metal renderer until backdrop effects and the remaining
-public Metal names are migrated.
+renderer through `ui/gpu_darwin_webgpu.go`; `CGO_ENABLED=0` builds the CPU
+native renderer unless the cgo-free WebGPU tags are requested. The direct
+Metal renderer and its public composition names are gone.
 
 ## CLI (`cmd/mygo`)
 
@@ -5467,7 +5346,7 @@ Native library and shader generation commands are listed in [AGENTS.md](../AGENT
 | CLI | `go test ./cmd/mygo` | config, Info.plist, icons, universal binaries, template, dev launch/ready/stop (the test binary plays the app), watcher and `go list` inputs, the console's output (replayed as a terminal shows it), resources (platform directories, universal pairs, exclusions, staging, conflicts, dev placement; builds for every OS), frontend embedding (compiles an app with the overlay), `.DS_Store` against a dmgbuild golden file, a real DMG (`hdiutil`); builds and tools are skipped with `-short` |
 | runtime | `bun run test` | the injected runtime, `mygo-runtime` and the plugins' packages (against a fake Go side on the real runtime, `plugins/fake-go.ts`) |
 | plugins | `go test ./plugins/...` | the fetch plugin against `httptest` servers, the WebSocket client against a test server (ordering, fragments, pings, closing handshakes); the terminal's binding of libghostty-vt (layouts, rendering, encoders, selections), its pseudo-terminals, and its view through `Tester` with real shells: typing, keys as programs ask, input methods, mouse reports, selecting and copying, pasting, scrollback, exits (the library is downloaded, or named by `MYGO_GHOSTTY_VT`; `-short` skips them); the automation plugin's protocol (requests, errors, elements as JSON, input events) against a fake app, and its socket (mode, stale and taken paths); `mygo-automation` (`go test ./internal/automationcli ./plugins/automation/cmd/...`): lines, refs and their staleness, diffs, sessions, and its commands against a fake socket; `skills` printing `SKILL.md` as it is |
-| native UI | `go test ./ui ./internal/text ./internal/scene ./internal/raster ./internal/svg ./internal/gpu/...` | the GPU renderers against the CPU renderer (Direct3D on Windows, WebGPU on cgo-enabled macOS, legacy Metal without cgo, OpenGL on Linux); views through `Tester`: input, focus, editing, lists, overlays, frames that fill the glyph atlas; text layout and caret geometry; atlas zones and repacking; the CPU renderer against its formulas; SVG parsing and drawing, with `FuzzParse`; `go test -run '^$' -bench . ./ui` times a frame |
+| native UI | `go test ./ui ./internal/text ./internal/scene ./internal/raster ./internal/svg ./internal/gpu/...` | the GPU renderers against the CPU renderer (Direct3D on Windows, WebGPU on cgo-enabled macOS, OpenGL on Linux); views through `Tester`: input, focus, editing, lists, overlays, frames that fill the glyph atlas; text layout and caret geometry; atlas zones and repacking; the CPU renderer against its formulas; SVG parsing and drawing, with `FuzzParse`; `go test -run '^$' -bench . ./ui` times a frame |
 | GUI | `MYGO_E2E=1 go test ./internal/e2e` | the real backend: an app driven from another process through `plugins/automation`, and with `mygo-automation`'s commands, IPC, channels, protocol, Eval, geometry, capture, menus, window.open, native UI (frames, clicks, input methods replacing typed text, file drops, assistive technology reading and acting; on macOS typing, skipped while an input method is selected, and composing; on Linux with `MYGO_GPU=1`, what OpenGL drew in the GtkGLArea, from the first frame and once a window drawing in memory asks for the GPU); on Windows too (a GitHub Actions `windows-latest` runner has WebView2) |
 
 Browsers run the `js` tests of the renderer, the text engine and package
@@ -5632,12 +5511,11 @@ a `List` of 100,000 rows scrolling 3 rows a frame, and a dashboard of 12
 cards with shadows, texts and progress bars. Its host (`stressHost`)
 hands the scene on rather than draw it on the CPU, so `ns/op` is the
 frame built, laid out and painted. `BenchmarkStressFrameGPU` draws the
-same frames with Metal (`metal.Offscreen`), its `GPU-ms` the GPU's time,
+same frames with WebGPU (`RenderOffscreen`), its `GPU-ms` the GPU's time,
 which the page shows as the GPU metric, and its `encode-ms` the CPU's
 time encoding each frame (building its instances, uploading what changed
-in its atlases, encoding its passes), the Encode metric, as the Metal
-renderer's benchmarks report too (`BenchmarkRenderPanels`: a page of
-cards taking hundreds of batches).
+in its atlases, encoding its passes), the Encode metric. WebGPU
+encode/GPU-time benchmarks are a remaining parity item.
 
 Benchmarks are described on the page by their doc comments, which the
 site reads when it is built: start them with the benchmark's name.
@@ -5936,7 +5814,7 @@ which npm allows only for packages that exist: the first release uses an
 | native UI surface | layer-backed NSView, frames from `CADisplayLink` (a timer at the display's rate before macOS 14), input methods through NSTextInputClient | GtkGLArea (GtkDrawingArea without a GPU), GtkIMMulticontext | `MyGoSurface` child window, IMM32 |
 | native UI data drags | NSDraggingSession, NSPasteboardItemDataProvider, NSDraggingDestination | GTK drag contexts, MIME selections, text/uri-list | OLE IDataObject, IDropSource, IDropTarget, Shell drag images |
 | native UI accessibility | `NSAccessibilityElement` subclasses | ATK objects (GObject types registered through purego), bridged to AT-SPI by GTK | UI Automation fragments (COM objects; assembly thunks for the methods taking doubles) |
-| native UI rendering | Metal, into a CAMetalLayer presenting as soon as drawn, or with the Core Animation transaction for frames that resize it or show web views | OpenGL 3.3 or ES 3.0 in the GtkGLArea's render signal; on the CPU, painted with cairo, where OpenGL runs on the CPU | Direct3D 11 (WARP without a GPU), flip-model swap chain presenting dirty rectangles |
+| native UI rendering | WebGPU (wgpu-native over Metal), into a configured GPU surface and presented after submission | OpenGL 3.3 or ES 3.0 in the GtkGLArea's render signal; on the CPU, painted with cairo, where OpenGL runs on the CPU | Direct3D 11 (WARP without a GPU), flip-model swap chain presenting dirty rectangles |
 | web views in native UI | WKWebView in a clip view under the surface; `hitTest:` lets the pointer through | WebKitWebView in a `GtkLayout` under the area in a `GtkOverlay`; an input shape lets the pointer through | WebView2 composition controller in a DirectComposition target under the frames'; the surface sends it the mouse |
 | audio output | Audio Queue on the default output | PulseAudio simple API (PipeWire too), else ALSA `default` | WASAPI shared mode, reopened when the default output changes |
 | gamepads | GameController.framework, extended gamepad profile | evdev, the kernel's gamepad layout, Xbox's X and Y swapped back | XInput, four slots, Guide by `XInputGetStateEx` |

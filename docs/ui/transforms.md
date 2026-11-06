@@ -164,10 +164,11 @@ transforms too.
 
 ## Rendering
 
-Metal, Direct3D 11, and OpenGL apply general transforms to their instanced
+WebGPU, Direct3D 11, and OpenGL apply general transforms to their instanced
 geometry on the GPU. Fills, borders, shadows, images, text, and effects keep
-local coordinates; backdrop reads map back into window coordinates. Metal
-preserves wide-gamut colors under transforms.
+local coordinates; backdrop reads map back into window coordinates. WebGPU's
+Metal-backed surface preserves the colors it is configured to keep under
+transforms.
 
 Nested rounded or transformed clips use retained coverage masks once
 content inside them is scaled, rotated, skewed or in perspective. Content

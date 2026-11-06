@@ -31,3 +31,30 @@ func Fragment(dst vec4, pos vec2) vec4 {
 		}
 	}
 }
+
+func TestFragmentWritesOutParameters(t *testing.T) {
+	p, err := shader.CompileFragment([]byte(`package main
+
+func split(pos vec2) (float, vec2) {
+	return pos.x, pos
+}
+
+func Fragment(dst vec4, pos vec2) vec4 {
+	x, xy := split(pos)
+	return vec4(x, xy.x, xy.y, 1)
+}
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := wgsl.Fragment(p, "shaderFragment")
+	for _, want := range []string{
+		"ptr<function, f32>",
+		"&l",
+		"(*l",
+	} {
+		if !strings.Contains(src, want) {
+			t.Fatalf("WGSL output lacks %q:\n%s", want, src)
+		}
+	}
+}

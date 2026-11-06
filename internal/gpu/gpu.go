@@ -2,7 +2,7 @@
 // quad per operation, for a shader that computes rounded rectangles,
 // borders, gradients, stripes, shadows and atlas coverage itself, in
 // batches that share a scissor rectangle and an image. Every renderer
-// (d3d11, metal, gl) draws the same instances, the way internal/raster
+// (d3d11, webgpu, gl) draws the same instances, the way internal/raster
 // draws scenes on the CPU.
 //
 // An effect (scene.Effect) draws with a pipeline of its own, made from
@@ -55,7 +55,7 @@ func GoBytes(name string, b []byte) string {
 type Instance struct {
 	// Rect is x, y, width, height; Radii the corners' radii (top-left,
 	// top-right, bottom-right, bottom-left), negative for continuous
-	// corners (scene.Corners), which only Metal's shader draws, or a
+	// corners (scene.Corners), which only WebGPU's shader draws, or a
 	// glyph's gamma ratios
 	// (scene.TextParams); Inner those of a border's inner edge, or of the
 	// box casting a shadow, or a glyph's contrast and thin boost in Inner[0]
@@ -156,7 +156,7 @@ type Batch struct {
 }
 
 // Class says which paths of the fragment shader a batch's instances take.
-// Renderers specialize their shader for it (Metal's function constants, a
+	// Renderers specialize their shader for it (WebGPU's pipeline variants, a
 // #define of GLSL, a macro of HLSL): the general shader holds the code of
 // every path, and registers for the heaviest, so the plain fills most of a
 // window is made of ran at a fraction of the speed it has without the rest.
@@ -238,7 +238,7 @@ type Builder struct {
 	// unblurred.
 	BlurredImage func(img *scene.Image, bk scene.Backdrop) uintptr
 	// Wide draws the colors of scenes outside the sRGB gamut
-	// (Scene.Wide), for a target that keeps them, as Metal's float16
+	// (Scene.Wide), for a target that keeps them, as WebGPU's float16
 	// drawables do; without it, their nearest sRGB colors.
 	Wide bool
 	// NoShadowSplit draws every shadow as one instance, for comparison tests.
@@ -256,14 +256,14 @@ type Builder struct {
 	// measurements that compare the specialized shaders with the general one.
 	NoClasses bool
 	// Classes separates batches for renderers with specialized fragment shaders
-	// (Metal's and Direct3D 11's).
+	// (WebGPU's and Direct3D 11's).
 	Classes bool
 	// GeneralClasses has a bit (1 << Class) for each class that draws with the
 	// general shader, for tests that find which specialized one differs.
 	GeneralClasses uint32
 	// Opaque lets large opaque fills be drawn as an opaque core with blended
 	// edges around it (see addOpaque), which a renderer sets that gains from
-	// drawing the cores without blending (Metal's tile-based GPUs: hidden
+	// drawing the cores without blending (WebGPU's tile-based GPUs: hidden
 	// surfaces are discarded): the others would only draw more calls for the
 	// same pixels. Tests and measurements switch it to compare the two.
 	Opaque bool
@@ -274,7 +274,7 @@ type Builder struct {
 	// and NoClipSkip makes them compute the clip's coverage where it is 1
 	// (see markFill), for tests and measurements that compare them.
 	GeneralFill, NoClipSkip bool
-	// ClipSkip enables the clip-coverage flag understood by the Metal shader.
+	// ClipSkip enables the clip-coverage flag understood by the WebGPU shader.
 	ClipSkip bool
 	// NoJoin keeps the batches of each class apart, however small (see
 	// joinLast), for tests and measurements that compare the two.

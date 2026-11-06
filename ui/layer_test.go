@@ -453,18 +453,6 @@ func TestUILayerTextInputClientConnectsToOuterHost(t *testing.T) {
 	}
 }
 
-func TestUILayerCanFeedMetalCanvasSource(t *testing.T) {
-	layer := NewUILayer(func(c *Context) {
-		Text(c, "Layer source")
-	}, 120, 40)
-	defer layer.Close()
-	canvas := NewMetalCanvas(120, 40, nil)
-	canvas.SetSource(layer.Bitmap())
-	if got := canvas.img.GPU.Source.Value(); got != layer.img {
-		t.Fatalf("Metal source = %p, want layer image %p", got, layer.img)
-	}
-}
-
 func TestUILayerDoesNotReplayClicks(t *testing.T) {
 	clicks := 0
 	layer := NewUILayer(func(c *Context) {

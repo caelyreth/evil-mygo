@@ -1,4 +1,4 @@
-//go:build darwin && ((mygo_webgpu && nofakecgo) || (cgo && !mygo_metal))
+//go:build darwin && ((mygo_webgpu && nofakecgo) || cgo)
 
 // WebGPU-canvas is a native MyGo window containing a custom WebGPU
 // render target. The application encodes into MyGo's command encoder and

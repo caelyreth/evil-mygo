@@ -6,7 +6,7 @@
 // quad drawn by one shader (shader.glsl, compiled when the renderer
 // starts), from the instances package gpu builds; clips are scissor
 // rectangles, with the innermost rounded clip computed in the shader, as
-// in packages d3d11 and metal. GL functions come from libepoxy on Linux,
+// in packages d3d11 and webgpu. GL functions come from libepoxy on Linux,
 // which GTK resolves its own through, called with purego (no cgo), and
 // from the current WebGL 2 context in browsers (load_js.go), through
 // syscall/js.

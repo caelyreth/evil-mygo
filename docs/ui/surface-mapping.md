@@ -1,6 +1,6 @@
 # Surface mapping
 
-When native UI is presented through a custom Metal scene, the visible
+When native UI is presented through a custom WebGPU scene, the visible
 pixels and the input geometry are separate. `ui.SurfaceMap` is the
 framework contract that connects them:
 
@@ -136,23 +136,23 @@ client captures the mapping version when it is created; geometry queries
 return unavailable if the map advances before the presenting host is
 rebuilt. Create it in the same pass as that host.
 
-[`examples/layer-membrane`](../../examples/layer-membrane) exercises the
-full path with an application-owned moving heightfield: ray intersection,
-UV lookup, front/back-face rejection, ground occlusion, native button
-input, IME geometry and cursor handoff. It is deliberately application
-code; the core only supplies the layer and mapping contracts.
+[`examples/layer-lab`](../../examples/layer-lab) exercises the native
+layer and shader path. Deformable-surface applications can implement
+`SurfaceMap` directly for ray intersection, UV lookup, front/back-face
+rejection, native button input, IME geometry and cursor handoff. The core
+supplies the layer and mapping contracts.
 
-A `UILayer.Bitmap()` can also be passed to `MetalCanvas.SetSource`, so
-the same live layer can be sampled by an external Metal pass without
+A `UILayer.Bitmap()` can also be passed to `WebGPUCanvas.SetSource`, so
+the same live layer can be sampled by an external WebGPU pass without
 first being attached to the window tree:
 
 ```go
 layer := ui.NewUILayer(buildPanel, 900, 500)
-metal := ui.NewMetalCanvas(900, 500, drawMetalPass)
-metal.SetSource(layer.Bitmap())
+canvas := ui.NewWebGPUCanvas(900, 500, drawWebGPUPass)
+canvas.SetSource(layer.Bitmap())
 ```
 
-`UILayer`, `MetalCanvas`, and `MetalTexture` all satisfy the
+`UILayer`, `WebGPUCanvas`, and `WebGPUTexture` all satisfy the
 backend-neutral `ui.GPUTexture` contract (`Size`, `Bitmap`,
 `Invalidate`). It gives host code a common handle for composition and
 lifecycle without hiding the backend-specific constructor needed to
@@ -162,7 +162,7 @@ The layer benchmarks are:
 
 ```sh
 go test -run '^$' -bench 'BenchmarkUILayer' -benchmem ./ui
-go test -run '^$' -bench 'BenchmarkMembrane' -benchmem ./examples/layer-membrane
+go test -run '^$' -bench 'BenchmarkUILayer' -benchmem ./ui
 ```
 
 On the current macOS arm64 development machine, the small layer benchmark
@@ -170,7 +170,5 @@ is about 3.5 µs for a render and 0.36 µs for a down/up surface-input pair,
 with six allocations each. These are measurement baselines, not promises
 for a particular scene or GPU.
 
-The app-owned heightfield's CPU ray/root test takes about 331 ns with no
-allocations, and projecting a UV back to the screen about 80 ns. These are
-the costs a scene host pays outside GPU sampling; the Metal pass and
-presentation are measured separately.
+The app-owned surface mapping cost stays outside GPU sampling; the WebGPU
+pass and presentation are measured separately.

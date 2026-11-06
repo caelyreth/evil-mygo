@@ -23,7 +23,7 @@ var Count int
 var Spots [3]vec3
 var Turn mat2
 
-// Bools last: Metal's take a byte each, at the end of its struct.
+// Bools last: they take a byte each in the packed shader layout.
 var On, Off, Third bool
 
 func pcg(v uint) uint {
@@ -148,7 +148,7 @@ func checkDfdy(t *testing.T, pix []byte, stride int) {
 }
 
 // boolSource reads only bools besides the bridge's uniforms, which leaves
-// Metal's struct aligned to 8, the bools in its last bytes.
+// the packed layout aligned to 8, the bools in its last bytes.
 const boolSource = `package main
 
 var A, B, C bool

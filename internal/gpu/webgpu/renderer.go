@@ -26,6 +26,8 @@ type Renderer struct {
 	shader     *wgpu.ShaderModule
 	layout     *wgpu.BindGroupLayout
 	pipe       *wgpu.RenderPipeline
+	holePipe   *wgpu.RenderPipeline
+	holeLayout *wgpu.BindGroupLayout
 	sampler    *wgpu.Sampler
 	passShader *wgpu.ShaderModule
 	passLayout *wgpu.BindGroupLayout
@@ -123,6 +125,45 @@ func NewRenderer(g *GPU, format wgpu.TextureFormat) (*Renderer, error) {
 	if err != nil {
 		r.Release()
 		return nil, fmt.Errorf("webgpu: scene pipeline: %w", err)
+	}
+	holeBlend := &wgpu.BlendState{
+		Color: wgpu.BlendComponent{
+			Operation: gputypes.BlendOperationAdd,
+			SrcFactor: gputypes.BlendFactorZero,
+			DstFactor: gputypes.BlendFactorOneMinusSrcAlpha,
+		},
+		Alpha: wgpu.BlendComponent{
+			Operation: gputypes.BlendOperationAdd,
+			SrcFactor: gputypes.BlendFactorZero,
+			DstFactor: gputypes.BlendFactorOneMinusSrcAlpha,
+		},
+	}
+	holePipe, err := g.device.CreateRenderPipeline(&wgpu.RenderPipelineDescriptor{
+		Label: "MyGo scene holes",
+		Vertex: wgpu.VertexState{
+			Module: r.shader, EntryPoint: "vs",
+		},
+		Primitive: wgpu.PrimitiveState{
+			Topology:  wgpu.PrimitiveTopology(5),
+			FrontFace: wgpu.FrontFaceCCW,
+			CullMode:  wgpu.CullModeNone,
+		},
+		Multisample: wgpu.MultisampleState{Count: 1},
+		Fragment: &wgpu.FragmentState{
+			Module: r.shader, EntryPoint: "fs",
+			Targets: []wgpu.ColorTargetState{{
+				Format: format, Blend: holeBlend, WriteMask: wgpu.ColorWriteMaskAll,
+			}},
+		},
+	})
+	if err != nil {
+		r.Release()
+		return nil, fmt.Errorf("webgpu: hole pipeline: %w", err)
+	}
+	r.holePipe = holePipe
+	if r.holeLayout = holePipe.GetBindGroupLayout(0); r.holeLayout == nil {
+		r.Release()
+		return nil, errors.New("webgpu: hole pipeline has no bind group layout")
 	}
 	if r.layout = r.pipe.GetBindGroupLayout(0); r.layout == nil {
 		r.Release()
@@ -320,7 +361,11 @@ func (r *Renderer) renderScene(s *scene.Scene, encoder *wgpu.CommandEncoder, tar
 			}
 			// An effect batch changes the pipeline; restore the scene
 			// pipeline before a following fill, glyph or image batch.
-			pass.SetPipeline(r.pipe)
+			if batch.Hole {
+				pass.SetPipeline(r.holePipe)
+			} else {
+				pass.SetPipeline(r.pipe)
+			}
 			image := r.defaultImage.view
 			if batch.Image != 0 {
 				t := r.texture(batch.Image)
@@ -337,7 +382,11 @@ func (r *Renderer) renderScene(s *scene.Scene, encoder *wgpu.CommandEncoder, tar
 				}
 				clip = t.view
 			}
-			bind, err := st.bindFor(r, image, clip)
+			layout := r.layout
+			if batch.Hole {
+				layout = r.holeLayout
+			}
+			bind, err := st.bindFor(r, layout, image, clip)
 			if err != nil {
 				return fmt.Errorf("webgpu: scene bind group: %w", err)
 			}
@@ -550,9 +599,6 @@ func (r *Renderer) sweepCanvases() {
 
 func supported(batches []gpu.Batch, instances []gpu.Instance) error {
 	for _, b := range batches {
-		if b.Hole {
-			return errors.New("webgpu: scene effect or hole not ported yet")
-		}
 		if b.Effect != nil && b.Effect.WGSL == "" {
 			return errors.New("webgpu: effect has no WGSL source")
 		}
@@ -692,6 +738,14 @@ func (r *Renderer) Release() {
 	if r.downPipe != nil {
 		r.downPipe.Release()
 		r.downPipe = nil
+	}
+	if r.holePipe != nil {
+		r.holePipe.Release()
+		r.holePipe = nil
+	}
+	if r.holeLayout != nil {
+		r.holeLayout.Release()
+		r.holeLayout = nil
 	}
 	if r.blurPipe != nil {
 		r.blurPipe.Release()

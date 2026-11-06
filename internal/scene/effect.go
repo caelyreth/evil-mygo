@@ -6,20 +6,20 @@ import (
 )
 
 // Effect is a kind of drawing that a package outside the renderers
-// defines, as the official plugins do (plugins/glass): a fragment shader
-// for each GPU renderer, drawn with a pipeline of its own, and its twin
-// for the CPU renderer, which must compute the same colors. An effect
-// paints the shape of its OpEffect (Rect rounded by Radii) from its
-// parameters, and from its backdrop when it reads one: what the
-// operations before it painted around it, blurred (see Backdrop).
+// defines, as the official plugins do (plugins/glass): WGSL, HLSL and
+// GLSL fragment shaders for the GPU renderers, drawn with a pipeline of
+// their own, and a twin for the CPU renderer, which must compute the same
+// colors. An effect paints the shape of its OpEffect (Rect rounded by
+// Radii) from its parameters, and from its backdrop when it reads one:
+// what the operations before it painted around it, blurred (see Backdrop).
 //
 // Each shader is the source of a function that the renderer puts between
 // a head and a tail of its own, which declare what it reads and call it
-// (EffectSource in packages metal, d3d11 and gl):
+// (EffectSource in package webgpu, d3d11 and gl):
 //
-//	Metal: float4 effect(float2 p, Effect e, texture2d<float> backdrop)
-//	HLSL:  float4 effect(float2 p, Effect e)
-//	GLSL:  vec4 effect(vec2 p, Effect e)
+//	WGSL: fn effect(p: vec2<f32>, e: Effect) -> vec4<f32>
+//	HLSL: float4 effect(float2 p, Effect e)
+//	GLSL: vec4 effect(vec2 p, Effect e)
 //
 // It returns the premultiplied color at the pixel center p, in device
 // pixels, of the shape e.rect rounded by e.radii, from the parameters
@@ -27,21 +27,20 @@ import (
 // of the pixel the shape and the clip cover, and by the opacity. The
 // shape's corners may be continuous (Op.Continuous), which the renderer
 // covers as such, while e.radii, positive, has the effect take them as
-// circular. In Metal, e.wide tells that the target keeps colors outside
-// the sRGB gamut, in extended sRGB (Scene.Wide), which the effect may then
-// take from a parameter holding such a color (ui.Painter.EffectColor).
-// sampleBackdrop(e, q) (with the backdrop texture first in Metal) returns
-// the backdrop at q, premultiplied, as BackdropImage.Sample does.
+// circular. For a target that keeps colors outside the sRGB gamut, in
+// extended sRGB (Scene.Wide), the effect may take such a color from a
+// parameter (ui.Painter.EffectColor). sampleBackdrop(e, q) returns the
+// backdrop at q, premultiplied, as BackdropImage.Sample does.
 type Effect struct {
 	// Name names the effect in errors.
 	Name string
 	// Backdrop tells that the effect reads its backdrop.
 	Backdrop bool
-	// Metal and HLSL are the effect's shader in Metal Shading Language
-	// and HLSL, with the code compiled ahead of time from it; GLSL is its
-	// shader in GLSL 3.30 and GLSL ES 3.00, which drivers compile.
-	Metal, HLSL EffectCode
-	GLSL        string
+	// HLSL is the effect's shader in HLSL, with the code compiled ahead
+	// of time from it; GLSL is its shader in GLSL 3.30 and GLSL ES 3.00,
+	// which drivers compile.
+	HLSL EffectCode
+	GLSL string
 	// WGSL is the effect's WebGPU shader. It defines
 	//
 	//	fn effect(p: vec2<f32>, e: Effect) -> vec4<f32>
@@ -58,9 +57,8 @@ type Effect struct {
 	// draws: its code is the shader's (the Fragment of package shaderir's
 	// backends, and a function calling it), which reads the words of
 	// EffectOp.Uniforms in a buffer laid out as Shader says, and the images
-	// of EffectOp.Images. Metal's is a whole library, with a tail of its
-	// own (ShaderSource in package metal); the others' go between the
-	// effects' head and tail.
+	// of EffectOp.Images. WGSL is compiled by the WebGPU renderer; HLSL and
+	// GLSL go between the effects' head and tail.
 	Shader *ShaderLayout
 }
 
@@ -73,10 +71,10 @@ type ShaderLayout struct {
 }
 
 // Pack writes words into buf, grown to the layout's size, as the layout
-// lays them out, and returns it. A lane takes 4 bytes, but for a bool of
-// Metal, which takes 1 and may lie in the last bytes: the bytes that fit
-// are written, little end first, and lanes in ascending order write over
-// what the one before spilled.
+// lays them out, and returns it. A lane takes 4 bytes, but for a bool,
+// which takes 1 and may lie in the last bytes: the bytes that fit are
+// written, little end first, and lanes in ascending order write over what
+// the one before spilled.
 func (l *ShaderLayout) Pack(buf []byte, words []uint32) []byte {
 	if cap(buf) < l.Size {
 		buf = make([]byte, l.Size)

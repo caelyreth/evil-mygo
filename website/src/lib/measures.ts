@@ -112,7 +112,6 @@ export const groups: Group[] = [
   },
   { pkg: "internal/text", title: "Text layout", text: "Paragraphs and labels shaped and broken into lines." },
   { pkg: "internal/raster", title: "CPU renderer", text: "Scenes drawn into memory, as windows without a GPU draw them." },
-  { pkg: "internal/gpu/metal", title: "Metal renderer", text: "Scenes drawn by the GPU on macOS into a texture, waiting for each." },
   { pkg: "internal/svg", title: "SVG", text: "Icons parsed and drawn." },
   { pkg: "plugins/terminal", title: "Terminal", text: "The terminal plugin taking a program's output, and drawing its view." },
 ]

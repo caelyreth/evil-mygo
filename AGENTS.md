@@ -26,6 +26,11 @@ wire protocol, TypeScript generation, and the checklist for adding features.
   renderer; see "Browsers"). The bundled CEF option is out of scope until
   asked. Other platforms must keep compiling through
   `internal/unsupported`.
+- **macOS GPU path.** Native UI GPU drawing goes through
+  `github.com/go-webgpu/webgpu` (wgpu-native over Metal). A normal cgo
+  build uses it; a `CGO_ENABLED=0` build uses the CPU renderer unless it
+  passes `mygo_webgpu,nofakecgo`. The direct Metal renderer and its public
+  composition API are retired.
 - **Great DX over Electron parity.** Keep the familiar feel (app lifecycle,
   windows, menus) but design Go-first APIs: typed IPC via `mygo.Bind` and
   `mygo.NewEvent[T]` with the generated client, not string channels.
@@ -77,10 +82,9 @@ go run ./plugins/automation/cmd/mygo-automation skills   # the automation CLI's 
 go run ./examples/sf-symbols               # the system's SF Symbols on macOS (plugins/sfsymbols)
 go generate ./plugins/terminal             # build libghostty-vt for every platform (with Zig), write Ghostty's themes
 go generate ./internal/gpu/d3d11           # recompile the Direct3D shader (on Windows)
-go generate ./internal/gpu/metal           # recompile the Metal shader (on macOS, with Xcode)
 go generate ./cmd/mygo                     # the Mandarin readings of slugs (cmd/mygo/pinyin.bin), from Unicode's Unihan
 go generate ./internal/l10n                # MyGo's own strings: their functions, and the packages of translations in locales/
-go generate ./plugins/glass                # recompile the glass plugin's shaders (on macOS, and on Windows)
+go generate ./plugins/glass                # recompile the glass plugin's Direct3D shaders (on Windows)
 bun run --cwd website dev                  # the website, with docs/ at /docs (see website/README.md)
 bun scripts/bench.ts run [--e2e]           # benchmarks and app sizes, medians of 6 runs (CI: bench.yml, /measures)
 go run ./benchmarks/run -out benchmarks/results.json  # MyGo, GPUI, GPUI Fast and egui on the same apps, for /benchmarks (opens windows, on a real Mac)
@@ -111,8 +115,9 @@ Windows GUI tests need Windows with the WebView2 Runtime (a GitHub Actions
   `mygo-plugin.json` pins the builds the CLI puts into apps, published as
   release assets (`libghostty-vt-<commit>`); change it with `go generate`. The glass
   plugin is Go only too, an effect of the renderers (`scene.Effect`): its
-  shader in Metal, HLSL and GLSL with a CPU twin that must draw the same
-  pixels, compiled ahead of time by `go generate` on macOS and Windows.
+  shader in WGSL, HLSL and GLSL with a CPU twin that must draw the same
+  pixels; Direct3D bytecode is compiled ahead of time by `go generate` on
+  Windows.
   The game plugin is Go only too, what games need beyond what apps do,
   opt-in, kept out of core `ui`: a game loop and a camera for native UI,
   and `plugins/game/gamepad`, which reads controllers. The loading plugin

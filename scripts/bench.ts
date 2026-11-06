@@ -121,7 +121,7 @@ async function run(args: string[]): Promise<void> {
 
 /**
  * Returns the directories of the packages that have benchmarks on this
- * platform: those of internal/gpu/metal, say, only build on macOS.
+ * platform: those of internal/gpu/webgpu, say, only build on macOS.
  */
 async function benchmarkPackages(e2e: boolean): Promise<string[]> {
   const dirs = new Set<string>();

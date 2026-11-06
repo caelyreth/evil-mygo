@@ -1,8 +1,9 @@
 # Rendering
 
-MyGo draws on the GPU with Metal on macOS, with Direct3D 11 on Windows, or
-with WARP, Windows' own software renderer, where no GPU driver works, and
-with OpenGL on Linux, in the GtkGLArea GTK shows, and with WebGL 2 in
+MyGo draws on the GPU with WebGPU (wgpu-native over Metal) on macOS, with
+Direct3D 11 on Windows, or with WARP, Windows' own software renderer, where
+no GPU driver works, and with OpenGL on Linux, in the GtkGLArea GTK shows,
+and with WebGL 2 in
 [browsers](browsers.md), with the shader of Linux. A shader computes rounded
 rectangles, borders, gradients and shadows from the distance to their
 edges, so they stay sharp at any size and scale, and text comes from a

@@ -3,11 +3,11 @@
 The long-term GPU path is
 [`github.com/go-webgpu/webgpu`](https://github.com/go-webgpu/webgpu),
 pinned to `v0.5.5`, on top of wgpu-native v29. It calls wgpu-native through
-pure Go FFI, so the framework remains `CGO_ENABLED=0`.
+pure Go FFI when built with `-tags nofakecgo`; a normal cgo build avoids
+the purego/goffi fake-cgo collision and is the default on macOS.
 
-On macOS wgpu-native selects Metal. MyGo is moving from direct
-Objective-C/Metal drawing to WebGPU while keeping the same generated UI
-scenes and native input/accessibility contracts.
+On macOS wgpu-native selects Metal. The direct Objective-C/Metal renderer
+and its public composition API have been retired.
 
 ## Runtime
 
@@ -74,9 +74,9 @@ own atlas and nested canvas, through the WebGPU renderer.
 
 ## Native UI
 
-On macOS, a cgo-enabled build uses this WebGPU renderer by default; without
-cgo, the direct Metal renderer remains the fallback while effects and custom
-shader libraries finish moving:
+On macOS, a cgo-enabled build uses this WebGPU renderer by default. Without
+cgo, the native UI CPU renderer is used unless the app opts into the
+cgo-free WebGPU path:
 
 ```sh
 go run ./examples/counter-native
@@ -84,8 +84,7 @@ go run ./examples/counter-native
 # The cgo-free WebGPU path, for tests and pure-Go distributions:
 CGO_ENABLED=0 go run -tags mygo_webgpu,nofakecgo ./examples/counter-native
 
-# The legacy direct Metal path, explicitly:
-CGO_ENABLED=1 go run -tags mygo_metal ./examples/counter-native
+# A normal cgo build uses WebGPU above.
 ```
 
 `nofakecgo` is required for the cgo-free WebGPU build because MyGo's macOS
@@ -134,8 +133,8 @@ fn effect(p: vec2<f32>, e: Effect) -> vec4<f32>
 ```
 
 `p` is in device pixels in the effect's local box, and `e.rect`, `e.radii`
-and `e.p0` through `e.p4` are the same shape and parameters the existing
-Metal, Direct3D and CPU effects receive. The renderer supplies `T0` to
+and `e.p0` through `e.p4` are the same shape and parameters the Direct3D
+and CPU effects receive. The renderer supplies `T0` to
 `T3`, `clip_tex`, `mask_tex`, `effect_sampler`, `shader_uniforms` and the
 backdrop area fields. The effect returns premultiplied color; MyGo applies
 the shape, clip and opacity afterward.
@@ -157,14 +156,12 @@ rasterizer on WebGPU.
 
 ## Remaining parity work
 
-The direct Metal renderer remains temporarily as the default until these
-WebGPU paths are complete:
+The direct Metal renderer and Metal-specific public APIs have been
+removed. These WebGPU paths remain:
 
-- backdrop textures for effects that read them;
 - image blur and the remaining wide-gamut/damage-aware presentation paths;
-- holes, wide-gamut presentation and damage-aware presentation;
-- benchmark parity and the purego/goffi build-tag removal;
-- migration of the Metal examples and public names to WebGPU.
+- benchmark parity;
+- removal of the `nofakecgo` requirement for fully cgo-free WebGPU builds.
 
 ## `purego` build tag
 
@@ -182,17 +179,12 @@ with:
 ```
 
 The standalone WebGPU device test does not import purego and needs no tag.
-The surface-owning test and the eventual renderer integration do.
+The surface-owning and native UI integration tests do.
 
 ## Migration guardrails
 
-- The direct Metal renderer stays temporarily as a reference, but new
-  public GPU work must target WebGPU.
 - Platform integration must pass `nofakecgo` until `purego` is removed
   from the final native stack or upstream provides automatic arbitration.
-- The Metal implementation is removed only after WebGPU parity for the
-  scene renderer, offscreen canvases, custom passes, imported surfaces,
-  synchronization, wide color, effects and benchmarks.
 - Application code must use WebGPU texture/buffer handles. It must not
   require a raw `MTLTexture`.
 - WebGPU's portable texture model replaces the previous same-Metal-device

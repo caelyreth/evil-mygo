@@ -920,6 +920,57 @@ fn effect(p: vec2<f32>, e: Effect) -> vec4<f32> {
 	}
 }
 
+func TestRendererErasesHoles(t *testing.T) {
+	if _, ok := RuntimePath(); !ok {
+		t.Skip("wgpu-native is not installed")
+	}
+	g, err := Open()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer g.Release()
+	const width, height = 64, 32
+	target, view := testTarget(t, g, width, height)
+	defer target.Release()
+	defer view.Release()
+	renderer, err := NewRenderer(g, wgpu.TextureFormatRGBA8Unorm)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer renderer.Release()
+	s := &scene.Scene{
+		Width: width, Height: height,
+		Clear: scene.Color{R: 20, G: 40, B: 60, A: 255},
+		Ops: []scene.Op{
+			{Kind: scene.OpFill, Rect: scene.Rect{W: width, H: height}, Color: scene.Color{R: 240, G: 240, B: 240, A: 255}},
+			{Kind: scene.OpHole, Rect: scene.Rect{X: 16, Y: 8, W: 16, H: 16}},
+		},
+	}
+	encoder, err := g.Device().CreateCommandEncoder(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g.Device().PushErrorScope(wgpu.ErrorFilterValidation)
+	if err := renderer.Render(s, encoder, view); err != nil {
+		t.Fatal(err)
+	}
+	pixels := readTarget(t, g, target, encoder, width, height)
+	renderer.FinishFrame()
+	if typ, message, err := g.Device().PopErrorScopeAsync(g.Instance()); err != nil {
+		t.Fatal(err)
+	} else if typ != wgpu.ErrorTypeNoError {
+		t.Fatalf("WebGPU validation error %v: %s", typ, message)
+	}
+	outside := pixels[(4*256+4*4):][:4]
+	inside := pixels[(12*256+20*4):][:4]
+	if outside[0] != 240 || outside[1] != 240 || outside[2] != 240 || outside[3] != 255 {
+		t.Fatalf("hole outside pixel = %v, want the fill", outside)
+	}
+	if inside[3] != 0 {
+		t.Fatalf("hole inside pixel = %v, want transparent", inside)
+	}
+}
+
 func TestRendererSamplesBackdrop(t *testing.T) {
 	if _, ok := RuntimePath(); !ok {
 		t.Skip("wgpu-native is not installed")

@@ -50,7 +50,7 @@ func benchBuildBoxes(b *testing.B, translated, noFold bool) {
 }
 
 // BenchmarkDiffRows compares a frame of a list of 200 rows at 3456×2000
-// with the last (scene.Differ), as Metal's renderer does before drawing
+// with the last (scene.Differ), as the WebGPU renderer does before drawing
 // what changed: unchanged, and with one row's badge changing color, and
 // BenchmarkBuildRows builds it, for comparison.
 func BenchmarkDiffRows(b *testing.B) {

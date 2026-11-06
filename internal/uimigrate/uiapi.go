@@ -240,6 +240,7 @@ var elementChains = map[string]bool{
 	"HeightPercent":        true,
 	"Hidden":               true,
 	"HitTest":              true,
+	"HostLayer":            true,
 	"IgnoreInput":          true,
 	"InputMethod":          true,
 	"InsetShadow":          true,

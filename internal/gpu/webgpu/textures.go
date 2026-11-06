@@ -20,6 +20,7 @@ type textureEntry struct {
 }
 
 type bindKey struct {
+	layout *wgpu.BindGroupLayout
 	image *wgpu.TextureView
 	clip  *wgpu.TextureView
 	mask  *wgpu.TextureView
@@ -243,18 +244,21 @@ func (r *Renderer) syncExternalImage(img *scene.Image) (uintptr, error) {
 	return token, nil
 }
 
-func (s *drawState) bindFor(r *Renderer, image, clip *wgpu.TextureView) (*wgpu.BindGroup, error) {
+func (s *drawState) bindFor(r *Renderer, layout *wgpu.BindGroupLayout, image, clip *wgpu.TextureView) (*wgpu.BindGroup, error) {
+	if layout == nil {
+		layout = r.layout
+	}
 	if image == nil {
 		image = r.defaultImage.view
 	}
 	if clip == nil {
 		clip = r.defaultClip.view
 	}
-	key := bindKey{image: image, clip: clip, mask: s.mask.view, color: s.color.view, stops: s.stopsBuf}
+	key := bindKey{layout: layout, image: image, clip: clip, mask: s.mask.view, color: s.color.view, stops: s.stopsBuf}
 	if bind := s.binds[key]; bind != nil {
 		return bind, nil
 	}
-	bind, err := r.gpu.device.CreateBindGroupSimple(r.layout, []wgpu.BindGroupEntry{
+	bind, err := r.gpu.device.CreateBindGroupSimple(layout, []wgpu.BindGroupEntry{
 		wgpu.BufferBindingEntry(0, s.globals, 0, 16),
 		wgpu.BufferBindingEntry(1, s.instBuf, 0, uint64(s.capacity)*uint64(instanceSize)),
 		wgpu.TextureBindingEntry(2, image),

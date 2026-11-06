@@ -515,7 +515,7 @@ func (s *surface) frameNow(paced bool) {
 }
 
 // presentsWithTransaction reports whether the GPU renderer's CAMetalLayer
-// presents with Core Animation's transaction (internal/gpu/metal), as it
+// presents with Core Animation's transaction, as it
 // does the frames that change it: the frame drawn last then takes a
 // drawable until the transaction commits.
 func (s *surface) presentsWithTransaction() bool {

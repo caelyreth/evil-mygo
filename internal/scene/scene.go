@@ -127,7 +127,7 @@ type Op struct {
 	// rounded rectangles): the curve starts further from the corner and
 	// bends gradually, instead of as a quarter circle. Corners that are
 	// round in both directions, as a circle's, stay circular. Only the
-	// renderers of macOS draw them, the CPU's and Metal's.
+	// renderers of macOS draw them, the CPU's and WebGPU's.
 	Continuous bool
 
 	Color Color

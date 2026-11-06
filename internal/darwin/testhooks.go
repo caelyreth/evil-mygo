@@ -1740,7 +1740,7 @@ func TestWindowPixels(handle uintptr) (img *image.RGBA, ok bool) {
 
 // TestDrawablesTrimmed reports whether the GPU renderer of a window's
 // native UI gave back its drawables, as it does once the window has drawn
-// nothing for a while (internal/gpu/metal's trim), and whether the window
+// nothing for a while, and whether the window
 // draws with one.
 func TestDrawablesTrimmed(handle uintptr) (trimmed, ok bool) {
 	w := theBackend.byNSWindow[id(handle)]

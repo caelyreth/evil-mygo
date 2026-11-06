@@ -6,7 +6,7 @@ import (
 	"github.com/egoist/mygo/internal/scene"
 )
 
-// Continuous corners (negative radii) cost Metal's shader far more than
+// Continuous corners (negative radii) cost WebGPU's shader far more than
 // circular ones: a fill's coverage near them is their value and its two
 // derivatives, and a blurred shadow finds, for each of its four rows of
 // samples, where the curve is by regula falsi. A batch holding any of them
@@ -39,7 +39,7 @@ const (
 
 // SplitCorners makes the builder draw large shapes with continuous corners
 // as nine-patches (see addCorners), for a renderer whose shader draws them
-// (Metal's). Only through it do apps link that code, which the other
+// (WebGPU's). Only through it do apps link that code, which the other
 // renderers' apps never run.
 func (b *Builder) SplitCorners() { b.cutCorners = (*Builder).addCorners }
 

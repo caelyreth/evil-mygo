@@ -3,8 +3,9 @@
 A window can show a user interface that MyGo draws itself instead of a web
 page. You write it in Go with package `ui`: there is no HTML, no JavaScript
 and no frontend build, and the window starts no webview, so it opens at
-once and uses little memory. MyGo draws it on the GPU, with Metal on macOS,
-Direct3D 11 on Windows and OpenGL on Linux.
+once and uses little memory. MyGo draws it on the GPU, with WebGPU
+(wgpu-native over Metal) on macOS, Direct3D 11 on Windows and OpenGL on
+Linux.
 
 ```go
 package main
@@ -93,7 +94,7 @@ UI as they read other apps (see [Accessibility](accessibility.md)).
   and values that ease to their targets.
 - [Shaders](shaders.md): pixels computed on the GPU by shaders written in
   Go's syntax, with values and images the app passes them.
-- [Metal canvases](metal.md): application Metal passes rendering into
+- [WebGPU canvases](webgpu.md): application WebGPU passes rendering into
   native UI images, without a CPU upload.
 - [Surface mapping](surface-mapping.md): projecting pointer positions
   between screen space, surface UVs and embedded native UI.

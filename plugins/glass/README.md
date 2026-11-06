@@ -44,13 +44,13 @@ See [the documentation](../../docs/plugins/glass.md), and the Glass page of
 `examples/gallery`.
 
 The glass and the blur, which a hard scroll edge draws with, are effects
-of MyGo's renderers (`scene.Effect`): their shaders in Metal Shading
-Language, HLSL and GLSL (`glass.metal`, `glass.hlsl`, `glass.glsl`, and
+of MyGo's renderers (`scene.Effect`): their shaders in WGSL, HLSL and
+GLSL (`glass.wgsl`, `glass.hlsl`, `glass.glsl`, and
 `blur.*`), and their twins for the CPU renderer (`pixels.go`, `blur.go`),
 which must draw the same pixels; the tests compare each GPU's drawing
 with the CPU's.
-`go generate` compiles the shaders ahead of time where it can: the Metal
-library on macOS, with Xcode (`shaders_darwin.go`), and the Direct3D
-bytecode on Windows (`shaders_windows.go`). Renderers compile the source
+`go generate` compiles the Direct3D bytecode ahead of time where it can
+(`shaders_windows.go`). WebGPU compiles the WGSL when the renderer first
+needs it. Renderers compile the source
 when the code compiled ahead of time is older than it or than their own
 part of the shader.

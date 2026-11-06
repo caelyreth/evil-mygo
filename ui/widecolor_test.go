@@ -255,7 +255,7 @@ func TestPictureOfAWideColor(t *testing.T) {
 	}
 }
 
-// wideGPU is a GPU renderer that draws wide colors, as Metal's does.
+// wideGPU is a GPU renderer that draws wide colors, as WebGPU's target does.
 type wideGPU struct {
 	testGPU
 	can, wide bool

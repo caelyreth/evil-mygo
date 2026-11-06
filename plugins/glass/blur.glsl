@@ -1,5 +1,5 @@
-// A level of the blur's effect in GLSL (see scene.Effect), as blur.metal
-// is in Metal Shading Language and blur.go draws it on the CPU.
+// A level of the blur's effect in GLSL (see scene.Effect), as blur.wgsl
+// is in WGSL and blur.go draws it on the CPU.
 
 vec4 blurAt(ivec2 p, ivec2 size) { return texelFetch(uBackdrop, clamp(p, ivec2(0), size - 1), 0); }
 

@@ -11,16 +11,12 @@ import (
 // go generate compiles ahead of time where it can (shaders_darwin.go,
 // shaders_windows.go).
 var (
-	//go:embed glass.metal
-	metalSource string
 	//go:embed glass.hlsl
 	hlslSource string
 	//go:embed glass.glsl
 	glslSource string
 	//go:embed glass.wgsl
 	wgslSource string
-	//go:embed blur.metal
-	blurMetalSource string
 	//go:embed blur.hlsl
 	blurHLSLSource string
 	//go:embed blur.glsl
@@ -36,7 +32,6 @@ var (
 var Effect = &scene.Effect{
 	Name:     "glass",
 	Backdrop: true,
-	Metal:    scene.EffectCode{Source: metalSource, Compiled: metalLibrary, Sum: metalSum},
 	HLSL:     scene.EffectCode{Source: hlslSource, Compiled: hlslBytecode, Sum: hlslSum},
 	GLSL:     glslSource,
 	WGSL:     wgslSource,
@@ -49,7 +44,6 @@ var Effect = &scene.Effect{
 var blurEffect = &scene.Effect{
 	Name:     "blur",
 	Backdrop: true,
-	Metal:    scene.EffectCode{Source: blurMetalSource, Compiled: blurMetalLibrary, Sum: blurMetalSum},
 	HLSL:     scene.EffectCode{Source: blurHLSLSource, Compiled: blurBytecode, Sum: blurHLSLSum},
 	GLSL:     blurGLSLSource,
 	WGSL:     blurWGSLSource,
@@ -83,7 +77,7 @@ type material struct {
 // params returns the effect's parameters, as its shaders read them: p0
 // the bezel, the refraction, the rim and its width; p1 the tint; p2 the
 // low, high, curve and saturation; p3 the direction of the light; p4 the
-// wide tint, which only the Metal shader reads.
+	// wide tint, which a wide-gamut shader reads.
 func (m *material) params() [5][4]float32 {
 	return [5][4]float32{
 		{m.bezel, m.refraction, m.rim, m.rimWidth},

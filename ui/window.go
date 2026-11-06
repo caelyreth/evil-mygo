@@ -183,7 +183,7 @@ type windowHost struct {
 // displayWaiter is a GPU renderer that waits for the display off the main
 // thread: a frame following the last one draws once the display can take
 // it (Direct3D's), or once the last, built while the display could not,
-// was drawn (Metal's). refreshWaiter is one for frames drawn in memory.
+// was drawn (WebGPU's). refreshWaiter is one for frames drawn in memory.
 type displayWaiter interface {
 	// Ready reports whether a frame can draw at once; otherwise wake runs,
 	// on any goroutine, once it can.
@@ -403,7 +403,7 @@ type gpuRenderer interface {
 type invalidator interface{ Invalidate() }
 
 // wideRenderer is a GPU renderer that can draw the colors of scenes outside
-// the sRGB gamut (Metal's).
+// the sRGB gamut (WebGPU's).
 type wideRenderer interface {
 	// SetWide has the frames drawn from now on show those colors, into
 	// drawables of a wide gamut, or their nearest sRGB ones, and reports
