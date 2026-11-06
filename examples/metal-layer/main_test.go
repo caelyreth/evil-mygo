@@ -12,6 +12,11 @@ func TestLiveNativeLayerControls(t *testing.T) {
 	if err := tt.Click("Display name"); err != nil {
 		t.Fatal(err)
 	}
+	active, _ := tt.TextInputActive()
+	caret, ok := tt.TextCaret()
+	if !active || !ok || caret.W <= 0 || caret.H <= 0 {
+		t.Fatalf("tilted field has no input-method caret: active=%v caret=%+v ok=%v", active, caret, ok)
+	}
 	tt.Key(ui.Cmd, ui.KeyA)
 	tt.Type("A real native field")
 	if a.name != "A real native field" {
