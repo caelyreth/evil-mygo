@@ -533,6 +533,14 @@ type GPUFrame struct {
 	CommandBuffer unsafe.Pointer
 	Texture       unsafe.Pointer
 	Source        unsafe.Pointer
+	// DeviceObject, EncoderObject, TextureObject and SourceObject hold the
+	// WebGPU handles of a native canvas. They are any so this package stays
+	// independent of a graphics API; a renderer fills the set its backend
+	// defines.
+	DeviceObject  any
+	EncoderObject any
+	TextureObject any
+	SourceObject  any
 	Width, Height int
 	SourceWidth   int
 	SourceHeight  int
@@ -550,8 +558,12 @@ type GPUCanvas struct {
 // GPU renderer. The application keeps the native object alive.
 type ExternalTexture struct {
 	Device, Texture unsafe.Pointer
-	KeepAlive       any
-	Sync            ExternalTextureSync
+	// DeviceObject and TextureObject hold a WebGPU device and texture for a
+	// renderer that samples WebGPU resources directly.
+	DeviceObject  any
+	TextureObject any
+	KeepAlive     any
+	Sync          ExternalTextureSync
 	// OwnerVersion changes when SetTexture replaces KeepAlive. Retired
 	// holds owners whose replaceable texture may still be read by a frame
 	// in flight.
@@ -604,6 +616,13 @@ func NewGPUCanvas(w, h int, draw func(GPUFrame) error) *Image {
 func NewExternalImage(w, h int, device, texture unsafe.Pointer, keepAlive any) *Image {
 	return &Image{id: lastImageID.Add(1), version: 1, W: w, H: h,
 		External: &ExternalTexture{Device: device, Texture: texture, KeepAlive: keepAlive}}
+}
+
+// NewExternalObjectImage returns a w×h image sampling a backend object,
+// owned by keepAlive. device is checked by the renderer before sampling.
+func NewExternalObjectImage(w, h int, device, texture any, keepAlive any) *Image {
+	return &Image{id: lastImageID.Add(1), version: 1, W: w, H: h,
+		External: &ExternalTexture{DeviceObject: device, TextureObject: texture, KeepAlive: keepAlive}}
 }
 
 // ID identifies the image for texture caches.

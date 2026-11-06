@@ -174,9 +174,25 @@ func (r *Renderer) renderScene(s *scene.Scene, encoder *wgpu.CommandEncoder, vie
 		return err
 	}
 	var canvasErr error
+	s.EachGPUCanvas(func(img *scene.Image) {
+		if canvasErr == nil {
+			canvasErr = r.drawGPUCanvas(img, encoder)
+		}
+	})
+	if canvasErr != nil {
+		return canvasErr
+	}
 	s.EachCanvas(func(img *scene.Image) {
 		if canvasErr == nil {
 			canvasErr = r.drawCanvas(img, encoder)
+		}
+	})
+	if canvasErr != nil {
+		return canvasErr
+	}
+	s.EachGPUCanvas(func(img *scene.Image) {
+		if canvasErr == nil {
+			canvasErr = r.drawGPUCanvas(img, encoder)
 		}
 	})
 	if canvasErr != nil {
@@ -353,6 +369,86 @@ func (r *Renderer) drawCanvas(img *scene.Image, encoder *wgpu.CommandEncoder) er
 	img.Scene.Width, img.Scene.Height = img.W, img.H
 	if err := r.renderScene(img.Scene, encoder, view, &entry.state); err != nil {
 		return fmt.Errorf("webgpu: draw canvas: %w", err)
+	}
+	entry.version = img.Version()
+	return nil
+}
+
+func (r *Renderer) drawGPUCanvas(img *scene.Image, encoder *wgpu.CommandEncoder) error {
+	if img == nil || img.GPU == nil {
+		return nil
+	}
+	entry := r.canvases[img.ID()]
+	if entry == nil {
+		entry = &canvasEntry{}
+		entry.state.reset(r, r.defaultMask, r.defaultColor)
+		r.canvases[img.ID()] = entry
+	}
+	entry.lastFrame = r.frame
+	sizeChanged := entry.tex == nil || entry.tex.w != img.W || entry.tex.h != img.H
+	if sizeChanged {
+		next, err := r.createRenderTexture("MyGo WebGPU canvas", wgpu.TextureFormatRGBA8Unorm, img.W, img.H)
+		if err != nil {
+			return fmt.Errorf("webgpu: native canvas texture: %w", err)
+		}
+		if entry.tex != nil {
+			entry.tex.Release()
+			r.forgetBindings()
+		}
+		entry.tex = next
+	}
+	if !sizeChanged && entry.version == img.Version() {
+		return nil
+	}
+	view, err := entry.tex.tex.CreateView(nil)
+	if err != nil {
+		return fmt.Errorf("webgpu: native canvas view: %w", err)
+	}
+	defer view.Release()
+	clear, err := encoder.BeginRenderPass(&wgpu.RenderPassDescriptor{
+		Label: "MyGo native canvas clear",
+		ColorAttachments: []wgpu.RenderPassColorAttachment{{
+			View: view, LoadOp: wgpu.LoadOpClear, StoreOp: wgpu.StoreOpStore,
+			ClearValue: wgpu.Color{},
+		}},
+	})
+	if err != nil {
+		return fmt.Errorf("webgpu: clear native canvas: %w", err)
+	}
+	clear.End()
+	clear.Release()
+
+	var source *wgpu.TextureView
+	sourceWidth, sourceHeight := 0, 0
+	if src := img.GPU.Source.Value(); src != nil && src != img {
+		switch {
+		case src.Scene != nil:
+			if err := r.drawCanvas(src, encoder); err != nil {
+				return err
+			}
+		case src.GPU != nil:
+			if err := r.drawGPUCanvas(src, encoder); err != nil {
+				return err
+			}
+		}
+		token, err := r.syncImage(src)
+		if err != nil {
+			return err
+		}
+		if t := r.texture(token); t != nil {
+			source = t.view
+			sourceWidth, sourceHeight = src.W, src.H
+		}
+	}
+	if img.GPU.Draw != nil {
+		if err := img.GPU.Draw(scene.GPUFrame{
+			DeviceObject: r.gpu.device, EncoderObject: encoder,
+			TextureObject: entry.tex.tex, SourceObject: source,
+			Width: img.W, Height: img.H,
+			SourceWidth: sourceWidth, SourceHeight: sourceHeight, Scale: 1,
+		}); err != nil {
+			return fmt.Errorf("webgpu: native canvas: %w", err)
+		}
 	}
 	entry.version = img.Version()
 	return nil

@@ -14,6 +14,7 @@ type textureEntry struct {
 	view       *wgpu.TextureView
 	w, h       int
 	format     wgpu.TextureFormat
+	owned      bool
 	generation uint64
 	version    uint64
 }
@@ -35,7 +36,9 @@ func (t *textureEntry) Release() {
 		t.view = nil
 	}
 	if t.tex != nil {
-		t.tex.Release()
+		if t.owned {
+			t.tex.Release()
+		}
 		t.tex = nil
 	}
 }
@@ -47,7 +50,7 @@ func (r *Renderer) createTexture(label string, format wgpu.TextureFormat, width,
 
 func (r *Renderer) createRenderTexture(label string, format wgpu.TextureFormat, width, height int) (*textureEntry, error) {
 	return r.createTextureWithUsage(label, format, width, height,
-		wgpu.TextureUsageTextureBinding|wgpu.TextureUsageRenderAttachment)
+		wgpu.TextureUsageTextureBinding|wgpu.TextureUsageRenderAttachment|wgpu.TextureUsageStorageBinding)
 }
 
 func (r *Renderer) createTextureWithUsage(label string, format wgpu.TextureFormat, width, height int, usage wgpu.TextureUsage) (*textureEntry, error) {
@@ -69,7 +72,7 @@ func (r *Renderer) createTextureWithUsage(label string, format wgpu.TextureForma
 		tex.Release()
 		return nil, err
 	}
-	return &textureEntry{tex: tex, view: view, w: width, h: height, format: format}, nil
+	return &textureEntry{tex: tex, view: view, w: width, h: height, format: format, owned: true}, nil
 }
 
 func (r *Renderer) uploadTexture(t *textureEntry, pix []byte, bpp int) error {
@@ -167,8 +170,14 @@ func (r *Renderer) syncImage(img *scene.Image) (uintptr, error) {
 		}
 		return uintptr(img.ID()), nil
 	}
-	if img.GPU != nil || img.External != nil {
-		return 0, errors.New("webgpu: native and external images are not ported yet")
+	if img.GPU != nil {
+		if r.canvases[img.ID()] == nil {
+			return 0, errors.New("webgpu: native canvas was not rendered")
+		}
+		return uintptr(img.ID()), nil
+	}
+	if img.External != nil {
+		return r.syncExternalImage(img)
 	}
 	token := uintptr(img.ID())
 	t := r.images[token]
@@ -201,6 +210,36 @@ func (r *Renderer) syncImage(img *scene.Image) (uintptr, error) {
 		t.version = img.Version()
 		img.Uploaded()
 	}
+	return token, nil
+}
+
+func (r *Renderer) syncExternalImage(img *scene.Image) (uintptr, error) {
+	e := img.External
+	tex, ok := e.TextureObject.(*wgpu.Texture)
+	if !ok || tex == nil {
+		return 0, errors.New("webgpu: external image has no WebGPU texture")
+	}
+	if device, ok := e.DeviceObject.(*wgpu.Device); ok && device != nil && device != r.gpu.device {
+		return 0, errors.New("webgpu: external texture belongs to another device")
+	}
+	token := uintptr(img.ID())
+	t := r.images[token]
+	if t == nil || t.tex != tex || t.w != img.W || t.h != img.H {
+		view, err := tex.CreateView(nil)
+		if err != nil {
+			return 0, fmt.Errorf("webgpu: external texture view: %w", err)
+		}
+		if t != nil {
+			t.Release()
+		}
+		t = &textureEntry{
+			tex: tex, view: view, w: img.W, h: img.H,
+			format: wgpu.TextureFormatRGBA8Unorm, version: img.Version(),
+		}
+		r.images[token] = t
+		r.forgetBindings()
+	}
+	t.version = img.Version()
 	return token, nil
 }
 

@@ -39,9 +39,15 @@ the correct `libwgpu_native` beside the application or set
 - a surface over the platform's `CAMetalLayer`;
 - format, alpha-mode and present-mode negotiation;
 - configure, acquire and present operations;
-- the first WebGPU scene renderer stage: rounded fills, linear gradients,
-  solid borders, projective transforms, image batches and grayscale mask
-  glyphs from MyGo's existing `gpu.Instance` stream;
+- a scene renderer driven by MyGo's existing fourteen-float4
+  `gpu.Instance` stream: fills, gradients and stops, stripes, continuous
+  corners, borders, dashes, outer and inner shadows, projective
+  transforms, image batches, grayscale and color glyphs, and cached clip
+  masks;
+- per-target instance, uniform, atlas and bind-group state, so nested UI
+  canvases render before the root pass without replacing the root's
+  buffers;
+- WebGPU-native canvases and imported textures;
 - deterministic release of queue, device, adapter and instance.
 
 The integration test clears a real offscreen texture, copies it to a
@@ -61,9 +67,66 @@ nix-shell -p go --run 'CGO_ENABLED=0 go test -tags nofakecgo ./internal/gpu/webg
 
 The renderer tests build normal `scene.Scene` values, encode them through
 WebGPU into offscreen textures, read them back and verify cleared
-backgrounds, rounded fills, linear gradients, borders, image batches and
-grayscale glyphs. Unsupported scene features return an explicit error until
-their paths are ported.
+backgrounds, rounded fills, gradients, borders, image batches, grayscale
+glyphs, blurred shadows, nested canvases and native WebGPU passes. A UI
+integration test also renders a real offscreen `ui.UILayer`, including its
+own atlas and nested canvas, through the WebGPU renderer.
+
+## Native UI
+
+The WebGPU backend is currently opt-in while effects and custom shader
+libraries finish moving from the direct Metal path:
+
+```sh
+CGO_ENABLED=0 go run -tags mygo_webgpu,nofakecgo ./examples/counter-native
+```
+
+`nofakecgo` is required because MyGo's macOS platform package still uses
+`ebitengine/purego`, while go-webgpu uses goffi; both provide the fake-cgo
+runtime under `CGO_ENABLED=0`. The tag keeps goffi's copy and uses
+purego's. Native UI apps remain cgo-free. Removing that build-tag
+requirement is part of the migration, not an application concern.
+
+## WebGPU canvases
+
+`ui.NewWebGPUCanvas` returns an image whose pixels are encoded by an
+application callback into a renderer-owned texture:
+
+```go
+canvas := ui.NewWebGPUCanvas(960, 540, func(f ui.WebGPUFrame) error {
+	// Create pipelines and buffers from f.Device. Encode work into
+	// f.Encoder against f.Texture. Do not submit or present.
+	return drawScene(f)
+})
+
+ui.Box(c).Fill().Children(func() {
+	ui.Image(c, canvas.Bitmap()).Fill()
+})
+```
+
+MyGo clears the target to transparent, invokes `Draw` on the main thread,
+and then samples the target in the same encoded frame. The callback may
+encode render or compute passes. `WebGPUFrame.Source` is the rendered
+native subtree when the canvas is used with `Element.Effect`; it is absent
+otherwise.
+
+`ui.NewWebGPUTexture` publishes an application-owned `*wgpu.Texture` as an
+image. MyGo creates only a view and samples it; there is no CPU upload or
+readback. The texture and device must belong to the window renderer, and
+the texture must be premultiplied RGBA8 in MyGo's row order. Commands
+submitted through the device's default queue are ordered with MyGo's
+frame.
+
+## Remaining parity work
+
+The direct Metal renderer remains temporarily as the default until these
+WebGPU paths are complete:
+
+- `scene.Effect` pipelines and backdrop textures;
+- the `ui/shader`-generated shader libraries and the glass plugin;
+- holes, wide-gamut presentation and damage-aware presentation;
+- benchmark parity and the purego/goffi build-tag removal;
+- migration of the Metal examples and public names to WebGPU.
 
 ## `purego` build tag
 
