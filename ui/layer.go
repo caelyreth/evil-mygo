@@ -113,6 +113,7 @@ func (l *UILayer) HandleInput(ev InputEvent) bool {
 		Scale: float64(ev.Scale), Key: platform.Key(ev.Key), PhysicalKey: platform.Key(ev.PhysicalKey),
 		Code: platform.KeyCode(ev.Code), Mods: platform.Modifiers(ev.Mods), Repeat: ev.Repeat,
 		Text: ev.Text, Caret: ev.Caret,
+		Pointer: platform.PointerKind(ev.Pointer), Pressure: float64(ev.Pressure),
 	}
 	switch ev.Kind {
 	case InputPointerMove:
