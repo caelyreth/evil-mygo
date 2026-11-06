@@ -7,6 +7,7 @@ import (
 
 	"github.com/go-webgpu/webgpu/wgpu"
 
+	"github.com/egoist/mygo/internal/gpu"
 	"github.com/egoist/mygo/internal/gpu/gputest"
 	"github.com/egoist/mygo/internal/scene"
 )
@@ -70,6 +71,84 @@ func benchRender(b *testing.B, s *scene.Scene) {
 			b.Fatal(err)
 		}
 		if err := r.Render(s, encoder, view); err != nil {
+			encoder.Release()
+			b.Fatal(err)
+		}
+		command, err := encoder.Finish(nil)
+		if err != nil {
+			encoder.Release()
+			b.Fatal(err)
+		}
+		encoder.Release()
+		if _, err := g.Queue().Submit(command); err != nil {
+			command.Release()
+			b.Fatal(err)
+		}
+		command.Release()
+		r.FinishFrame()
+		g.Device().Poll(true)
+	}
+}
+
+// BenchmarkRenderPartial updates a small part of the box scene in a
+// reusable target, exercising the scissored clear and clipped batch path.
+func BenchmarkRenderPartial(b *testing.B) {
+	s := gputest.BoxesScene(1280, 800, 600, false)
+	g, err := Open()
+	if err != nil {
+		b.Skip(err)
+	}
+	defer g.Release()
+	target, err := g.Device().CreateTexture(&wgpu.TextureDescriptor{
+		Label:         "WebGPU partial benchmark target",
+		Usage:         wgpu.TextureUsageRenderAttachment | wgpu.TextureUsageCopySrc,
+		Size:          wgpu.Extent3D{Width: uint32(s.Width), Height: uint32(s.Height), DepthOrArrayLayers: 1},
+		Format:        wgpu.TextureFormatRGBA8Unorm,
+		MipLevelCount: 1,
+		SampleCount:   1,
+	})
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer target.Release()
+	view, err := target.CreateView(nil)
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer view.Release()
+	r, err := NewRenderer(g, wgpu.TextureFormatRGBA8Unorm)
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer r.Release()
+	encoder, err := g.Device().CreateCommandEncoder(nil)
+	if err != nil {
+		b.Fatal(err)
+	}
+	if err := r.Render(s, encoder, view); err != nil {
+		encoder.Release()
+		b.Fatal(err)
+	}
+	command, err := encoder.Finish(nil)
+	if err != nil {
+		encoder.Release()
+		b.Fatal(err)
+	}
+	encoder.Release()
+	if _, err := g.Queue().Submit(command); err != nil {
+		command.Release()
+		b.Fatal(err)
+	}
+	command.Release()
+	r.FinishFrame()
+	part := &gpu.Part{Rects: []gpu.Scissor{{Left: 100, Top: 100, Right: 300, Bottom: 260}}}
+	b.ResetTimer()
+	for b.Loop() {
+		encoder, err := g.Device().CreateCommandEncoder(nil)
+		if err != nil {
+			b.Fatal(err)
+		}
+		if err := r.RenderTargetPart(s, encoder, target, view, part); err != nil {
 			encoder.Release()
 			b.Fatal(err)
 		}
