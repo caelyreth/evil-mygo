@@ -4657,7 +4657,7 @@ either.
   continuous corners they draw around one rectangle. These scissors never
   change a clip mask's sampling coordinates. Both transformations are shared by all GPU backends.
   Large fills, shadows and images with continuous corners (negative radii,
-  which only Metal gets) draw as nine-patches (`gpu/corners.go`): their
+  which the WebGPU shader also accepts) draw as nine-patches (`gpu/corners.go`): their
   corners' boxes as they are, and the cross between them as a twin with
   square corners, in batches whose pipeline lacks the curves' code. Away
   from the boxes the shader computes the same value either way: a fill's
@@ -4667,21 +4667,16 @@ either.
   cut only where the twin's pixels, within the shape's quad, save more than
   the pieces' calls cost (`pieceCost`): small shapes, near their corners
   everywhere, stay whole and join their neighbors' batches.
-  Metal opts into three further builder capabilities: marking fills whose
-  clip coverage is one, splitting opaque cores from blended edges, and
-  batching by fragment class, the last of which Direct3D 11 takes too. OpenGL
-  keeps the original instance flags and class-independent batching. Metal binds the instance buffer
-  once a pass and draws each batch with its first instance as the base
-  instance, which `[[instance_id]]` includes; a batch binds its pipeline,
-  image, clip mask and scissor rectangle only when they changed, with
-  selectors looked up once, and the scissor goes by pointer
-  (`setScissorRects:count:`) rather than through a reflective purego
-  function: messages from Go cost about half a microsecond each. An effect draws in a batch of its own, with a pipeline of
+  The WebGPU renderer keeps the original instance flags and class-independent
+  batching. It binds the instance storage buffer once per pass and draws each
+  batch with its first instance as the base instance; a batch binds its
+  pipeline, image, clip mask and scissor rectangle only when they changed.
+  An effect draws in a batch of its own, with a pipeline of
   its own, which the renderer makes the first time the effect draws; one
   reading its backdrop draws after a backdrop step (`Builder.Backdrops`):
   the renderer ends its pass, reads the backdrop's area of what it drew
-  (Metal from the drawable, which is not `framebufferOnly`; Direct3D 11
-  and OpenGL from a copy of the area, `CopySubresourceRegion` and
+  (WebGPU copies the drawable into a non-opaque grab texture; Direct3D 11
+  and OpenGL copy the area, `CopySubresourceRegion` and
   `glCopyTexSubImage2D`, whose rows go up), averages and blurs it with two
   small pipelines (`down` and `blur`, scissored to the texels they
   compute, reading them with `Load`, `read` or `texelFetch`) into textures
@@ -4706,7 +4701,7 @@ either.
   each renderer draws the canvases it lists or shows whose version its
   texture does not hold (`Scene.EachCanvas`, those a canvas shows before
   it), each with a builder of its own, into a texture in the frame's
-  format before effects: Metal into a BGRA8 render target in the frame's
+  format before effects: WebGPU into an RGBA8 render target in the frame's
   command buffer, Direct3D 11 into a BGRA render target view (the dynamic
   instance buffer, mapped with discard, serves all), OpenGL into a
   framebuffer object, whose rows go up, so that image instances showing
@@ -4977,7 +4972,7 @@ either.
   With a GPU renderer, every frame draws on the GPU, small changes too, so
   a gesture never switches renderers mid-way: on the CPU, a frame
   redrawing glass or a blur that content scrolls under takes 30 to 70 ms
-  on a large window, where Metal takes 2 to 3. Every GPU renderer draws
+  on a large window, where WebGPU takes 2 to 3. Every GPU renderer draws
   only what changed (above).
 
   Two seconds after the last frame (`frameIdle`), the host frees the frame
@@ -5492,16 +5487,14 @@ than the 7763), so timings are compared only among commits measured on
 the same CPU, and their charts draw the last commit's CPU as the line and
 others in gray.
 
-The Metal `BenchmarkRenderFillRate` benchmark covers nested opaque layers,
-large border rings and stacked shadows at 3456×2000. It reports command
-buffer GPU timestamps with the existing benchmark harness; it waits for
-individual offscreen frames and does not measure display scheduling or
-input latency, which `internal/inputlatency` measures (below). `MYGO_FRAME_STATS` includes instance and batch counts,
-culled operations, opaque cores and Metal specialization fallbacks.
-`MYGO_GPU_REQUIRED=1` makes the Metal optimization identity tests fail if
-no renderer can be created. They compare raw BGRA8 and float16 output with
-both disabled optimizations and the shader from upstream f2eca9f7, including
-canvases and pixelated sprites.
+The WebGPU `BenchmarkRenderFillRate` benchmark covers nested layers, a
+large border ring and stacked shadows at 3456×2000. It reuses a real
+device and target, waits after each submission, and therefore reports
+wall time rather than display scheduling or input latency. The renderer
+benchmarks also cover sprite-heavy frames, boxes, translations and empty
+frames; `internal/inputlatency` measures presentation latency separately.
+`MYGO_FRAME_STATS` includes instance and batch counts and culled
+operations.
 
 `BenchmarkStressFrame` in `ui` times the frames of views that change all
 they show every frame, in a window of 900×640 at scale 2: 600 rounded
@@ -5510,12 +5503,8 @@ change, a column of 1000 rows in a clipped box moved by a translation,
 a `List` of 100,000 rows scrolling 3 rows a frame, and a dashboard of 12
 cards with shadows, texts and progress bars. Its host (`stressHost`)
 hands the scene on rather than draw it on the CPU, so `ns/op` is the
-frame built, laid out and painted. `BenchmarkStressFrameGPU` draws the
-same frames with WebGPU (`RenderOffscreen`), its `GPU-ms` the GPU's time,
-which the page shows as the GPU metric, and its `encode-ms` the CPU's
-time encoding each frame (building its instances, uploading what changed
-in its atlases, encoding its passes), the Encode metric. WebGPU
-encode/GPU-time benchmarks are a remaining parity item.
+frame built, laid out and painted. GPU encode and timestamp metrics for
+the same stress views remain a parity item.
 
 Benchmarks are described on the page by their doc comments, which the
 site reads when it is built: start them with the benchmark's name.
