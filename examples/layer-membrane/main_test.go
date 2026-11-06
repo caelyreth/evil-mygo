@@ -109,6 +109,46 @@ func TestMembraneCursorFollowsMappedControl(t *testing.T) {
 	}
 }
 
+func TestMembraneSidebarLayout(t *testing.T) {
+	for _, size := range []struct {
+		name string
+		w, h int
+	}{{"normal", 1440, 900}, {"minimum", 1080, 700}} {
+		t.Run(size.name, func(t *testing.T) {
+			a := newApp()
+			tt := ui.NewTester(a.view, size.w, size.h)
+			tt.Frame()
+			if a.theme.Dark {
+				t.Fatal("the light demo inherited a dark widget theme")
+			}
+			for _, name := range []string{"Surface depth", "Surface motion", "Reset camera"} {
+				info, ok := tt.Access(name)
+				if !ok || info.Bounds.W <= 0 || info.Bounds.H <= 0 {
+					t.Fatalf("%s is not laid out: %+v, %v", name, info, ok)
+				}
+				if info.Bounds.X < float32(size.w-sidebarWidth) || info.Bounds.X+info.Bounds.W > float32(size.w) {
+					t.Fatalf("%s is outside the sidebar: %+v", name, info.Bounds)
+				}
+				if info.Bounds.Y < 0 || info.Bounds.Y+info.Bounds.H > float32(size.h) {
+					t.Fatalf("%s is outside the window: %+v", name, info.Bounds)
+				}
+			}
+			motion, _ := tt.Access("Surface motion")
+			reset, _ := tt.Access("Reset camera")
+			if motion.Bounds.Y+motion.Bounds.H >= reset.Bounds.Y {
+				t.Fatalf("sidebar controls overlap: motion %+v, reset %+v", motion.Bounds, reset.Bounds)
+			}
+			was := a.motion
+			if err := tt.Click("Surface motion"); err != nil {
+				t.Fatal(err)
+			}
+			if a.motion == was {
+				t.Fatal("Surface motion did not toggle")
+			}
+		})
+	}
+}
+
 func screenPointForLayerBox(a *app, box ui.Rect) (float32, float32, bool) {
 	if a.viewBox.W <= 0 || a.viewBox.H <= 0 || box.W <= 0 || box.H <= 0 {
 		return 0, 0, false

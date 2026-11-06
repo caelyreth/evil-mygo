@@ -19,7 +19,7 @@ const (
 	viewportHeight = 1200
 	layerWidth     = 1200
 	layerHeight    = 800
-	sidebarWidth   = 320
+	sidebarWidth   = 340
 
 	fieldOfView = 0.74
 	panelLift   = 0.28
@@ -37,6 +37,7 @@ type app struct {
 	canvas *ui.MetalCanvas
 	layer  *ui.UILayer
 	surf   *membraneSurface
+	theme  *ui.Theme
 	host   ui.Handle
 	ctx    *ui.Context
 
@@ -57,12 +58,31 @@ type app struct {
 }
 
 func newApp() *app {
+	theme := ui.LightTheme()
+	theme.Background = ui.Hex("#efeee8")
+	theme.Surface = ui.Hex("#e3e2db")
+	theme.SurfaceHover = ui.Hex("#d9d8d0")
+	theme.SurfacePressed = ui.Hex("#cfcec6")
+	theme.Border = ui.Hex("#c9c8c0")
+	theme.Text = ui.Hex("#191917")
+	theme.TextMuted = ui.Hex("#62625c")
+	theme.Accent = ui.Hex("#222220")
+	theme.AccentHover = ui.Hex("#3b3b37")
+	theme.AccentPressed = ui.Hex("#111110")
+	theme.AccentText = ui.Hex("#f7f7f3")
+	theme.InactiveAccent = ui.Hex("#8b8a83")
+	theme.Selection = ui.RGBA(34, 34, 32, 0.18)
+	theme.Focus = ui.RGBA(34, 34, 32, 0.42)
+	theme.Scrollbar = ui.RGBA(30, 30, 28, 0.28)
+	theme.Radius = 8
+	theme.Font = "Avenir Next"
 	a := &app{
 		cam:       camera{z: 3.65, y: 0.14},
 		amplitude: 1,
 		depth:     1,
 		motion:    true,
 		message:   "A native field on a living surface.",
+		theme:     theme,
 	}
 	a.surf = &membraneSurface{cam: a.cam, amplitude: a.amplitude, version: 1}
 	a.layer = ui.NewUILayer(a.layerView, layerWidth, layerHeight)
@@ -80,6 +100,7 @@ func (a *app) draw(frame ui.MetalFrame) error {
 }
 
 func (a *app) view(c *ui.Context) {
+	c.SetTheme(a.theme)
 	a.ctx = c
 	a.layer.SetScale(c.PixelsPerDIP())
 	a.tick(c)
@@ -222,6 +243,7 @@ func (a *app) routeLayer(ev ui.InputEvent) bool {
 }
 
 func (a *app) layerView(c *ui.Context) {
+	c.SetTheme(a.theme)
 	muted := ui.Hex("#575753")
 	ink := ui.Hex("#171715")
 	ui.Column(c).Fill().Padding(54, 50).Gap(18).
@@ -264,35 +286,82 @@ func (a *app) layerView(c *ui.Context) {
 }
 
 func (a *app) sidebar(c *ui.Context) {
-	ui.Column(c).Width(sidebarWidth).Shrink(0).FillHeight().Padding(24, 26).
-		Background(ui.Hex("#f0efe9")).Children(func() {
-		ui.Text(c, "MEMBRANE / LIVE").Font("monospace").FontSize(10).TextColor(ui.Hex("#686862"))
-		ui.Text(c, "A moving\nnative face.").Font("Baskerville").FontSize(38).LineHeight(.95).TextColor(ui.Hex("#171715"))
-		ui.Box(c).Height(1).Background(ui.Hex("#c9c8c1"))
-		ui.Column(c).Padding(15).Radius(10).Background(ui.Hex("#e4e3dc")).Gap(3).Children(func() {
-			ui.Text(c, "SIGNALS").Font("monospace").FontSize(10).TextColor(ui.Hex("#686862"))
-			ui.Textf(c, "%02d", a.actions).Font("Baskerville").FontSize(44).TextColor(ui.Hex("#171715"))
+	t := c.Theme()
+	ink, muted := ui.Hex("#191917"), ui.Hex("#66665f")
+	card, line := ui.Hex("#e5e4dd"), ui.Hex("#cecdc5")
+	ui.Column(c).Width(sidebarWidth).Shrink(0).FillHeight().Padding(22, 24, 20, 24).
+		Gap(18).Background(t.Background).Children(func() {
+		ui.Row(c).AlignItems(ui.Center).Children(func() {
+			ui.Text(c, "MEMBRANE / 04").Font("monospace").FontSize(10).TextColor(muted)
+			ui.Spacer(c)
+			ui.Row(c).Gap(6).Padding(4, 8).Radius(20).Border(1, line).Children(func() {
+				ui.Box(c).Size(6, 6).Radius(3).Background(ink)
+				ui.Text(c, "LIVE / METAL").Font("monospace").FontSize(9).TextColor(ink)
+			})
 		})
-		ui.Column(c).Gap(5).Children(func() {
-			ui.Text(c, "SURFACE DEPTH").FontSize(12).TextColor(ui.Hex("#565650"))
-			ui.Slider(c.Key("depth"), &a.depth, 0.25, 1.6).Label("Surface depth")
+		ui.Column(c).Gap(7).Children(func() {
+			ui.Text(c, "A moving\nnative face.").Font("Baskerville").FontSize(34).LineHeight(.93).TextColor(ink)
+			ui.Text(c, "Native controls on a live Metal surface.").FontSize(12).LineHeight(1.4).TextColor(muted)
+		})
+		ui.Row(c).FillWidth().Padding(15).Radius(10).Background(card).Border(1, line).
+			AlignItems(ui.Center).Children(func() {
+			ui.Column(c).Gap(1).Children(func() {
+				ui.Text(c, "SIGNALS").Font("monospace").FontSize(9).TextColor(muted)
+				ui.Textf(c, "%02d", a.actions).Font("Baskerville").FontSize(38).LineHeight(.95).TextColor(ink)
+			})
+			ui.Spacer(c)
+			ui.Column(c).AlignItems(ui.End).Gap(3).Children(func() {
+				ui.Text(c, "SURFACE").Font("monospace").FontSize(9).TextColor(muted)
+				state := "PAUSED"
+				if a.motion {
+					state = "IN MOTION"
+				}
+				ui.Text(c, state).Font("monospace").FontSize(10).TextColor(ink)
+			})
+		})
+		ui.Column(c).Gap(8).Children(func() {
+			ui.Row(c).AlignItems(ui.Center).Children(func() {
+				ui.Text(c, "SURFACE DEPTH").Font("monospace").FontSize(9).TextColor(muted)
+				ui.Spacer(c)
+				ui.Textf(c, "%.2f×", a.depth).Font("monospace").FontSize(10).TextColor(ink)
+			})
+			ui.Slider(c.Key("depth"), &a.depth, 0.25, 1.6).FillWidth().Label("Surface depth")
 			if amplitude := float32(a.depth); amplitude != a.amplitude {
 				a.amplitude = amplitude
 				a.surf.setState(a.cam, a.waveTime, a.amplitude)
 				a.canvas.Invalidate()
 			}
 		})
-		ui.Checkbox(c.Key("motion"), &a.motion, "Surface motion").FontSize(12)
-		if ui.Button(c.Key("reset"), "Reset camera").FillWidth().Clicked() {
+		ui.Row(c).FillWidth().Padding(10, 12).Radius(9).Background(card).Border(1, line).
+			AlignItems(ui.Center).Children(func() {
+			ui.Checkbox(c.Key("motion"), &a.motion, "Surface motion").
+				FillWidth().FontSize(12).TextColor(ink)
+		})
+		reset := ui.ButtonBase(c.Key("reset")).FillWidth().Height(42).Radius(8).
+			Background(ink).Border(0, ui.Transparent).Cursor(ui.CursorPointer).
+			Label("Reset camera")
+		if reset.Hovered() {
+			reset.Background(ui.Hex("#383834"))
+		}
+		reset.Children(func() {
+			ui.Text(c, "RESET CAMERA").Font("monospace").FontSize(11).Bold().
+				TextColor(ui.Hex("#f7f7f3"))
+		})
+		if reset.Clicked() {
 			a.cam = camera{z: 3.65, y: 0.14}
 			a.surf.setState(a.cam, a.waveTime, a.amplitude)
 			a.canvas.Invalidate()
 		}
+		ui.Box(c).Height(1).Background(line)
 		ui.Spacer(c)
-		ui.Text(c, "WASD   walk       Q/E   height\nDRAG   mouse-look     WHEEL   zoom").
-			Font("monospace").FontSize(10).LineHeight(1.55).TextColor(ui.Hex("#686862"))
-		ui.Text(c, "The native field keeps the caret and cursor shape while the geometry moves.").
-			FontSize(11).LineHeight(1.4).TextColor(ui.Hex("#777770"))
+		ui.Column(c).FillWidth().Padding(14).Radius(10).Background(card).Border(1, line).
+			Gap(8).Children(func() {
+			ui.Text(c, "CONTROLS").Font("monospace").FontSize(9).TextColor(muted)
+			ui.Text(c, "WASD    WALK        Q/E    HEIGHT\nDRAG    LOOK        WHEEL  ZOOM").
+				Font("monospace").FontSize(9).LineHeight(1.75).TextColor(ink)
+			ui.Text(c, "The native field keeps its caret and cursor inside the moving surface.").
+				FontSize(10.5).LineHeight(1.45).TextColor(muted)
+		})
 	})
 }
 
