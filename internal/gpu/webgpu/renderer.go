@@ -21,19 +21,22 @@ const (
 // the root frame and every nested native UI canvas; each target owns the
 // instance buffer and atlas bindings its scene draws with.
 type Renderer struct {
-	gpu        *GPU
-	format     wgpu.TextureFormat
-	shader     *wgpu.ShaderModule
-	layout     *wgpu.BindGroupLayout
-	pipe       *wgpu.RenderPipeline
-	holePipe   *wgpu.RenderPipeline
-	holeLayout *wgpu.BindGroupLayout
-	sampler    *wgpu.Sampler
-	passShader *wgpu.ShaderModule
-	passLayout *wgpu.BindGroupLayout
-	blurLayout *wgpu.BindGroupLayout
-	downPipe   *wgpu.RenderPipeline
-	blurPipe   *wgpu.RenderPipeline
+	gpu         *GPU
+	format      wgpu.TextureFormat
+	shader      *wgpu.ShaderModule
+	layout      *wgpu.BindGroupLayout
+	pipe        *wgpu.RenderPipeline
+	holePipe    *wgpu.RenderPipeline
+	holeLayout  *wgpu.BindGroupLayout
+	clearShader *wgpu.ShaderModule
+	clearPipe   *wgpu.RenderPipeline
+	clearLayout *wgpu.BindGroupLayout
+	sampler     *wgpu.Sampler
+	passShader  *wgpu.ShaderModule
+	passLayout  *wgpu.BindGroupLayout
+	blurLayout  *wgpu.BindGroupLayout
+	downPipe    *wgpu.RenderPipeline
+	blurPipe    *wgpu.RenderPipeline
 
 	defaultImage       *textureEntry
 	defaultMask        *textureEntry
@@ -72,6 +75,7 @@ type drawState struct {
 	sceneWidth, sceneHeight int
 	sceneScale              float32
 	targetFormat            wgpu.TextureFormat
+	part                    *gpu.Part
 	grab                    *textureEntry
 	backdrop                [2]*textureEntry
 }
@@ -170,6 +174,10 @@ func NewRenderer(g *GPU, format wgpu.TextureFormat) (*Renderer, error) {
 		r.Release()
 		return nil, errors.New("webgpu: hole pipeline has no bind group layout")
 	}
+	if err := r.initClear(); err != nil {
+		r.Release()
+		return nil, err
+	}
 	if r.layout = r.pipe.GetBindGroupLayout(0); r.layout == nil {
 		r.Release()
 		return nil, errors.New("webgpu: scene pipeline has no bind group layout")
@@ -223,16 +231,23 @@ func (s *drawState) reset(r *Renderer, mask, color *textureEntry) {
 
 // Render encodes s into view. Clear is the scene background.
 func (r *Renderer) Render(s *scene.Scene, encoder *wgpu.CommandEncoder, view *wgpu.TextureView) error {
-	return r.render(s, encoder, nil, view)
+	return r.render(s, encoder, nil, view, nil)
 }
 
 // RenderTarget encodes s into target and view. A backdrop-reading effect
 // needs the target handle so it can be copied into the backdrop grab.
 func (r *Renderer) RenderTarget(s *scene.Scene, encoder *wgpu.CommandEncoder, target *wgpu.Texture, view *wgpu.TextureView) error {
-	return r.render(s, encoder, target, view)
+	return r.render(s, encoder, target, view, nil)
 }
 
-func (r *Renderer) render(s *scene.Scene, encoder *wgpu.CommandEncoder, target *wgpu.Texture, view *wgpu.TextureView) error {
+// RenderTargetPart draws only batches meeting part into an existing target.
+// The caller must have filled the target's untouched pixels with the same
+// scene; part is normally the result of gpu.Part.Set.
+func (r *Renderer) RenderTargetPart(s *scene.Scene, encoder *wgpu.CommandEncoder, target *wgpu.Texture, view *wgpu.TextureView, part *gpu.Part) error {
+	return r.render(s, encoder, target, view, part)
+}
+
+func (r *Renderer) render(s *scene.Scene, encoder *wgpu.CommandEncoder, target *wgpu.Texture, view *wgpu.TextureView, part *gpu.Part) error {
 	if r == nil || r.pipe == nil {
 		return errors.New("webgpu: renderer is released")
 	}
@@ -243,7 +258,7 @@ func (r *Renderer) render(s *scene.Scene, encoder *wgpu.CommandEncoder, target *
 	r.encoder = encoder
 	clear(r.waited)
 	clear(r.signals)
-	if err := r.renderScene(s, encoder, r.format, target, view, &r.root); err != nil {
+	if err := r.renderScene(s, encoder, r.format, target, view, &r.root, part); err != nil {
 		r.encoder = nil
 		return err
 	}
@@ -269,10 +284,17 @@ func (r *Renderer) signalExternalTextures() error {
 	return nil
 }
 
-func (r *Renderer) renderScene(s *scene.Scene, encoder *wgpu.CommandEncoder, targetFormat wgpu.TextureFormat, target *wgpu.Texture, view *wgpu.TextureView, st *drawState) error {
+func (r *Renderer) renderScene(s *scene.Scene, encoder *wgpu.CommandEncoder, targetFormat wgpu.TextureFormat, target *wgpu.Texture, view *wgpu.TextureView, st *drawState, part *gpu.Part) error {
+	if part != nil && len(s.Effects) > 0 {
+		// Effects may read the whole backdrop, which a partial target does
+		// not provide. Fall back to a full frame rather than exposing a
+		// partially valid backdrop.
+		part = nil
+	}
 	st.sceneWidth, st.sceneHeight = s.Width, s.Height
 	st.sceneScale = s.Scale
 	st.targetFormat = targetFormat
+	st.part = part
 	if st.sceneScale <= 0 {
 		st.sceneScale = 1
 	}
@@ -353,6 +375,17 @@ func (r *Renderer) renderScene(s *scene.Scene, encoder *wgpu.CommandEncoder, tar
 			return errors.New("webgpu: backdrop effect requires a render target")
 		}
 	}
+	if part != nil {
+		clear := [4]float32{
+			float32(s.Clear.R) / 255,
+			float32(s.Clear.G) / 255,
+			float32(s.Clear.B) / 255,
+			float32(s.Clear.A) / 255,
+		}
+		if err := r.clearPart(encoder, view, part, s.Width, s.Height, clear); err != nil {
+			return err
+		}
+	}
 
 	beginPass := func(load wgpu.LoadOp) (*wgpu.RenderPassEncoder, error) {
 		clear := s.Clear
@@ -369,7 +402,11 @@ func (r *Renderer) renderScene(s *scene.Scene, encoder *wgpu.CommandEncoder, tar
 			}},
 		})
 	}
-	pass, err := beginPass(wgpu.LoadOpClear)
+	load := wgpu.LoadOpClear
+	if part != nil {
+		load = wgpu.LoadOpLoad
+	}
+	pass, err := beginPass(load)
 	if err != nil {
 		return fmt.Errorf("webgpu: begin scene pass: %w", err)
 	}
@@ -382,6 +419,9 @@ func (r *Renderer) renderScene(s *scene.Scene, encoder *wgpu.CommandEncoder, tar
 	if len(st.builder.Instances) > 0 {
 		for _, batch := range st.builder.Batches {
 			if batch.Count == 0 {
+				continue
+			}
+			if part != nil && !part.Meets(batch.Scissor) {
 				continue
 			}
 			if batch.Backdrop != 0 {
@@ -434,13 +474,29 @@ func (r *Renderer) renderScene(s *scene.Scene, encoder *wgpu.CommandEncoder, tar
 				return fmt.Errorf("webgpu: scene bind group: %w", err)
 			}
 			pass.SetBindGroup(0, bind, nil)
-			pass.SetScissorRect(
-				uint32(max(batch.Scissor.Left, 0)),
-				uint32(max(batch.Scissor.Top, 0)),
-				uint32(max(batch.Scissor.Right-batch.Scissor.Left, 0)),
-				uint32(max(batch.Scissor.Bottom-batch.Scissor.Top, 0)),
-			)
-			pass.Draw(4, uint32(batch.Count), 0, uint32(batch.Start))
+			draw := func(sc gpu.Scissor) {
+				left := max(sc.Left, 0)
+				top := max(sc.Top, 0)
+				right := min(sc.Right, int32(s.Width))
+				bottom := min(sc.Bottom, int32(s.Height))
+				if right <= left || bottom <= top {
+					return
+				}
+				pass.SetScissorRect(uint32(left), uint32(top), uint32(right-left), uint32(bottom-top))
+				pass.Draw(4, uint32(batch.Count), 0, uint32(batch.Start))
+			}
+			if part == nil {
+				draw(batch.Scissor)
+				continue
+			}
+			for _, damage := range part.Rects {
+				draw(gpu.Scissor{
+					Left:   max(batch.Scissor.Left, damage.Left),
+					Top:    max(batch.Scissor.Top, damage.Top),
+					Right:  min(batch.Scissor.Right, damage.Right),
+					Bottom: min(batch.Scissor.Bottom, damage.Bottom),
+				})
+			}
 		}
 	}
 	pass.End()
@@ -535,7 +591,7 @@ func (r *Renderer) drawCanvas(img *scene.Image, encoder *wgpu.CommandEncoder) er
 	}
 	defer view.Release()
 	img.Scene.Width, img.Scene.Height = img.W, img.H
-	if err := r.renderScene(img.Scene, encoder, wgpu.TextureFormatRGBA8Unorm, entry.tex.tex, view, &entry.state); err != nil {
+	if err := r.renderScene(img.Scene, encoder, wgpu.TextureFormatRGBA8Unorm, entry.tex.tex, view, &entry.state, nil); err != nil {
 		return fmt.Errorf("webgpu: draw canvas: %w", err)
 	}
 	entry.version = img.Version()
@@ -805,6 +861,18 @@ func (r *Renderer) Release() {
 	if r.holeLayout != nil {
 		r.holeLayout.Release()
 		r.holeLayout = nil
+	}
+	if r.clearPipe != nil {
+		r.clearPipe.Release()
+		r.clearPipe = nil
+	}
+	if r.clearLayout != nil {
+		r.clearLayout.Release()
+		r.clearLayout = nil
+	}
+	if r.clearShader != nil {
+		r.clearShader.Release()
+		r.clearShader = nil
 	}
 	if r.blurPipe != nil {
 		r.blurPipe.Release()

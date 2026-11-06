@@ -159,6 +159,19 @@ type Part struct {
 	rects, grown, next []image.Rectangle
 }
 
+// Meets reports whether sc intersects any rectangle of the part.
+func (p *Part) Meets(sc Scissor) bool {
+	if p == nil {
+		return true
+	}
+	for _, r := range p.Rects {
+		if r.Left < sc.Right && sc.Left < r.Right && r.Top < sc.Bottom && sc.Top < r.Bottom {
+			return true
+		}
+	}
+	return false
+}
+
 // Bounds returns the rectangle around the part's.
 func (p *Part) Bounds() Scissor {
 	var u image.Rectangle

@@ -5,12 +5,15 @@ package webgpu
 import (
 	"errors"
 	"fmt"
+	"image"
+	"os"
 	"sync"
 
 	"github.com/ebitengine/purego"
 	"github.com/ebitengine/purego/objc"
 	"github.com/go-webgpu/webgpu/wgpu"
 
+	"github.com/egoist/mygo/internal/gpu"
 	"github.com/egoist/mygo/internal/scene"
 )
 
@@ -25,6 +28,11 @@ type NativeRenderer struct {
 	width    int
 	height   int
 	wide     bool
+	partial  bool
+	held     bool
+	diff     scene.Differ
+	ages     gpu.Ages
+	part     gpu.Part
 }
 
 type nsPoint struct{ X, Y float64 }
@@ -76,7 +84,10 @@ func NewNative(viewOrLayer uintptr) (*NativeRenderer, error) {
 		surface.Release()
 		return fail(err)
 	}
-	return &NativeRenderer{gpu: g, surface: surface, renderer: renderer, wide: surface.Wide()}, nil
+	return &NativeRenderer{
+		gpu: g, surface: surface, renderer: renderer, wide: surface.Wide(),
+		partial: os.Getenv("MYGO_PARTIAL") == "1",
+	}, nil
 }
 
 func ensureMetalLayer(viewOrLayer uintptr) (uintptr, error) {
@@ -154,6 +165,9 @@ func (r *NativeRenderer) Render(s *scene.Scene) error {
 		return nil
 	}
 	if r.width != s.Width || r.height != s.Height || r.surface.needsConfigure() {
+		r.ages.Reset()
+		r.held = false
+		r.diff.Invalidate()
 		if err := r.surface.Configure(s.Width, s.Height); err != nil {
 			return err
 		}
@@ -175,6 +189,33 @@ func (r *NativeRenderer) Render(s *scene.Scene) error {
 	texture := surfaceTexture.Texture
 	defer texture.Release()
 
+	var partial *gpu.Part
+	var damage []image.Rectangle
+	var known bool
+	if r.partial {
+		damage, known = r.diff.Diff(s)
+		if r.held {
+			ageDamage, ageKnown := r.ages.Take(texture.Handle())
+			if !known || !ageKnown {
+				damage, known = nil, false
+			} else {
+				damage = ageDamage
+			}
+			if known && len(damage) == 0 {
+				r.ages.Add(nil, false)
+				r.diff.Remember(s)
+				return nil
+			}
+			if known && r.part.Set(damage, s.Width, s.Height, func(d []image.Rectangle) []image.Rectangle {
+				return r.diff.AddBackdrops(s, d)
+			}) {
+				partial = &r.part
+			}
+		} else {
+			known = false
+		}
+	}
+
 	view, err := texture.CreateView(nil)
 	if err != nil {
 		return fmt.Errorf("webgpu: surface texture view: %w", err)
@@ -187,8 +228,20 @@ func (r *NativeRenderer) Render(s *scene.Scene) error {
 		return fmt.Errorf("webgpu: create frame encoder: %w", err)
 	}
 	defer encoder.Release()
-	if err := r.renderer.RenderTarget(s, encoder, texture, view); err != nil {
-		return err
+	var renderErr error
+	if partial != nil {
+		renderErr = r.renderer.RenderTargetPart(s, encoder, texture, view, partial)
+	} else {
+		renderErr = r.renderer.RenderTarget(s, encoder, texture, view)
+	}
+	if renderErr != nil {
+		r.ages.Add(damage, !known)
+		return renderErr
+	}
+	if r.partial {
+		r.ages.Add(damage, !known)
+		r.diff.Remember(s)
+		r.held = true
 	}
 	command, err := encoder.Finish(nil)
 	if err != nil {
@@ -209,9 +262,16 @@ func (r *NativeRenderer) Render(s *scene.Scene) error {
 	return nil
 }
 
-// Invalidate has no persistent backing store to discard: every WebGPU
-// frame is encoded whole.
-func (r *NativeRenderer) Invalidate() {}
+// Invalidate makes the next frame draw whole, including when the optional
+// partial-presentation mode is enabled.
+func (r *NativeRenderer) Invalidate() {
+	if r == nil {
+		return
+	}
+	r.held = false
+	r.ages.Reset()
+	r.diff.Invalidate()
+}
 
 // SetWide switches the surface and scene pipelines between 8-bit sRGB and
 // RGBA16Float extended-range presentation. The old renderer is released
@@ -237,6 +297,9 @@ func (r *NativeRenderer) SetWide(on bool) bool {
 	r.renderer = next
 	r.wide = on
 	r.width, r.height = 0, 0
+	r.held = false
+	r.ages.Reset()
+	r.diff.Invalidate()
 	return true
 }
 

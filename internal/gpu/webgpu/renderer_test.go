@@ -7,10 +7,89 @@ import (
 	"testing"
 	"unsafe"
 
+	"github.com/egoist/mygo/internal/gpu"
 	"github.com/go-webgpu/webgpu/wgpu"
 
 	"github.com/egoist/mygo/internal/scene"
 )
+
+func TestRendererPartialFrame(t *testing.T) {
+	if _, ok := RuntimePath(); !ok {
+		t.Skip("wgpu-native is not installed")
+	}
+	g, err := Open()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer g.Release()
+	const width, height = 64, 32
+	target, view := testTarget(t, g, width, height)
+	defer target.Release()
+	defer view.Release()
+	renderer, err := NewRenderer(g, wgpu.TextureFormatRGBA8Unorm)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer renderer.Release()
+	first := &scene.Scene{
+		Width: width, Height: height, Clear: scene.Color{R: 4, G: 8, B: 12, A: 255},
+		Ops: []scene.Op{{
+			Kind: scene.OpFill, Rect: scene.Rect{X: 8, Y: 8, W: 48, H: 16},
+			Color: scene.Color{R: 255, G: 20, B: 10, A: 255},
+		}},
+	}
+	encoder, err := g.Device().CreateCommandEncoder(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := renderer.Render(first, encoder, view); err != nil {
+		t.Fatal(err)
+	}
+	command, err := encoder.Finish(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoder.Release()
+	if _, err := g.Queue().Submit(command); err != nil {
+		command.Release()
+		t.Fatal(err)
+	}
+	command.Release()
+	renderer.FinishFrame()
+
+	second := &scene.Scene{
+		Width: width, Height: height, Clear: scene.Color{R: 4, G: 8, B: 12, A: 255},
+		Ops: []scene.Op{
+			{
+				Kind: scene.OpFill, Rect: scene.Rect{W: width, H: height},
+				Color: scene.Color{R: 4, G: 8, B: 12, A: 255},
+			},
+			{
+				Kind: scene.OpFill, Rect: scene.Rect{X: 8, Y: 8, W: 48, H: 16},
+				Color: scene.Color{R: 20, G: 80, B: 240, A: 255},
+			},
+		},
+	}
+	part := &gpu.Part{Rects: []gpu.Scissor{{Left: 8, Top: 8, Right: 56, Bottom: 24}}}
+	encoder, err = g.Device().CreateCommandEncoder(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := renderer.RenderTargetPart(second, encoder, target, view, part); err != nil {
+		t.Fatal(err)
+	}
+	pixels := readTarget(t, g, target, encoder, width, height)
+	encoder.Release()
+	renderer.FinishFrame()
+	center := pixels[(12*256 + 32*4):][:4]
+	if center[0] != 20 || center[1] != 80 || center[2] != 240 || center[3] != 255 {
+		t.Fatalf("partial center = %v, want blue", center)
+	}
+	outside := pixels[(4*256 + 4*4):][:4]
+	if outside[0] != 4 || outside[1] != 8 || outside[2] != 12 || outside[3] != 255 {
+		t.Fatalf("partial outside = %v, want untouched clear", outside)
+	}
+}
 
 func TestRendererDrawsRoundedFill(t *testing.T) {
 	if _, ok := RuntimePath(); !ok {
