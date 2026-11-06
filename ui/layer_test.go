@@ -108,3 +108,40 @@ func TestUILayerCanFeedMetalCanvasSource(t *testing.T) {
 		t.Fatalf("Metal source = %p, want layer image %p", got, layer.img)
 	}
 }
+
+func TestUILayerDoesNotReplayClicks(t *testing.T) {
+	clicks := 0
+	layer := NewUILayer(func(c *Context) {
+		button := ButtonBase(c.Key("no-replay")).Width(100).Height(30).Label("No replay")
+		button.Children(func() { Text(c, "Click") })
+		if button.Clicked() {
+			clicks++
+		}
+	}, 140, 60)
+	defer layer.Close()
+	layer.Render()
+	layer.Render()
+	if clicks != 0 {
+		t.Fatalf("layer reported %d clicks without input", clicks)
+	}
+}
+
+func TestUILayerClickDoesNotReplay(t *testing.T) {
+	clicks := 0
+	layer := NewUILayer(func(c *Context) {
+		button := ButtonBase(c.Key("one-click")).Width(100).Height(30).Label("One click")
+		button.Children(func() { Text(c, "Click") })
+		if button.Clicked() {
+			clicks++
+		}
+	}, 140, 60)
+	defer layer.Close()
+	layer.HandleInput(InputEvent{Kind: InputPointerDown, X: 20, Y: 20, Button: 0})
+	layer.HandleInput(InputEvent{Kind: InputPointerUp, X: 20, Y: 20, Button: 0})
+	layer.Render()
+	layer.Render()
+	layer.Render()
+	if clicks != 1 {
+		t.Fatalf("one click reported %d times", clicks)
+	}
+}
