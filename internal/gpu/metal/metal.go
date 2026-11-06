@@ -463,6 +463,8 @@ type Renderer struct {
 	canvases map[uint64]*canvasTexture
 	// gpuCanvases are render targets encoded by application Metal code.
 	gpuCanvases map[uint64]*gpuCanvasTexture
+	// drawingGPU marks GPU canvases whose source chain is being built.
+	drawingGPU map[uint64]bool
 	// blurred are the textures of the images the frame draws blurred
 	// (gpu.Builder.BlurredImage), the first used of them, and blurTmp the
 	// textures their passes go through; stopsTex is the texture of the
@@ -1145,6 +1147,14 @@ func (r *Renderer) prepare(s *scene.Scene) (cb id, built *scene.Scene, err error
 // drawGPUCanvas clears and draws a native Metal canvas into the texture of
 // this frame's slot, unless that slot already holds the canvas's version.
 func (r *Renderer) drawGPUCanvas(cb id, c *scene.Image) error {
+	if r.drawingGPU[c.ID()] {
+		return errors.New("metal: GPU canvas source cycle")
+	}
+	if r.drawingGPU == nil {
+		r.drawingGPU = map[uint64]bool{}
+	}
+	r.drawingGPU[c.ID()] = true
+	defer delete(r.drawingGPU, c.ID())
 	if r.gpuCanvases == nil {
 		r.gpuCanvases = map[uint64]*gpuCanvasTexture{}
 	}

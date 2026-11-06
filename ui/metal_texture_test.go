@@ -22,4 +22,15 @@ func TestMetalTextureIsAnImage(t *testing.T) {
 	if tx.img.Version() == before {
 		t.Fatal("Invalidate did not change the image version")
 	}
+	replaced := tx.img.Version()
+	tx.SetTexture(nil, nil, "new owner")
+	if tx.img.Version() == replaced || tx.img.External.KeepAlive != "new owner" {
+		t.Fatal("SetTexture did not publish the new texture owner")
+	}
+	img := Render(func(c *Context) {
+		Image(c, tx.Bitmap()).Fill()
+	}, 9, 7, 1)
+	if img == nil {
+		t.Fatal("Render returned no image")
+	}
 }
