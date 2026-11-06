@@ -140,19 +140,20 @@ Metal, Direct3D and CPU effects receive. The renderer supplies `T0` to
 backdrop area fields. The effect returns premultiplied color; MyGo applies
 the shape, clip and opacity afterward.
 
-Effects that need a backdrop or a generated `ui/shader` library are still
-pending only for backdrops; generated `ui/shader` libraries now emit WGSL
-through `internal/shaderir/wgsl` and share the Metal uniform layout with a
-byte-addressable `shader_uniforms` storage buffer. The basic uniform,
-bool, derivative, masked-glyph and distortion-effect paths have WebGPU
-tests; the full multi-image shader parity test is opt-in:
+Backdrop-reading effects are supported through a copyable render target,
+RGBA8 downsample and separable blur textures. Generated `ui/shader`
+libraries emit WGSL through `internal/shaderir/wgsl` and share the Metal
+uniform layout with a byte-addressable `shader_uniforms` storage buffer.
+The basic uniform, bool, derivative, masked-glyph, distortion-effect and
+glass-plugin paths have WebGPU tests; the full multi-image shader parity
+test is opt-in:
 
 ```sh
 MYGO_GPU_STRICT=1 CGO_ENABLED=1 go test ./ui/shader
 ```
 
-Backdrop-reading effects and the glass plugin still use the legacy
-direct-Metal fallback while their WebGPU backdrop passes are ported.
+The glass plugin now has WGSL shaders and is tested against the CPU
+rasterizer on WebGPU.
 
 ## Remaining parity work
 
@@ -160,7 +161,7 @@ The direct Metal renderer remains temporarily as the default until these
 WebGPU paths are complete:
 
 - backdrop textures for effects that read them;
-- the glass plugin and backdrop-reading shader effects;
+- image blur and the remaining wide-gamut/damage-aware presentation paths;
 - holes, wide-gamut presentation and damage-aware presentation;
 - benchmark parity and the purego/goffi build-tag removal;
 - migration of the Metal examples and public names to WebGPU.

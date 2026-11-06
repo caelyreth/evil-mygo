@@ -58,7 +58,7 @@ func (s *Surface) Configure(width, height int) error {
 	width, height = max(width, 1), max(height, 1)
 	if err := s.surface.Configure(s.gpu.device, &wgpu.SurfaceConfiguration{
 		Format:      s.format,
-		Usage:       wgpu.TextureUsageRenderAttachment,
+		Usage:       wgpu.TextureUsageRenderAttachment | wgpu.TextureUsageCopySrc,
 		Width:       uint32(width),
 		Height:      uint32(height),
 		AlphaMode:   s.alphaMode,

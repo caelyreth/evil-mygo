@@ -21,12 +21,17 @@ const (
 // the root frame and every nested native UI canvas; each target owns the
 // instance buffer and atlas bindings its scene draws with.
 type Renderer struct {
-	gpu     *GPU
-	format  wgpu.TextureFormat
-	shader  *wgpu.ShaderModule
-	layout  *wgpu.BindGroupLayout
-	pipe    *wgpu.RenderPipeline
-	sampler *wgpu.Sampler
+	gpu        *GPU
+	format     wgpu.TextureFormat
+	shader     *wgpu.ShaderModule
+	layout     *wgpu.BindGroupLayout
+	pipe       *wgpu.RenderPipeline
+	sampler    *wgpu.Sampler
+	passShader *wgpu.ShaderModule
+	passLayout *wgpu.BindGroupLayout
+	blurLayout *wgpu.BindGroupLayout
+	downPipe   *wgpu.RenderPipeline
+	blurPipe   *wgpu.RenderPipeline
 
 	defaultImage       *textureEntry
 	defaultMask        *textureEntry
@@ -59,6 +64,9 @@ type drawState struct {
 	binds                   map[bindKey]*wgpu.BindGroup
 	sceneWidth, sceneHeight int
 	sceneScale              float32
+	targetFormat            wgpu.TextureFormat
+	grab                    *textureEntry
+	backdrop                [2]*textureEntry
 }
 
 type canvasEntry struct {
@@ -124,6 +132,10 @@ func NewRenderer(g *GPU, format wgpu.TextureFormat) (*Renderer, error) {
 		r.Release()
 		return nil, fmt.Errorf("webgpu: scene sampler: %w", err)
 	}
+	if err := r.initPasses(); err != nil {
+		r.Release()
+		return nil, err
+	}
 	if r.defaultImage, err = r.solidTexture("MyGo white", wgpu.TextureFormatRGBA8Unorm, [4]byte{255, 255, 255, 255}); err != nil {
 		r.Release()
 		return nil, err
@@ -162,6 +174,16 @@ func (s *drawState) reset(r *Renderer, mask, color *textureEntry) {
 
 // Render encodes s into view. Clear is the scene background.
 func (r *Renderer) Render(s *scene.Scene, encoder *wgpu.CommandEncoder, view *wgpu.TextureView) error {
+	return r.render(s, encoder, nil, view)
+}
+
+// RenderTarget encodes s into target and view. A backdrop-reading effect
+// needs the target handle so it can be copied into the backdrop grab.
+func (r *Renderer) RenderTarget(s *scene.Scene, encoder *wgpu.CommandEncoder, target *wgpu.Texture, view *wgpu.TextureView) error {
+	return r.render(s, encoder, target, view)
+}
+
+func (r *Renderer) render(s *scene.Scene, encoder *wgpu.CommandEncoder, target *wgpu.Texture, view *wgpu.TextureView) error {
 	if r == nil || r.pipe == nil {
 		return errors.New("webgpu: renderer is released")
 	}
@@ -169,16 +191,17 @@ func (r *Renderer) Render(s *scene.Scene, encoder *wgpu.CommandEncoder, view *wg
 		return nil
 	}
 	r.frame++
-	if err := r.renderScene(s, encoder, view, &r.root); err != nil {
+	if err := r.renderScene(s, encoder, r.format, target, view, &r.root); err != nil {
 		return err
 	}
 	r.sweepCanvases()
 	return nil
 }
 
-func (r *Renderer) renderScene(s *scene.Scene, encoder *wgpu.CommandEncoder, view *wgpu.TextureView, st *drawState) error {
+func (r *Renderer) renderScene(s *scene.Scene, encoder *wgpu.CommandEncoder, targetFormat wgpu.TextureFormat, target *wgpu.Texture, view *wgpu.TextureView, st *drawState) error {
 	st.sceneWidth, st.sceneHeight = s.Width, s.Height
 	st.sceneScale = s.Scale
+	st.targetFormat = targetFormat
 	if st.sceneScale <= 0 {
 		st.sceneScale = 1
 	}
@@ -238,28 +261,56 @@ func (r *Renderer) renderScene(s *scene.Scene, encoder *wgpu.CommandEncoder, vie
 	if err := st.writeUniforms(r, s); err != nil {
 		return err
 	}
+	if err := r.fitBackdrop(st, s.Width, s.Height); err != nil {
+		return err
+	}
+	for _, b := range st.builder.Batches {
+		if b.Backdrop != 0 && target == nil {
+			return errors.New("webgpu: backdrop effect requires a render target")
+		}
+	}
 
-	clear := s.Clear
-	pass, err := encoder.BeginRenderPass(&wgpu.RenderPassDescriptor{
-		Label: "MyGo scene pass",
-		ColorAttachments: []wgpu.RenderPassColorAttachment{{
-			View: view, LoadOp: wgpu.LoadOpClear, StoreOp: wgpu.StoreOpStore,
-			ClearValue: wgpu.Color{
-				R: float64(clear.R) / 255,
-				G: float64(clear.G) / 255,
-				B: float64(clear.B) / 255,
-				A: float64(clear.A) / 255,
-			},
-		}},
-	})
+	beginPass := func(load wgpu.LoadOp) (*wgpu.RenderPassEncoder, error) {
+		clear := s.Clear
+		return encoder.BeginRenderPass(&wgpu.RenderPassDescriptor{
+			Label: "MyGo scene pass",
+			ColorAttachments: []wgpu.RenderPassColorAttachment{{
+				View: view, LoadOp: load, StoreOp: wgpu.StoreOpStore,
+				ClearValue: wgpu.Color{
+					R: float64(clear.R) / 255,
+					G: float64(clear.G) / 255,
+					B: float64(clear.B) / 255,
+					A: float64(clear.A) / 255,
+				},
+			}},
+		})
+	}
+	pass, err := beginPass(wgpu.LoadOpClear)
 	if err != nil {
 		return fmt.Errorf("webgpu: begin scene pass: %w", err)
 	}
-	defer pass.Release()
+	defer func() {
+		if pass != nil {
+			pass.End()
+			pass.Release()
+		}
+	}()
 	if len(st.builder.Instances) > 0 {
 		for _, batch := range st.builder.Batches {
 			if batch.Count == 0 {
 				continue
+			}
+			if batch.Backdrop != 0 {
+				pass.End()
+				pass.Release()
+				pass = nil
+				if err := r.readBackdrop(encoder, st, target, st.builder.Backdrops[batch.Backdrop-1]); err != nil {
+					return err
+				}
+				pass, err = beginPass(wgpu.LoadOpLoad)
+				if err != nil {
+					return fmt.Errorf("webgpu: resume scene pass: %w", err)
+				}
 			}
 			if batch.Effect != nil {
 				if err := r.drawEffect(pass, st, batch); err != nil {
@@ -301,6 +352,8 @@ func (r *Renderer) renderScene(s *scene.Scene, encoder *wgpu.CommandEncoder, vie
 		}
 	}
 	pass.End()
+	pass.Release()
+	pass = nil
 	return nil
 }
 
@@ -390,7 +443,7 @@ func (r *Renderer) drawCanvas(img *scene.Image, encoder *wgpu.CommandEncoder) er
 	}
 	defer view.Release()
 	img.Scene.Width, img.Scene.Height = img.W, img.H
-	if err := r.renderScene(img.Scene, encoder, view, &entry.state); err != nil {
+	if err := r.renderScene(img.Scene, encoder, wgpu.TextureFormatRGBA8Unorm, entry.tex.tex, view, &entry.state); err != nil {
 		return fmt.Errorf("webgpu: draw canvas: %w", err)
 	}
 	entry.version = img.Version()
@@ -573,7 +626,16 @@ func (s *drawState) release(r *Renderer) {
 	if s.stopsBuf != nil {
 		s.stopsBuf.Release()
 	}
+	if s.grab != nil {
+		s.grab.Release()
+	}
+	for i := range s.backdrop {
+		if s.backdrop[i] != nil {
+			s.backdrop[i].Release()
+		}
+	}
 	s.mask, s.color, s.instBuf, s.globals, s.stopsBuf = nil, nil, nil, nil, nil
+	s.grab, s.backdrop[0], s.backdrop[1] = nil, nil, nil
 	s.capacity, s.stopsCap, s.instRaw, s.binds = 0, 0, nil, nil
 }
 
@@ -626,6 +688,26 @@ func (r *Renderer) Release() {
 	if r.sampler != nil {
 		r.sampler.Release()
 		r.sampler = nil
+	}
+	if r.downPipe != nil {
+		r.downPipe.Release()
+		r.downPipe = nil
+	}
+	if r.blurPipe != nil {
+		r.blurPipe.Release()
+		r.blurPipe = nil
+	}
+	if r.passLayout != nil {
+		r.passLayout.Release()
+		r.passLayout = nil
+	}
+	if r.blurLayout != nil {
+		r.blurLayout.Release()
+		r.blurLayout = nil
+	}
+	if r.passShader != nil {
+		r.passShader.Release()
+		r.passShader = nil
 	}
 	if r.defaultImage != nil {
 		r.defaultImage.Release()

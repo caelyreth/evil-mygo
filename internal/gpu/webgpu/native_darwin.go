@@ -95,7 +95,7 @@ func (r *NativeRenderer) Render(s *scene.Scene) error {
 		return fmt.Errorf("webgpu: create frame encoder: %w", err)
 	}
 	defer encoder.Release()
-	if err := r.renderer.Render(s, encoder, view); err != nil {
+	if err := r.renderer.RenderTarget(s, encoder, texture, view); err != nil {
 		return err
 	}
 	command, err := encoder.Finish(nil)

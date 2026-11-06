@@ -50,7 +50,7 @@ func RenderOffscreen(s *scene.Scene) ([]byte, error) {
 		return nil, err
 	}
 	defer encoder.Release()
-	if err := r.Render(s, encoder, view); err != nil {
+	if err := r.RenderTarget(s, encoder, target, view); err != nil {
 		return nil, err
 	}
 	rowBytes := (s.Width*4 + 255) &^ 255

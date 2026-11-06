@@ -17,12 +17,16 @@ var (
 	hlslSource string
 	//go:embed glass.glsl
 	glslSource string
+	//go:embed glass.wgsl
+	wgslSource string
 	//go:embed blur.metal
 	blurMetalSource string
 	//go:embed blur.hlsl
 	blurHLSLSource string
 	//go:embed blur.glsl
 	blurGLSLSource string
+	//go:embed blur.wgsl
+	blurWGSLSource string
 )
 
 // Effect is the glass's effect, which the renderers draw (see
@@ -35,6 +39,7 @@ var Effect = &scene.Effect{
 	Metal:    scene.EffectCode{Source: metalSource, Compiled: metalLibrary, Sum: metalSum},
 	HLSL:     scene.EffectCode{Source: hlslSource, Compiled: hlslBytecode, Sum: hlslSum},
 	GLSL:     glslSource,
+	WGSL:     wgslSource,
 	Pixels:   func() scene.EffectPixels { return &pixels{} },
 }
 
@@ -47,6 +52,7 @@ var blurEffect = &scene.Effect{
 	Metal:    scene.EffectCode{Source: blurMetalSource, Compiled: blurMetalLibrary, Sum: blurMetalSum},
 	HLSL:     scene.EffectCode{Source: blurHLSLSource, Compiled: blurBytecode, Sum: blurHLSLSum},
 	GLSL:     blurGLSLSource,
+	WGSL:     blurWGSLSource,
 	Pixels:   func() scene.EffectPixels { return &blurPixels{} },
 }
 

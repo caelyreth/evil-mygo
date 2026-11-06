@@ -61,6 +61,7 @@ struct EffectVary {
 @group(0) @binding(7) var clip_tex: texture_2d<f32>;
 @group(0) @binding(8) var mask_tex: texture_2d<f32>;
 @group(0) @binding(9) var<storage, read> shader_uniforms: array<u32>;
+@group(0) @binding(10) var backdrop_tex: texture_2d<f32>;
 
 fn effect_frame_h(inst: EffectInstance, p: vec2<f32>) -> vec3<f32> {
 	return vec3<f32>(
@@ -170,6 +171,33 @@ fn effect_text_coverage(a: f32, c: vec3<f32>, contrast: f32, boost: f32, g: vec4
 	return saturate(adjusted + adjusted * (1.0 - adjusted) * ((g.x * f + g.y) * adjusted + (g.z * f + g.w)));
 }
 
+fn effect_frame_point(e: Effect, q: vec2<f32>) -> vec2<f32> {
+	let h = vec3<f32>(
+		dot(e.transform0.xyz, vec3<f32>(q, 1.0)),
+		dot(e.transform1.xyz, vec3<f32>(q, 1.0)),
+		dot(vec3<f32>(e.transform2.x, e.transform2.y, 1.0), vec3<f32>(q, 1.0)),
+	);
+	return h.xy / h.z;
+}
+
+fn effect_sample_backdrop_rgba(e: Effect, q: vec2<f32>) -> vec4<f32> {
+	let p = effect_frame_point(e, q);
+	let u = (p - e.area.xy) / e.params.z - 0.5;
+	let f = floor(u);
+	let w = u - f;
+	let at = vec2<i32>(f);
+	let size = vec2<i32>(e.area.zw);
+	let top = textureLoad(backdrop_tex, clamp(at, vec2<i32>(0), size - 1), 0) * (1.0 - w.x)
+		+ textureLoad(backdrop_tex, clamp(at + vec2<i32>(1, 0), vec2<i32>(0), size - 1), 0) * w.x;
+	let bottom = textureLoad(backdrop_tex, clamp(at + vec2<i32>(0, 1), vec2<i32>(0), size - 1), 0) * (1.0 - w.x)
+		+ textureLoad(backdrop_tex, clamp(at + vec2<i32>(1), vec2<i32>(0), size - 1), 0) * w.x;
+	return top * (1.0 - w.y) + bottom * w.y;
+}
+
+fn effect_sample_backdrop(e: Effect, q: vec2<f32>) -> vec3<f32> {
+	return effect_sample_backdrop_rgba(e, q).rgb;
+}
+
 // effect
 
 @fragment
@@ -182,6 +210,7 @@ fn effect_fs(in: EffectVary) -> @location(0) vec4<f32> {
 		+ textureSampleLevel(T3, effect_sampler, vec2<f32>(0.5), 0.0).x
 		+ textureSampleLevel(clip_tex, effect_sampler, vec2<f32>(0.5), 0.0).x
 		+ textureSampleLevel(mask_tex, effect_sampler, vec2<f32>(0.5), 0.0).x
+		+ textureSampleLevel(backdrop_tex, effect_sampler, vec2<f32>(0.5), 0.0).x
 		+ bitcast<f32>(shader_uniforms[0]);
 	if (effect_params.params.x < -1.0) {
 		return vec4<f32>(keep);

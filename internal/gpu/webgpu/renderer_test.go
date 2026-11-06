@@ -920,6 +920,38 @@ fn effect(p: vec2<f32>, e: Effect) -> vec4<f32> {
 	}
 }
 
+func TestRendererSamplesBackdrop(t *testing.T) {
+	if _, ok := RuntimePath(); !ok {
+		t.Skip("wgpu-native is not installed")
+	}
+	fx := &scene.Effect{
+		Name:     "backdrop",
+		Backdrop: true,
+		WGSL: `
+fn effect(p: vec2<f32>, e: Effect) -> vec4<f32> {
+	return vec4<f32>(effect_sample_backdrop(e, p), 1.0);
+}`,
+	}
+	const width, height = 32, 32
+	s := &scene.Scene{
+		Width: width, Height: height,
+		Clear: scene.Color{R: 4, G: 8, B: 200, A: 255},
+		Ops: []scene.Op{
+			{Kind: scene.OpFill, Rect: scene.Rect{W: width, H: height}, Color: scene.Color{R: 220, G: 40, B: 20, A: 255}},
+			{Kind: scene.OpEffect, Rect: scene.Rect{W: width, H: height}},
+		},
+		Effects: []scene.EffectOp{{Effect: fx}},
+	}
+	pix, err := RenderOffscreen(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := pix[(16*width+16)*4:][:4]
+	if p[0] != 20 || p[1] != 40 || p[2] != 220 || p[3] != 255 {
+		t.Fatalf("backdrop pixel = %v, want the preceding red fill", p)
+	}
+}
+
 func testTarget(t *testing.T, g *GPU, width, height int) (*wgpu.Texture, *wgpu.TextureView) {
 	t.Helper()
 	target, err := g.Device().CreateTexture(&wgpu.TextureDescriptor{

@@ -131,7 +131,15 @@ func (r *Renderer) drawEffect(pass *wgpu.RenderPassEncoder, st *drawState, batch
 		r.defaultTransparent.view, r.defaultTransparent.view,
 		r.defaultTransparent.view, r.defaultTransparent.view,
 	}
+	backdrop := r.defaultTransparent.view
+	if batch.Backdrop != 0 && st.backdrop[0] != nil {
+		backdrop = st.backdrop[0].view
+	}
 	for i, token := range batch.Textures {
+		if i == gpu.BackdropImage && batch.Backdrop != 0 {
+			textures[i] = backdrop
+			continue
+		}
 		if token == 0 {
 			continue
 		}
@@ -156,6 +164,7 @@ func (r *Renderer) drawEffect(pass *wgpu.RenderPassEncoder, st *drawState, batch
 		wgpu.TextureBindingEntry(7, clip),
 		wgpu.TextureBindingEntry(8, st.mask.view),
 		wgpu.BufferBindingEntry(9, shaderUniforms, 0, shaderUniformBytes),
+		wgpu.TextureBindingEntry(10, backdrop),
 	})
 	if err != nil {
 		uniform.Release()
