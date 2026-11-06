@@ -30,3 +30,30 @@ projections.
 The core does not contain a cloth or fluid solver. A surface package can
 provide a coarse CPU collision proxy and return UVs from the same
 simulation state used by its renderer.
+
+## Live UI layers
+
+`ui.NewUILayer` runs independent native UI off-window and exposes its
+output as a bitmap:
+
+```go
+layer := ui.NewUILayer(func(c *ui.Context) {
+	ui.TextInput(c, &name)
+	ui.Button(c, "Apply")
+}, 900, 500)
+
+layer.HandleInput(ui.InputEvent{
+	Kind: ui.InputPointerDown,
+	X: local.X,
+	Y: local.Y,
+	Button: 0,
+})
+layer.Render()
+```
+
+The layer has its own layout, focus, IME, scrolling, pointer capture,
+and accessibility state. `Render` snapshots the display list, so later
+frames do not mutate a texture that another compositor is still showing.
+Use `ScreenToSurface` to turn a scene hit into a layer coordinate before
+calling `HandleInput`. Call `NeedsFrame` after rendering if the layer's
+view requested another frame.
