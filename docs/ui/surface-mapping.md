@@ -18,6 +18,12 @@ carets and focus geometry back onto the surface. Implementations for
 cloth, heightfields, meshes, or fluid simulations belong to the package
 that owns that surface.
 
+A `SurfaceHit` marked as a back face is not routed into the UI by
+`HandleSurfaceInput`; a surface that exposes a differently mapped back
+face should return its own front-facing UV instead. The map must report
+the first visible surface under the pointer so that occluded geometry
+cannot take input.
+
 `Version` identifies the geometry snapshot used for the pixels the user
 saw. Do not use a newer or older deformation to resolve a click; that
 produces the familiar "the button is beside the cursor" bug. This version
@@ -73,7 +79,14 @@ input.
 `HandleSurfaceInput` combines the two steps and preserves pointer capture
 while a press moves beyond the surface. It never performs GPU picking or
 readback; the supplied `SurfaceMap` must be updated from the same scene
-state that is being rendered.
+state that is being rendered. While a press is held, a mapped move updates
+the last UV, an unmapped move keeps that UV, and a move back onto the
+surface resumes live tracking. Canceled presses map to the engine's
+pointer-cancel path and click nothing. Send `ui.InputPointerLeave` when the
+pointer leaves the presenting viewport to clear layer hover; it does not
+end an active capture. The outer host can read `UILayer.Cursor` after
+input to show the cursor requested by the native element under the
+mapped pointer.
 
 A `UILayer.Bitmap()` can also be passed to `MetalCanvas.SetSource`, so
 the same live layer can be sampled by an external Metal pass without

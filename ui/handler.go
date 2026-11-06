@@ -67,6 +67,10 @@ const (
 	// with Ctrl held comes as InputZoom too, and a mouse wheel's notches
 	// as InputScroll with Ctrl in Mods.
 	InputZoom
+	// InputPointerLeave reports that the pointer left the surface or
+	// stopped being over the element. It clears hover without ending a
+	// pointer capture.
+	InputPointerLeave
 )
 
 // InputEvent is input an element takes as it comes (HandleInput).

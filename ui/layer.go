@@ -20,7 +20,7 @@ type UILayer struct {
 	img            *scene.Image
 	bm             *Bitmap
 	closed         bool
-	surfacePressed bool
+	surfaceButtons uint32
 	lastUV         UV
 	version        uint64
 }
@@ -140,6 +140,8 @@ func (l *UILayer) HandleInput(ev InputEvent) bool {
 		} else {
 			pe.Kind = platform.PointerUp
 		}
+	case InputPointerLeave:
+		pe.Kind = platform.PointerLeave
 	case InputScroll:
 		pe.Kind = platform.PointerScroll
 	case InputZoom:
@@ -161,10 +163,11 @@ func (l *UILayer) HandleInput(ev InputEvent) bool {
 }
 
 // HandleSurfaceInput maps a pointer or wheel event from the window into
-// the layer through m, then sends it to the layer engine. Pointer capture
-// is preserved: while a press is held, moves outside the surface keep
-// using the last mapped layer coordinate. Keyboard and text events pass
-// through without mapping.
+// the layer through m, then sends it to the layer engine. While a press
+// is held, a move that leaves the surface keeps using the last mapped
+// layer coordinate, so pointer capture survives deforming or clipping
+// edges. A move back onto the surface resumes tracking its UVs. Keyboard
+// and text events pass through without mapping.
 func (l *UILayer) HandleSurfaceInput(m SurfaceMap, ev InputEvent) bool {
 	if l.closed {
 		return false
@@ -172,40 +175,59 @@ func (l *UILayer) HandleSurfaceInput(m SurfaceMap, ev InputEvent) bool {
 	switch ev.Kind {
 	case InputKeyDown, InputKeyUp, InputText, InputCompose, InputCommand:
 		return l.HandleInput(ev)
+	case InputPointerLeave:
+		return l.HandleInput(ev)
 	}
-	if m == nil || l.surfacePressed {
-		if l.surfacePressed {
-			ev.X = l.lastUV.U * l.host.w
-			ev.Y = l.lastUV.V * l.host.h
-			if ev.Kind == InputPointerUp {
-				l.surfacePressed = false
-			}
-			return l.HandleInput(ev)
+	pressed := l.surfaceButtons != 0
+	if m == nil {
+		if !pressed {
+			return false
 		}
-		return false
+		ev.X = l.lastUV.U * l.host.w
+		ev.Y = l.lastUV.V * l.host.h
+		return l.finishSurfaceInput(l.HandleInput(ev), ev)
 	}
 	hit, ok := m.ScreenToSurface(Point{X: ev.X, Y: ev.Y})
-	if !ok {
-		if ev.Kind == InputPointerUp && l.surfacePressed {
-			// The press began inside and the release is outside.
-			l.surfacePressed = false
-			ev.X = l.lastUV.U * l.host.w
-			ev.Y = l.lastUV.V * l.host.h
-			return l.HandleInput(ev)
-		}
+	if ok && hit.Backface {
+		ok = false
+	}
+	if !ok && !pressed {
 		return false
 	}
-	l.lastUV = hit.UV
-	ev.X = hit.UV.U * l.host.w
-	ev.Y = hit.UV.V * l.host.h
-	taken := l.HandleInput(ev)
-	if ev.Kind == InputPointerDown {
-		l.surfacePressed = true
+	if ok {
+		l.lastUV = hit.UV
 	}
-	if ev.Kind == InputPointerUp {
-		l.surfacePressed = false
+	ev.X = l.lastUV.U * l.host.w
+	ev.Y = l.lastUV.V * l.host.h
+	taken := l.HandleInput(ev)
+	return l.finishSurfaceInput(taken, ev)
+}
+
+func (l *UILayer) finishSurfaceInput(taken bool, ev InputEvent) bool {
+	if ev.Kind != InputPointerDown && ev.Kind != InputPointerUp {
+		return taken
+	}
+	button := ev.Button
+	if button < 0 || button >= 32 {
+		return taken
+	}
+	if ev.Kind == InputPointerDown {
+		l.surfaceButtons |= 1 << uint(button)
+	} else if ev.Canceled {
+		l.surfaceButtons = 0
+	} else {
+		l.surfaceButtons &^= 1 << uint(button)
 	}
 	return taken
+}
+
+// Cursor returns the pointer shape the layer's hovered or focused native
+// elements ask the presenting surface to show.
+func (l *UILayer) Cursor() Cursor {
+	if l.closed {
+		return CursorDefault
+	}
+	return l.host.cursor
 }
 
 // Access returns what assistive technology sees of the layer's last

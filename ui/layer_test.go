@@ -135,13 +135,85 @@ func TestUILayerSurfaceInputCanceledPressClicksNothing(t *testing.T) {
 	m := NewPlanarSurface(Rect{W: 100, H: 60})
 	layer.HandleSurfaceInput(m, InputEvent{Kind: InputPointerDown, X: 20, Y: 20, Button: 0})
 	layer.HandleSurfaceInput(m, InputEvent{Kind: InputPointerUp, X: 200, Y: 200, Button: 0, Canceled: true})
-	if layer.surfacePressed {
+	if layer.surfaceButtons != 0 {
 		t.Fatal("canceled surface press stayed captured")
 	}
 	layer.Render()
 	if clicks != 0 {
 		t.Fatalf("canceled surface press clicked %d times", clicks)
 	}
+}
+
+func TestUILayerSurfaceInputTracksDragAndResumesInside(t *testing.T) {
+	var moves []float32
+	layer := NewUILayer(func(c *Context) {
+		Box(c).Fill().HandleInput(func(ev InputEvent) bool {
+			if ev.Kind == InputPointerMove {
+				moves = append(moves, ev.X)
+			}
+			return true
+		})
+	}, 100, 60)
+	defer layer.Close()
+	m := NewPlanarSurface(Rect{W: 100, H: 60})
+	layer.HandleSurfaceInput(m, InputEvent{Kind: InputPointerDown, X: 10, Y: 20, Button: 0})
+	layer.HandleSurfaceInput(m, InputEvent{Kind: InputPointerMove, X: 30, Y: 20, Button: 0})
+	layer.HandleSurfaceInput(m, InputEvent{Kind: InputPointerMove, X: 200, Y: 20, Button: 0})
+	layer.HandleSurfaceInput(m, InputEvent{Kind: InputPointerMove, X: 50, Y: 20, Button: 0})
+	layer.HandleSurfaceInput(m, InputEvent{Kind: InputPointerUp, X: 50, Y: 20, Button: 0})
+	// A press first moves to its point, then the surface miss holds the
+	// last mapped UV and the move back inside resumes the live one.
+	if len(moves) != 3 || moves[0] != 10 || absSurface(moves[1]-30) > 1e-5 || moves[2] != 50 {
+		t.Fatalf("surface drag moves = %v, want [10 30 50]", moves)
+	}
+	if layer.surfaceButtons != 0 {
+		t.Fatal("surface release stayed captured")
+	}
+}
+
+func TestUILayerSurfaceInputRejectsBackface(t *testing.T) {
+	clicks := 0
+	layer := NewUILayer(func(c *Context) {
+		button := ButtonBase(c.Key("backface")).Fill().Label("Back")
+		if button.Clicked() {
+			clicks++
+		}
+	}, 100, 60)
+	defer layer.Close()
+	layer.HandleSurfaceInput(backfaceSurface{}, InputEvent{Kind: InputPointerDown, X: 20, Y: 20, Button: 0})
+	layer.HandleSurfaceInput(backfaceSurface{}, InputEvent{Kind: InputPointerUp, X: 20, Y: 20, Button: 0})
+	layer.Render()
+	if clicks != 0 {
+		t.Fatalf("back face clicked %d times", clicks)
+	}
+}
+
+func TestUILayerCursorReflectsMappedHover(t *testing.T) {
+	layer := NewUILayer(func(c *Context) {
+		Box(c).Size(80, 60).Cursor(CursorPointer).Label("Pointer area")
+	}, 100, 60)
+	defer layer.Close()
+	m := NewPlanarSurface(Rect{W: 100, H: 60})
+	layer.HandleSurfaceInput(m, InputEvent{Kind: InputPointerMove, X: 20, Y: 20})
+	if got := layer.Cursor(); got != CursorPointer {
+		t.Fatalf("layer cursor = %v, want pointer", got)
+	}
+	layer.HandleSurfaceInput(m, InputEvent{Kind: InputPointerLeave})
+	if got := layer.Cursor(); got != CursorDefault {
+		t.Fatalf("layer cursor after leave = %v, want default", got)
+	}
+}
+
+type backfaceSurface struct{}
+
+func (backfaceSurface) Version() uint64 { return 1 }
+
+func (backfaceSurface) ScreenToSurface(Point) (SurfaceHit, bool) {
+	return SurfaceHit{UV: UV{U: .2, V: .3}, Backface: true}, true
+}
+
+func (backfaceSurface) SurfaceToScreen(UV) (Point, bool) {
+	return Point{X: 20, Y: 20}, true
 }
 
 func TestUILayerTextInputThroughSurface(t *testing.T) {
