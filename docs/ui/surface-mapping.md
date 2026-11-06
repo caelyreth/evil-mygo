@@ -59,3 +59,8 @@ calling `HandleInput`. Call `NeedsFrame` after rendering if the layer's
 view requested another frame. `Access`, `AccessByRole`, `TextCaret` and
 `TextInputActive` expose the layer's accessibility and text-input state
 to the host that presents it.
+
+`HandleSurfaceInput` combines the two steps and preserves pointer capture
+while a press moves beyond the surface. It never performs GPU picking or
+readback; the supplied `SurfaceMap` must be updated from the same scene
+state that is being rendered.

@@ -53,3 +53,25 @@ func TestUILayerAccessibility(t *testing.T) {
 		t.Fatalf("access = %+v, %v", a, ok)
 	}
 }
+
+func TestUILayerSurfaceInput(t *testing.T) {
+	clicks := 0
+	layer := NewUILayer(func(c *Context) {
+		Column(c).Fill().Padding(10).Children(func() {
+			button := ButtonBase(c.Key("surface-button")).Width(80).Height(30).Label("Surface button")
+			button.Children(func() { Text(c, "Click") })
+			if button.Clicked() {
+				clicks++
+			}
+		})
+	}, 100, 60)
+	defer layer.Close()
+	m := NewPlanarSurface(Rect{W: 100, H: 60})
+	layer.HandleSurfaceInput(m, InputEvent{Kind: InputPointerDown, X: 20, Y: 20, Button: 0})
+	layer.HandleSurfaceInput(m, InputEvent{Kind: InputPointerMove, X: 200, Y: 200})
+	layer.HandleSurfaceInput(m, InputEvent{Kind: InputPointerUp, X: 200, Y: 200, Button: 0})
+	layer.Render()
+	if clicks != 1 {
+		t.Fatalf("surface click count = %d, want 1", clicks)
+	}
+}

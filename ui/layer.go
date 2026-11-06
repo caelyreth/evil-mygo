@@ -15,11 +15,13 @@ import (
 // The bitmap's scene is a snapshot taken by Render, so a later Render
 // does not mutate the texture currently being presented.
 type UILayer struct {
-	rt     *engine
-	host   *layerHost
-	img    *scene.Image
-	bm     *Bitmap
-	closed bool
+	rt             *engine
+	host           *layerHost
+	img            *scene.Image
+	bm             *Bitmap
+	closed         bool
+	surfacePressed bool
+	lastUV         UV
 }
 
 // NewUILayer creates a native UI layer of width×height DIPs and renders
@@ -131,6 +133,54 @@ func (l *UILayer) HandleInput(ev InputEvent) bool {
 		return false
 	}
 	return l.rt.event(pe)
+}
+
+// HandleSurfaceInput maps a pointer or wheel event from the window into
+// the layer through m, then sends it to the layer engine. Pointer capture
+// is preserved: while a press is held, moves outside the surface keep
+// using the last mapped layer coordinate. Keyboard and text events pass
+// through without mapping.
+func (l *UILayer) HandleSurfaceInput(m SurfaceMap, ev InputEvent) bool {
+	if l.closed {
+		return false
+	}
+	switch ev.Kind {
+	case InputKeyDown, InputKeyUp, InputText, InputCompose, InputCommand:
+		return l.HandleInput(ev)
+	}
+	if m == nil || l.surfacePressed {
+		if l.surfacePressed {
+			ev.X = l.lastUV.U * float32(l.bm.w)
+			ev.Y = l.lastUV.V * float32(l.bm.h)
+			if ev.Kind == InputPointerUp {
+				l.surfacePressed = false
+			}
+			return l.HandleInput(ev)
+		}
+		return false
+	}
+	hit, ok := m.ScreenToSurface(Point{X: ev.X, Y: ev.Y})
+	if !ok {
+		if ev.Kind == InputPointerUp && l.surfacePressed {
+			// The press began inside and the release is outside.
+			l.surfacePressed = false
+			ev.X = l.lastUV.U * float32(l.bm.w)
+			ev.Y = l.lastUV.V * float32(l.bm.h)
+			return l.HandleInput(ev)
+		}
+		return false
+	}
+	l.lastUV = hit.UV
+	ev.X = hit.UV.U * float32(l.bm.w)
+	ev.Y = hit.UV.V * float32(l.bm.h)
+	taken := l.HandleInput(ev)
+	if ev.Kind == InputPointerDown {
+		l.surfacePressed = true
+	}
+	if ev.Kind == InputPointerUp {
+		l.surfacePressed = false
+	}
+	return taken
 }
 
 // Access returns what assistive technology sees of the layer's last
