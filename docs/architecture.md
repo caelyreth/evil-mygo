@@ -4211,7 +4211,9 @@ either.
   another command buffer or queue. Off-window native UI and non-affine
   interaction are separate opt-in contracts: `ui.NewUILayer`,
   `ui.SurfaceMap`, `UILayer.HandleSurfaceInput` and
-  `UILayer.TextInputClient`.
+  `UILayer.TextInputClient`. `Element.HostLayer` bridges focus, IME,
+  cursor and accessibility from that off-window engine into the element
+  presenting its pixels.
 - **Effects** (`scene.Effect`) are drawings that packages outside the
   renderers define, as the official plugins do (the glass plugin's Liquid
   Glass): a fragment shader for each GPU renderer, in Metal Shading

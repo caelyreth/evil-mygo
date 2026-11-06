@@ -446,6 +446,8 @@ type node struct {
 	inputFn    func(InputEvent) bool
 	observeFn  func(InputEvent) // the input in it (ObserveInput)
 	textClient TextInputClient
+	layer      *UILayer
+	surface    SurfaceMap
 	caret      Rect
 	takesText  bool
 	noIME      bool // InputMethod(false)

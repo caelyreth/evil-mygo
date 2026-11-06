@@ -501,6 +501,8 @@ type engine struct {
 	dropOver    uint64
 	access      bool
 	accessNodes int
+	layerAccess map[uint64]layerAccessTarget
+	layerFocus  map[uint64]uint64
 	blinkStart  time.Time
 	inFrame     bool
 	dark        bool

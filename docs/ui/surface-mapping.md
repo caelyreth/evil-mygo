@@ -12,9 +12,10 @@ type SurfaceMap interface {
 }
 ```
 
-`ScreenToSurface` returns the UV under a window point, its depth and
-whether the hit is a back face. `SurfaceToScreen` projects UI positions,
-carets and focus geometry back onto the surface. Implementations for
+`ScreenToSurface` returns the UV under a point in the presenting
+element's local DIPs, its depth and whether the hit is a back face.
+`SurfaceToScreen` projects UI positions, carets, focus geometry and
+accessibility bounds back into that same space. Implementations for
 cloth, heightfields, meshes, or fluid simulations belong to the package
 that owns that surface.
 
@@ -94,12 +95,12 @@ pointer down has no "handled" flag of its own. A scene host can therefore
 avoid starting camera orbit or object dragging when the press belongs to
 the rendered UI.
 
-Text input crosses the same boundary. Create one client per presented
-surface and give it to the hosting element:
+Use `HostLayer` on the element that presents the surface. It makes the
+host focusable and bridges the layer's text input, cursor and
+accessibility tree:
 
 ```go
-text := layer.TextInputClient(surface)
-view := ui.Box(c).Focusable().HandleTextInput(text)
+view := ui.Box(c).HostLayer(layer, surface)
 view.HandleInput(func(ev ui.InputEvent) bool {
 	handled := layer.HandleSurfaceInput(surface, ev)
 	if handled {
@@ -109,11 +110,19 @@ view.HandleInput(func(ev ui.InputEvent) bool {
 })
 ```
 
-The client forwards composition and editing into the layer. It projects
-the inner caret's bounds back through the surface map and maps native
-point queries back to the inner text layout. Keep the client stable while
-the surface is presented; update the `SurfaceMap` before rendering the
-frame it describes.
+`HostLayer` does not render the layer or take over the host's input
+callback; a scene host still needs that arbiter to decide whether a press
+belongs to the native control or to camera/object manipulation. Render
+when `NeedsFrame` reports true. Accessibility nodes carry layer-relative
+bounds projected through the surface and the host element's transforms,
+and assistive-technology actions route back into the layer.
+
+For a lower-level integration, `UILayer.TextInputClient(surface)` returns
+the same bridge used by `HostLayer`. It forwards composition and editing
+into the layer, projects the inner caret's bounds back through the surface
+map and maps native point queries back to the inner text layout. Keep the
+client stable while the surface is presented; update the `SurfaceMap`
+before rendering the frame it describes.
 
 [`examples/layer-membrane`](../../examples/layer-membrane) exercises the
 full path with an application-owned moving heightfield: ray intersection,

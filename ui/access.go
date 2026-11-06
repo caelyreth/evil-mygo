@@ -665,6 +665,8 @@ func (rt *engine) accessTree() *platform.AccessTree {
 	// to: growing the slice from empty would copy it again and again.
 	t := &platform.AccessTree{Nodes: make([]platform.AccessNode, 0, rt.accessNodes)}
 	defer func() { rt.accessNodes = len(t.Nodes) }()
+	clear(rt.layerAccess)
+	clear(rt.layerFocus)
 	var focused *node
 	switch root := rt.c.root; {
 	case root == nil:
@@ -716,9 +718,12 @@ func (rt *engine) accessTree() *platform.AccessTree {
 				t.Focus = id
 			}
 		}
+		if mapped := rt.layerFocus[rt.focused]; mapped != 0 {
+			t.Focus = mapped
+		}
 	}
 	if len(rt.announcements) > 0 {
-		t.Announcements = slices.Clone(rt.announcements)
+		t.Announcements = append(t.Announcements, rt.announcements...)
 	}
 	return t
 }
@@ -796,6 +801,144 @@ func (rt *engine) accessElement(t *platform.AccessTree, e *node, parent int, scr
 			rt.accessElement(t, ch, parent, scrolled, focused)
 		}
 	}
+	if e.layer != nil {
+		rt.accessLayer(t, e, parent)
+	}
+}
+
+// layerAccessTarget routes an accessibility action of a presenting
+// window back to the element of its off-window layer.
+type layerAccessTarget struct {
+	layer *UILayer
+	id    uint64
+	host  *state
+}
+
+// accessLayer merges an off-window layer's tree below its presenting
+// element, projecting its bounds through the same surface map that
+// routes pointer input.
+func (rt *engine) accessLayer(t *platform.AccessTree, e *node, parent int) {
+	l := e.layer
+	if l == nil || l.closed || l.rt.closed || e.surface == nil {
+		return
+	}
+	inner := l.rt.accessTree()
+	if len(inner.Nodes) == 0 {
+		return
+	}
+	if rt.layerAccess == nil {
+		rt.layerAccess = map[uint64]layerAccessTarget{}
+	}
+	indexes := make([]int, len(inner.Nodes))
+	bridgeIDs := make(map[uint64]uint64, len(inner.Nodes))
+	start := len(t.Nodes)
+	host := rt.states[e.id]
+	for i, n := range inner.Nodes {
+		p := parent
+		if n.Parent >= 0 && n.Parent < i {
+			p = start + indexes[n.Parent]
+		}
+		bounds, visible := rt.layerAccessBounds(e, n.Bounds)
+		states := n.States
+		if !visible {
+			states |= platform.AccessOffscreen
+		}
+		id := layerAccessID(e.id, n.ID)
+		bridgeIDs[n.ID] = id
+		t.Nodes = append(t.Nodes, platform.AccessNode{
+			ID: id, Parent: p, Role: n.Role, Label: n.Label, Value: n.Value,
+			Bounds: bounds, States: states, Min: n.Min, Max: n.Max, Now: n.Now, Step: n.Step,
+			SelStart: n.SelStart, SelEnd: n.SelEnd, Placeholder: n.Placeholder,
+			Description: n.Description, KeyShortcuts: n.KeyShortcuts, Level: n.Level,
+			Current: n.Current, AutoComplete: n.AutoComplete,
+			PosInSet: n.PosInSet, SetSize: n.SetSize,
+			RowCount: n.RowCount, ColCount: n.ColCount, RowIndex: n.RowIndex, ColIndex: n.ColIndex,
+			RowSpan: n.RowSpan, ColSpan: n.ColSpan, Actions: n.Actions,
+			RoleDescription: n.RoleDescription, HasPopup: n.HasPopup,
+			TextRuns: n.TextRuns,
+		})
+		indexes[i] = len(t.Nodes) - 1 - start
+		rt.layerAccess[id] = layerAccessTarget{layer: l, id: n.ID, host: host}
+	}
+	for i, n := range inner.Nodes {
+		bridged := &t.Nodes[start+indexes[i]]
+		bridged.Controls = bridgeAccessIDs(n.Controls, bridgeIDs)
+		bridged.DescribedBy = bridgeAccessIDs(n.DescribedBy, bridgeIDs)
+		bridged.ErrorMessage = bridgeAccessIDs(n.ErrorMessage, bridgeIDs)
+	}
+	if inner.Focus != 0 && e.id == rt.focused {
+		if id := bridgeIDs[inner.Focus]; id != 0 {
+			if rt.layerFocus == nil {
+				rt.layerFocus = map[uint64]uint64{}
+			}
+			rt.layerFocus[e.id] = id
+		}
+	}
+	if t.Selected == "" {
+		t.Selected = inner.Selected
+	}
+	t.Announcements = append(t.Announcements, inner.Announcements...)
+	t.Alerts = append(t.Alerts, inner.Alerts...)
+}
+
+func bridgeAccessIDs(ids []uint64, bridge map[uint64]uint64) []uint64 {
+	if len(ids) == 0 {
+		return nil
+	}
+	out := make([]uint64, 0, len(ids))
+	for _, id := range ids {
+		if bridged := bridge[id]; bridged != 0 {
+			out = append(out, bridged)
+		}
+	}
+	return out
+}
+
+// layerAccessID namespaces a layer node under its presenting element.
+// Native UI IDs are small and dense; the high bit keeps these apart.
+func layerAccessID(host, id uint64) uint64 {
+	x := host ^ (id + 0x9e3779b97f4a7c15)
+	x ^= x >> 30
+	x *= 0xbf58476d1ce4e5b9
+	x ^= x >> 27
+	x *= 0x94d049bb133111eb
+	x ^= x >> 31
+	return x | 1<<63
+}
+
+// layerAccessBounds projects the four corners of a layer node's box
+// through the surface and the presenting element's transforms.
+func (rt *engine) layerAccessBounds(e *node, b platform.RectF) (platform.RectF, bool) {
+	l := e.layer
+	if l == nil || e.surface == nil || l.host.w <= 0 || l.host.h <= 0 {
+		return platform.RectF{}, false
+	}
+	x, y := b.X, b.Y
+	corners := [4]Point{
+		{X: float32(x), Y: float32(y)},
+		{X: float32(x + b.W), Y: float32(y)},
+		{X: float32(x + b.W), Y: float32(y + b.H)},
+		{X: float32(x), Y: float32(y + b.H)},
+	}
+	var minX, minY, maxX, maxY float64
+	for i, corner := range corners {
+		uv := UV{
+			U: max(0, min(corner.X/l.host.w, 1)),
+			V: max(0, min(corner.Y/l.host.h, 1)),
+		}
+		p, ok := e.surface.SurfaceToScreen(uv)
+		if !ok {
+			return platform.RectF{}, false
+		}
+		px, py := e.st.world.Point(e.st.x+p.X, e.st.y+p.Y)
+		if i == 0 {
+			minX, minY, maxX, maxY = float64(px), float64(py), float64(px), float64(py)
+		} else {
+			minX, minY = min(minX, float64(px)), min(minY, float64(py))
+			maxX, maxY = max(maxX, float64(px)), max(maxY, float64(py))
+		}
+	}
+	return platform.RectF{X: minX, Y: minY, W: maxX - minX, H: maxY - minY}, true
 }
 
 // chooseRow makes node i, a row of your own that says whether it is
@@ -1062,6 +1205,18 @@ func (rt *engine) accessibilityOn() {
 // accessAction performs an action of assistive technology on an element
 // of the last frame, as the keyboard or the pointer would.
 func (rt *engine) accessAction(ev platform.SurfaceEvent) {
+	if target, ok := rt.layerAccess[ev.ID]; ok {
+		if target.host != nil {
+			rt.focusOn(target.host)
+		}
+		if !target.layer.closed && !target.layer.rt.closed {
+			ev.ID = target.id
+			target.layer.rt.event(ev)
+			target.layer.rt.requestFrame()
+		}
+		rt.requestFrame()
+		return
+	}
 	s := rt.states[ev.ID]
 	// What is hidden from it, as a page leaving, takes none of its actions.
 	if s == nil || s.flags&flagDisabled != 0 || s.accessHidden {

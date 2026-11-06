@@ -12,8 +12,9 @@ CGO_ENABLED=1 go run ./examples/layer-membrane
 The CPU and Metal sides use the same camera basis, aspect ratio, wave
 function, root refinement, ground occlusion and front-face test. A
 pointer ray therefore lands on the same UV that the GPU samples. Input is
-routed through `UILayer.HandleSurfaceInput`; `UILayer.TextInputClient`
-projects IME geometry back through the moving surface.
+routed through `UILayer.HandleSurfaceInput`; `Element.HostLayer` bridges
+focus, IME caret geometry, cursor state and the accessibility subtree
+through the moving surface.
 
 ## Controls
 

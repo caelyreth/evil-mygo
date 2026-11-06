@@ -15,9 +15,11 @@ type SurfaceHit struct {
 	Backface bool
 }
 
-// SurfaceMap maps between window points and the parameter space of a
-// presented surface. Implementations for cloth, heightfields, meshes, or
-// other deformable surfaces belong to the package that owns that surface.
+// SurfaceMap maps between the presenting element's local points and the
+// parameter space of a surface. InputEvent coordinates are element-local,
+// and text-input geometry uses the same space. Implementations for cloth,
+// heightfields, meshes, or other deformable surfaces belong to the
+// package that owns that surface.
 //
 // Version identifies the geometry snapshot the mapping was made from.
 // Callers comparing a pointer hit with a rendered layer should use the
@@ -37,7 +39,7 @@ type PlanarSurface struct {
 	version uint64
 }
 
-// NewPlanarSurface returns a map for rect. The rect is in window DIPs.
+// NewPlanarSurface returns a map for rect in the presenting element's DIPs.
 func NewPlanarSurface(rect Rect) *PlanarSurface {
 	return &PlanarSurface{rect: rect}
 }

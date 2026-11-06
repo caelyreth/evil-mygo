@@ -5465,6 +5465,24 @@ func (_handle Element) HitTest(fn func(x float32, y float32, r Rect) bool) Eleme
 	return wrapElement(_node.HitTest(fn))
 }
 
+// HostLayer makes e the native host of layer's text input, cursor and
+// accessibility tree through surface. It does not route pointer input or
+// render the layer: use layer.HandleSurfaceInput in e's HandleInput and
+// render when layer.NeedsFrame reports true.
+//
+// The merged accessibility nodes carry layer-relative bounds projected
+// through surface and then through e's layout and visual transforms.
+// Assistive-technology actions route back to the layer's own engine.
+func (_handle Element) HostLayer(layer *UILayer, surface SurfaceMap) Element {
+	_node := _handle.node()
+	if _node == nil {
+		return Element{}
+	}
+	_ctx := _node.c
+	_ = _ctx
+	return wrapElement(_node.HostLayer(layer, surface))
+}
+
 // Hovered reports whether the pointer is over the element. While the
 // pointer presses an element, the elements it was over as the press began,
 // as those around the element pressed, stay hovered as long as it is over

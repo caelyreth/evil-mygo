@@ -1,6 +1,10 @@
 package ui
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/egoist/mygo/internal/platform"
+)
 
 func TestUILayerRendersAndRoutesInput(t *testing.T) {
 	clicks := 0
@@ -208,6 +212,61 @@ func TestUILayerCursorReflectsMappedHover(t *testing.T) {
 	layer.HandleSurfaceInput(m, InputEvent{Kind: InputPointerLeave})
 	if got := layer.Cursor(); got != CursorDefault {
 		t.Fatalf("layer cursor after leave = %v, want default", got)
+	}
+}
+
+func TestHostLayerBridgesAccessibility(t *testing.T) {
+	clicks := 0
+	name := ""
+	layer := NewUILayer(func(c *Context) {
+		Column(c).Fill().Padding(10).Gap(8).Children(func() {
+			TextInput(c.Key("name"), &name).Height(30).Label("Inner name")
+			button := ButtonBase(c.Key("inner-action")).Height(36).Label("Inner action")
+			button.Children(func() { Text(c, "Inner action") })
+			if button.Clicked() {
+				clicks++
+			}
+		})
+	}, 200, 120)
+	defer layer.Close()
+	surface := NewPlanarSurface(Rect{W: 200, H: 120})
+	tt := NewTester(func(c *Context) {
+		Box(c).Absolute().Left(40).Top(20).Size(200, 120).
+			HostLayer(layer, surface)
+	}, 400, 200)
+	defer tt.rt.close()
+	tt.send(platform.SurfaceEvent{Kind: platform.AccessibilityOn})
+	tt.Frame()
+
+	button := accessNode(t, tt.h.access, platform.RoleButton, "Inner action")
+	if button.Bounds.X < 40 || button.Bounds.Y < 20 || button.Bounds.W <= 0 || button.Bounds.H <= 0 {
+		t.Fatalf("bridged button bounds = %+v, want them inside the host at 40,20", button.Bounds)
+	}
+	tt.send(platform.SurfaceEvent{
+		Kind: platform.AccessAction, ID: button.ID, Action: platform.AccessPress,
+	})
+	layer.Render()
+	tt.Frame()
+	if clicks != 1 {
+		t.Fatalf("bridged accessibility press clicked %d times", clicks)
+	}
+
+	field := accessNode(t, tt.h.access, platform.RoleTextField, "Inner name")
+	tt.send(platform.SurfaceEvent{
+		Kind: platform.AccessAction, ID: field.ID, Action: platform.AccessFocus,
+	})
+	layer.Render()
+	tt.Frame()
+	if tt.h.access.Focus != field.ID {
+		t.Fatalf("outer accessibility focus = %d, want bridged field %d", tt.h.access.Focus, field.ID)
+	}
+	if active, _ := tt.TextInputActive(); !active {
+		t.Fatal("HostLayer did not expose the focused inner text input")
+	}
+	tt.Type("Ada")
+	layer.Render()
+	if name != "Ada" {
+		t.Fatalf("HostLayer text input = %q, want Ada", name)
 	}
 }
 

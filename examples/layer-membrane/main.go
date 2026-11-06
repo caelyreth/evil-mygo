@@ -37,7 +37,6 @@ type app struct {
 	canvas *ui.MetalCanvas
 	layer  *ui.UILayer
 	surf   *membraneSurface
-	text   ui.TextInputClient
 
 	cam       camera
 	waveTime  float32
@@ -65,7 +64,6 @@ func newApp() *app {
 	}
 	a.surf = &membraneSurface{cam: a.cam, amplitude: a.amplitude, version: 1}
 	a.layer = ui.NewUILayerWithScale(a.layerView, layerWidth, layerHeight, 1.5)
-	a.text = a.layer.TextInputClient(a.surf)
 	a.canvas = ui.NewMetalCanvas(viewportWidth, viewportHeight, a.draw)
 	a.canvas.SetSource(a.layer.Bitmap())
 	return a
@@ -150,23 +148,15 @@ func (a *app) tick(c *ui.Context) {
 }
 
 func (a *app) viewport(c *ui.Context) {
-	view := ui.Box(c).Grow(1).MinWidth(0).FillHeight().Focusable().AutoFocus().
-		Label("Interactive native UI membrane")
+	view := ui.Box(c).Grow(1).MinWidth(0).FillHeight().AutoFocus().
+		Label("Interactive native UI membrane").HostLayer(a.layer, a.surf)
 	box := view.LayoutBounds()
 	a.viewBox = box
 	a.surf.setViewport(box.W, box.H)
 
-	active, _ := a.layer.TextInputActive()
-	if active {
-		view.HandleTextInput(a.text)
-	} else {
-		view.HandleTextInput(nil)
-	}
 	if a.drag {
 		view.Cursor(ui.CursorNone)
-	} else if cursor := a.layer.Cursor(); cursor != ui.CursorDefault {
-		view.Cursor(cursor)
-	} else {
+	} else if a.layer.Cursor() == ui.CursorDefault {
 		view.Cursor(ui.CursorCrosshair)
 	}
 	view.HandleInput(func(ev ui.InputEvent) bool {

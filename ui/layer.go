@@ -88,8 +88,9 @@ func (l *UILayer) Render() {
 	l.version++
 }
 
-// Version identifies the rendered layer snapshot. A SurfaceMap used to
-// resolve input for this snapshot should carry the same version.
+// Version identifies the rendered layer snapshot. It is independent of
+// the SurfaceMap geometry version: a scene host presents one UI snapshot
+// with one surface snapshot.
 func (l *UILayer) Version() uint64 { return l.version }
 
 // NeedsFrame reports whether the view asked for another frame.
@@ -241,6 +242,33 @@ func (l *UILayer) Cursor() Cursor {
 		return CursorDefault
 	}
 	return l.host.cursor
+}
+
+// HostLayer makes e the native host of layer's text input, cursor and
+// accessibility tree through surface. It does not route pointer input or
+// render the layer: use layer.HandleSurfaceInput in e's HandleInput and
+// render when layer.NeedsFrame reports true.
+//
+// The merged accessibility nodes carry layer-relative bounds projected
+// through surface and then through e's layout and visual transforms.
+// Assistive-technology actions route back to the layer's own engine.
+func (e *node) HostLayer(layer *UILayer, surface SurfaceMap) *node {
+	if e == nil || layer == nil || layer.closed || layer.rt.closed || surface == nil {
+		return e
+	}
+	e.layer, e.surface = layer, surface
+	e.flags |= flagFocusable
+	active, _ := layer.TextInputActive()
+	if active {
+		e.textClient = layer.TextInputClient(surface)
+		e.flags |= flagHover
+	}
+	if cursor := layer.Cursor(); cursor != CursorDefault {
+		e.Cursor(cursor)
+	} else if active {
+		e.Cursor(CursorText)
+	}
+	return e
 }
 
 // Access returns what assistive technology sees of the layer's last
