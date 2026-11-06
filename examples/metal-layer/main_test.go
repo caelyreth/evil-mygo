@@ -28,15 +28,6 @@ func TestLiveNativeLayerControls(t *testing.T) {
 	if !a.done || !tt.HasText("Acknowledged") {
 		t.Fatal("the native button did not update the source tree")
 	}
-	scroll, ok := tt.Find("Recent activity list")
-	if !ok {
-		t.Fatal("the native scroll area is not visible")
-	}
-	tt.Scroll(scroll.X+scroll.W/2, scroll.Y+scroll.H/2, 0, 20)
-	tt.Frame()
-	if a.scroll.Y <= 0 {
-		t.Fatalf("scroll offset after wheel = %+v, want a scrolled content area", a.scroll)
-	}
 	before, ok := tt.Access("Display name")
 	if !ok {
 		t.Fatal("the native source field has no accessibility node")
@@ -54,6 +45,17 @@ func TestLiveNativeLayerControls(t *testing.T) {
 	tt.Type("Focus follows the plane")
 	if a.name != "Focus follows the plane" {
 		t.Fatalf("name after the tilted edit = %q", a.name)
+	}
+	a.scroll.Y = 0
+	tt.Frame()
+	scroll, ok := tt.Access("Recent activity list")
+	if !ok {
+		t.Fatal("the tilted scroll area has no accessibility bounds")
+	}
+	tt.Scroll(scroll.Bounds.X+scroll.Bounds.W/2, scroll.Bounds.Y+scroll.Bounds.H/2, 0, 20)
+	tt.Frame()
+	if a.scroll.Y <= 0 {
+		t.Fatalf("scroll offset after tilted wheel = %+v, want a scrolled content area", a.scroll)
 	}
 	if err := tt.Click("Acknowledge profile"); err != nil {
 		t.Fatal(err)
