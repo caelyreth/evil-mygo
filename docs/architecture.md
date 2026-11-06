@@ -4827,8 +4827,8 @@ either.
     renders native UI canvases into WebGPU textures. Effects may sample a
     copy of the target for backdrop blur; imported `wgpu.Texture` views are
     sampled directly when they belong to the renderer's device. Presentation
-    follows the surface's format and alpha mode; wide-gamut and damage-aware
-    presentation remain parity items.
+    negotiates BGRA8 or RGBA16Float and the target's alpha mode; damage-aware
+    partial presentation remains a parity item.
   - `internal/gpu/gl` with the shader in GLSL 3.30 or GLSL ES 3.00, which
     the driver compiles when the renderer starts, since these versions
     have no compiled form every driver takes, and drivers keep what they

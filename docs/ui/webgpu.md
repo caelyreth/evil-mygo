@@ -168,7 +168,7 @@ rasterizer on WebGPU.
 The direct Metal renderer and Metal-specific public APIs have been
 removed. These WebGPU paths remain:
 
-- wide-gamut/damage-aware presentation paths;
+- damage-aware partial presentation;
 - benchmark parity;
 - removal of the `nofakecgo` requirement for fully cgo-free WebGPU builds.
 

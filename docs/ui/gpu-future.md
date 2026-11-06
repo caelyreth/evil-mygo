@@ -41,7 +41,7 @@ A second GPU backend should provide:
    `nofakecgo` tag.
 2. Add WebGPU encode/GPU-time benchmarks matching the retired Metal
    benchmarks.
-3. Complete wide-gamut and damage-aware presentation parity.
+3. Complete damage-aware partial presentation parity.
 
 The `ui` layer must not learn any scene graph, cloth solver or renderer
 specific type while adding that backend.

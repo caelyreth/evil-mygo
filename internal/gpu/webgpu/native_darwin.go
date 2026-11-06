@@ -24,6 +24,7 @@ type NativeRenderer struct {
 	renderer *Renderer
 	width    int
 	height   int
+	wide     bool
 }
 
 type nsPoint struct{ X, Y float64 }
@@ -75,7 +76,7 @@ func NewNative(viewOrLayer uintptr) (*NativeRenderer, error) {
 		surface.Release()
 		return fail(err)
 	}
-	return &NativeRenderer{gpu: g, surface: surface, renderer: renderer}, nil
+	return &NativeRenderer{gpu: g, surface: surface, renderer: renderer, wide: surface.Wide()}, nil
 }
 
 func ensureMetalLayer(viewOrLayer uintptr) (uintptr, error) {
@@ -152,7 +153,7 @@ func (r *NativeRenderer) Render(s *scene.Scene) error {
 	if s == nil || s.Width <= 0 || s.Height <= 0 {
 		return nil
 	}
-	if r.width != s.Width || r.height != s.Height {
+	if r.width != s.Width || r.height != s.Height || r.surface.needsConfigure() {
 		if err := r.surface.Configure(s.Width, s.Height); err != nil {
 			return err
 		}
@@ -211,6 +212,33 @@ func (r *NativeRenderer) Render(s *scene.Scene) error {
 // Invalidate has no persistent backing store to discard: every WebGPU
 // frame is encoded whole.
 func (r *NativeRenderer) Invalidate() {}
+
+// SetWide switches the surface and scene pipelines between 8-bit sRGB and
+// RGBA16Float extended-range presentation. The old renderer is released
+// only after the device has completed work encoded with its pipelines.
+func (r *NativeRenderer) SetWide(on bool) bool {
+	if r == nil || r.surface == nil || r.renderer == nil || r.gpu == nil {
+		return false
+	}
+	if r.wide == on {
+		return true
+	}
+	if !r.surface.SetWide(on) {
+		return false
+	}
+	format := r.surface.Format()
+	r.gpu.device.Poll(true)
+	next, err := NewRenderer(r.gpu, format)
+	if err != nil {
+		r.surface.SetWide(r.wide)
+		return false
+	}
+	r.renderer.Release()
+	r.renderer = next
+	r.wide = on
+	r.width, r.height = 0, 0
+	return true
+}
 
 // FrameInfo describes the active adapter for MYGO_FRAME_STATS.
 func (r *NativeRenderer) FrameInfo() string {

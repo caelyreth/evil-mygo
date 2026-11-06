@@ -17,9 +17,12 @@ type Surface struct {
 	format      wgpu.TextureFormat
 	presentMode wgpu.PresentMode
 	alphaMode   wgpu.CompositeAlphaMode
+	formats     []wgpu.TextureFormat
 	width       int
 	height      int
 	suboptimal  bool
+	wide        bool
+	dirty       bool
 }
 
 // NewSurface creates a WebGPU surface from layer, a CAMetalLayer owned by
@@ -45,6 +48,7 @@ func (g *GPU) NewSurface(layer uintptr) (*Surface, error) {
 	}
 	return &Surface{
 		gpu: g, surface: s, format: format,
+		formats:     caps.Formats,
 		presentMode: choosePresentMode(caps.PresentModes),
 		alphaMode:   chooseAlphaMode(caps.AlphaModes),
 	}, nil
@@ -68,6 +72,7 @@ func (s *Surface) Configure(width, height int) error {
 	}
 	s.width, s.height = width, height
 	s.suboptimal = false
+	s.dirty = false
 	return nil
 }
 
@@ -101,6 +106,38 @@ func (s *Surface) Format() wgpu.TextureFormat {
 	}
 	return s.format
 }
+
+// SetWide switches the surface between the sRGB/BGRA8 format and the
+// extended-range RGBA16Float format. It reports false when the adapter's
+// surface capabilities do not offer that format.
+func (s *Surface) SetWide(on bool) bool {
+	if s == nil {
+		return false
+	}
+	if s.wide == on {
+		return true
+	}
+	var format wgpu.TextureFormat
+	var ok bool
+	if on {
+		format, ok = chooseWideFormat(s.formats)
+	} else {
+		format, ok = chooseSurfaceFormat(s.formats)
+	}
+	if !ok {
+		return false
+	}
+	s.format = format
+	s.wide = on
+	s.dirty = true
+	return true
+}
+
+// Wide reports whether the surface is configured for extended-range
+// colors.
+func (s *Surface) Wide() bool { return s != nil && s.wide }
+
+func (s *Surface) needsConfigure() bool { return s != nil && s.dirty }
 
 // Size returns the configured pixel size.
 func (s *Surface) Size() (width, height int) {
@@ -137,6 +174,15 @@ func chooseSurfaceFormat(formats []wgpu.TextureFormat) (wgpu.TextureFormat, bool
 			if format == want {
 				return want, true
 			}
+		}
+	}
+	return wgpu.TextureFormatUndefined, false
+}
+
+func chooseWideFormat(formats []wgpu.TextureFormat) (wgpu.TextureFormat, bool) {
+	for _, format := range formats {
+		if format == wgpu.TextureFormatRGBA16Float {
+			return format, true
 		}
 	}
 	return wgpu.TextureFormatUndefined, false
