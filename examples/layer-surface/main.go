@@ -22,6 +22,8 @@ type app struct {
 	layer   *ui.UILayer
 	canvas  *ui.MetalCanvas
 	surface *ui.PlanarSurface
+	host    ui.Handle
+	ctx     *ui.Context
 	clicks  int
 	name    string
 }
@@ -40,16 +42,19 @@ func (a *app) draw(frame ui.MetalFrame) error {
 }
 
 func (a *app) view(c *ui.Context) {
+	a.ctx = c
 	if a.layer.NeedsFrame() {
 		a.layer.Render()
 		a.canvas.Invalidate()
 	}
 	ui.Row(c).Fill().Background(ui.Hex("#eeeeee")).Children(func() {
-		target := ui.Box(c).Width(layerWidth).Shrink(0).FillHeight().Clip()
+		target := ui.Box(c).Width(layerWidth).Shrink(0).FillHeight().Clip().
+			Bind(&a.host).
+			HostLayer(a.layer, a.surface)
 		target.HandleInput(func(ev ui.InputEvent) bool {
 			switch ev.Kind {
 			case ui.InputPointerDown, ui.InputPointerMove, ui.InputPointerUp, ui.InputScroll:
-				a.layer.HandleSurfaceInput(a.surface, ev)
+				a.host.HandleLayerInput(a.ctx, ev)
 				a.layer.Render()
 				a.canvas.Invalidate()
 				return true

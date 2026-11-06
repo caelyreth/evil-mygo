@@ -448,6 +448,7 @@ type node struct {
 	textClient TextInputClient
 	layer      *UILayer
 	surface    SurfaceMap
+	surfaceVer uint64
 	caret      Rect
 	takesText  bool
 	noIME      bool // InputMethod(false)

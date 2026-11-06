@@ -257,6 +257,7 @@ func (e *node) HostLayer(layer *UILayer, surface SurfaceMap) *node {
 		return e
 	}
 	e.layer, e.surface = layer, surface
+	e.surfaceVer = surface.Version()
 	e.flags |= flagFocusable
 	active, _ := layer.TextInputActive()
 	if active {
@@ -269,6 +270,34 @@ func (e *node) HostLayer(layer *UILayer, surface SurfaceMap) *node {
 		e.Cursor(CursorText)
 	}
 	return e
+}
+
+// HandleLayerInput sends ev to the layer bound to r with the geometry
+// version that binding last built. Pointer, wheel and leave events are
+// refused if the surface map changed after that build, so a camera or
+// simulation tick cannot resolve input against pixels that have not been
+// presented. Keyboard and text events do not depend on the pointer map and
+// still pass through. Render the layer and invalidate its presenters when
+// NeedsFrame reports true, as with HandleSurfaceInput.
+func (r Handle) HandleLayerInput(c *Context, ev InputEvent) bool {
+	rt := c.runtime()
+	b := (&r).binding(rt, false)
+	if b == nil || b.closed || b.id == 0 {
+		return false
+	}
+	s := rt.states[b.id]
+	if s == nil || s.layer == nil || s.surface == nil ||
+		s.layer.closed || s.layer.rt.closed {
+		return false
+	}
+	switch ev.Kind {
+	case InputPointerDown, InputPointerMove, InputPointerUp,
+		InputScroll, InputZoom, InputPointerLeave:
+		if s.surface.Version() != s.surfaceVer {
+			return false
+		}
+	}
+	return s.layer.HandleSurfaceInput(s.surface, ev)
 }
 
 // Access returns what assistive technology sees of the layer's last

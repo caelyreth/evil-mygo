@@ -270,6 +270,40 @@ func TestHostLayerBridgesAccessibility(t *testing.T) {
 	}
 }
 
+func TestHostLayerRejectsStaleSurfaceInput(t *testing.T) {
+	clicks := 0
+	layer := NewUILayer(func(c *Context) {
+		button := ButtonBase(c.Key("stale")).Fill().Label("Stale")
+		if button.Clicked() {
+			clicks++
+		}
+	}, 100, 60)
+	defer layer.Close()
+	surface := NewPlanarSurface(Rect{W: 100, H: 60})
+	var host Handle
+	var ctx *Context
+	tt := NewTester(func(c *Context) {
+		ctx = c
+		Box(c).Size(100, 60).Bind(&host).HostLayer(layer, surface)
+	}, 120, 80)
+	defer tt.rt.close()
+	tt.Frame()
+
+	surface.SetVersion(1)
+	if host.HandleLayerInput(ctx, InputEvent{Kind: InputPointerDown, X: 20, Y: 20, Button: 0}) {
+		t.Fatal("input used geometry newer than the host's presented frame")
+	}
+	surface.SetVersion(0)
+	if !host.HandleLayerInput(ctx, InputEvent{Kind: InputPointerDown, X: 20, Y: 20, Button: 0}) {
+		t.Fatal("input with the presented geometry did not reach the layer")
+	}
+	host.HandleLayerInput(ctx, InputEvent{Kind: InputPointerUp, X: 20, Y: 20, Button: 0})
+	layer.Render()
+	if clicks != 1 {
+		t.Fatalf("fresh surface input clicked %d times", clicks)
+	}
+}
+
 type backfaceSurface struct{}
 
 func (backfaceSurface) Version() uint64 { return 1 }

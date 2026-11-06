@@ -885,6 +885,9 @@ type state struct {
 	observe     func(InputEvent) // ObserveInput
 	textClient  TextInputClient
 	textAdapter *textInputAdapter
+	layer       *UILayer
+	surface     SurfaceMap
+	surfaceVer  uint64
 	caret       Rect
 	takesText   bool
 	noIME       bool

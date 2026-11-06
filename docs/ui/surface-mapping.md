@@ -100,9 +100,10 @@ host focusable and bridges the layer's text input, cursor and
 accessibility tree:
 
 ```go
-view := ui.Box(c).HostLayer(layer, surface)
+var host ui.Handle
+view := ui.Box(c).Bind(&host).HostLayer(layer, surface)
 view.HandleInput(func(ev ui.InputEvent) bool {
-	handled := layer.HandleSurfaceInput(surface, ev)
+	handled := host.HandleLayerInput(c, ev)
 	if handled {
 		layer.Render()
 	}
@@ -113,9 +114,15 @@ view.HandleInput(func(ev ui.InputEvent) bool {
 `HostLayer` does not render the layer or take over the host's input
 callback; a scene host still needs that arbiter to decide whether a press
 belongs to the native control or to camera/object manipulation. Render
-when `NeedsFrame` reports true. Accessibility nodes carry layer-relative
-bounds projected through the surface and the host element's transforms,
-and assistive-technology actions route back into the layer.
+when `NeedsFrame` reports true. `HandleLayerInput` uses the geometry
+version captured when that host was built: a pointer event is refused if
+the app advanced the surface before presenting a frame for it. Keyboard
+and text events still pass because they do not depend on the pointer map.
+Use a `ui.Handle`, not an `Element`, for input that arrives after the
+build; elements expire at the end of their pass.
+Accessibility nodes carry layer-relative bounds projected through the
+surface and the host element's transforms, and assistive-technology
+actions route back into the layer.
 
 For a lower-level integration, `UILayer.TextInputClient(surface)` returns
 the same bridge used by `HostLayer`. It forwards composition and editing

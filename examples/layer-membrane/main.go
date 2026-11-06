@@ -37,6 +37,8 @@ type app struct {
 	canvas *ui.MetalCanvas
 	layer  *ui.UILayer
 	surf   *membraneSurface
+	host   ui.Handle
+	ctx    *ui.Context
 
 	cam       camera
 	waveTime  float32
@@ -78,6 +80,7 @@ func (a *app) draw(frame ui.MetalFrame) error {
 }
 
 func (a *app) view(c *ui.Context) {
+	a.ctx = c
 	a.tick(c)
 	if a.layer.NeedsFrame() {
 		a.layer.Render()
@@ -148,11 +151,12 @@ func (a *app) tick(c *ui.Context) {
 }
 
 func (a *app) viewport(c *ui.Context) {
-	view := ui.Box(c).Grow(1).MinWidth(0).FillHeight().AutoFocus().
-		Label("Interactive native UI membrane").HostLayer(a.layer, a.surf)
+	view := ui.Box(c).Grow(1).MinWidth(0).FillHeight().AutoFocus().Bind(&a.host).
+		Label("Interactive native UI membrane")
 	box := view.LayoutBounds()
 	a.viewBox = box
 	a.surf.setViewport(box.W, box.H)
+	view.HostLayer(a.layer, a.surf)
 
 	if a.drag {
 		view.Cursor(ui.CursorNone)
@@ -206,7 +210,7 @@ func (a *app) viewport(c *ui.Context) {
 }
 
 func (a *app) routeLayer(ev ui.InputEvent) bool {
-	taken := a.layer.HandleSurfaceInput(a.surf, ev)
+	taken := a.host.HandleLayerInput(a.ctx, ev)
 	if a.layer.NeedsFrame() {
 		a.layer.Render()
 		a.canvas.Invalidate()
