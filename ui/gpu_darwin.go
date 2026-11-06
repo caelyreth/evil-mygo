@@ -1,4 +1,4 @@
-//go:build darwin
+//go:build darwin && (!mygo_webgpu || !nofakecgo)
 
 package ui
 

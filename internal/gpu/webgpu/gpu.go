@@ -67,6 +67,14 @@ func (g *GPU) Device() *wgpu.Device {
 	return g.device
 }
 
+// Instance returns the wgpu-native instance, for asynchronous error scopes.
+func (g *GPU) Instance() *wgpu.Instance {
+	if g == nil {
+		return nil
+	}
+	return g.instance
+}
+
 // Queue returns the device's default queue.
 func (g *GPU) Queue() *wgpu.Queue {
 	if g == nil {

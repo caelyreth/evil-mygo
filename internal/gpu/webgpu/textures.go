@@ -21,6 +21,9 @@ type textureEntry struct {
 type bindKey struct {
 	image *wgpu.TextureView
 	clip  *wgpu.TextureView
+	mask  *wgpu.TextureView
+	color *wgpu.TextureView
+	stops *wgpu.Buffer
 }
 
 func (t *textureEntry) Release() {
@@ -38,10 +41,20 @@ func (t *textureEntry) Release() {
 }
 
 func (r *Renderer) createTexture(label string, format wgpu.TextureFormat, width, height int) (*textureEntry, error) {
+	return r.createTextureWithUsage(label, format, width, height,
+		wgpu.TextureUsageTextureBinding|wgpu.TextureUsageCopyDst)
+}
+
+func (r *Renderer) createRenderTexture(label string, format wgpu.TextureFormat, width, height int) (*textureEntry, error) {
+	return r.createTextureWithUsage(label, format, width, height,
+		wgpu.TextureUsageTextureBinding|wgpu.TextureUsageRenderAttachment)
+}
+
+func (r *Renderer) createTextureWithUsage(label string, format wgpu.TextureFormat, width, height int, usage wgpu.TextureUsage) (*textureEntry, error) {
 	width, height = max(width, 1), max(height, 1)
 	tex, err := r.gpu.device.CreateTexture(&wgpu.TextureDescriptor{
 		Label:         label,
-		Usage:         wgpu.TextureUsageTextureBinding | wgpu.TextureUsageCopyDst,
+		Usage:         usage,
 		Dimension:     wgpu.TextureDimension2D,
 		Size:          wgpu.Extent3D{Width: uint32(width), Height: uint32(height), DepthOrArrayLayers: 1},
 		Format:        format,
@@ -95,17 +108,20 @@ func (r *Renderer) solidTexture(label string, format wgpu.TextureFormat, rgba [4
 	return t, nil
 }
 
-func (r *Renderer) syncAtlas(a *scene.Atlas, format wgpu.TextureFormat, current **textureEntry, fallback **textureEntry) error {
+func (r *Renderer) syncAtlas(a *scene.Atlas, format wgpu.TextureFormat, current **textureEntry) error {
+	fallback := r.defaultMask
+	if format == wgpu.TextureFormatRGBA8Unorm {
+		fallback = r.defaultColor
+	}
 	if a == nil || a.W <= 0 || a.H <= 0 {
-		if *current != *fallback {
+		if *current != nil && *current != fallback {
 			(*current).Release()
-			r.forgetBindings()
 		}
-		*current = *fallback
+		*current = fallback
 		return nil
 	}
 	t := *current
-	if t == *fallback {
+	if t == fallback {
 		t = nil
 	}
 	changed := false
@@ -145,8 +161,14 @@ func (r *Renderer) syncImage(img *scene.Image) (uintptr, error) {
 	if img == nil {
 		return 0, nil
 	}
-	if img.Scene != nil || img.GPU != nil || img.External != nil {
-		return 0, errors.New("webgpu: canvas and external images are not ported yet")
+	if img.Scene != nil {
+		if r.canvases[img.ID()] == nil {
+			return 0, errors.New("webgpu: canvas was not rendered")
+		}
+		return uintptr(img.ID()), nil
+	}
+	if img.GPU != nil || img.External != nil {
+		return 0, errors.New("webgpu: native and external images are not ported yet")
 	}
 	token := uintptr(img.ID())
 	t := r.images[token]
@@ -182,36 +204,37 @@ func (r *Renderer) syncImage(img *scene.Image) (uintptr, error) {
 	return token, nil
 }
 
-func (r *Renderer) bindFor(image, clip *wgpu.TextureView) (*wgpu.BindGroup, error) {
+func (s *drawState) bindFor(r *Renderer, image, clip *wgpu.TextureView) (*wgpu.BindGroup, error) {
 	if image == nil {
 		image = r.defaultImage.view
 	}
 	if clip == nil {
 		clip = r.defaultClip.view
 	}
-	key := bindKey{image: image, clip: clip}
-	if bind := r.binds[key]; bind != nil {
+	key := bindKey{image: image, clip: clip, mask: s.mask.view, color: s.color.view, stops: s.stopsBuf}
+	if bind := s.binds[key]; bind != nil {
 		return bind, nil
 	}
 	bind, err := r.gpu.device.CreateBindGroupSimple(r.layout, []wgpu.BindGroupEntry{
-		wgpu.BufferBindingEntry(0, r.globals, 0, 16),
-		wgpu.BufferBindingEntry(1, r.instBuf, 0, uint64(r.capacity)*uint64(instanceSize)),
+		wgpu.BufferBindingEntry(0, s.globals, 0, 16),
+		wgpu.BufferBindingEntry(1, s.instBuf, 0, uint64(s.capacity)*uint64(instanceSize)),
 		wgpu.TextureBindingEntry(2, image),
-		wgpu.TextureBindingEntry(3, r.mask.view),
-		wgpu.TextureBindingEntry(4, r.color.view),
+		wgpu.TextureBindingEntry(3, s.mask.view),
+		wgpu.TextureBindingEntry(4, s.color.view),
 		wgpu.SamplerBindingEntry(5, r.sampler),
 		wgpu.TextureBindingEntry(6, clip),
+		wgpu.BufferBindingEntry(7, s.stopsBuf, 0, uint64(s.stopsCap)*16),
 	})
 	if err != nil {
 		return nil, err
 	}
-	r.binds[key] = bind
+	s.binds[key] = bind
 	return bind, nil
 }
 
-func (r *Renderer) forgetBindings() {
-	for key, bind := range r.binds {
+func (s *drawState) forgetBindings() {
+	for key, bind := range s.binds {
 		bind.Release()
-		delete(r.binds, key)
+		delete(s.binds, key)
 	}
 }
