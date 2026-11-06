@@ -46,7 +46,7 @@ func (t *textureEntry) Release() {
 
 func (r *Renderer) createTexture(label string, format wgpu.TextureFormat, width, height int) (*textureEntry, error) {
 	return r.createTextureWithUsage(label, format, width, height,
-		wgpu.TextureUsageTextureBinding|wgpu.TextureUsageCopyDst)
+		wgpu.TextureUsageTextureBinding|wgpu.TextureUsageCopyDst|wgpu.TextureUsageCopySrc)
 }
 
 func (r *Renderer) createRenderTexture(label string, format wgpu.TextureFormat, width, height int) (*textureEntry, error) {

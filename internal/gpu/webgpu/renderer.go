@@ -45,6 +45,8 @@ type Renderer struct {
 	canvases map[uint64]*canvasEntry
 	images   map[uintptr]*textureEntry
 	effects  map[string]*effectPipeline
+	blurred  map[uintptr]*textureEntry
+	blurID   uint64
 	pending  []func()
 	frame    uint64
 }
@@ -200,6 +202,7 @@ func NewRenderer(g *GPU, format wgpu.TextureFormat) (*Renderer, error) {
 	r.images = map[uintptr]*textureEntry{}
 	r.canvases = map[uint64]*canvasEntry{}
 	r.effects = map[string]*effectPipeline{}
+	r.blurred = map[uintptr]*textureEntry{}
 	r.root.reset(r, r.defaultMask, r.defaultColor)
 	if err := r.root.ensureInstances(r, initialCapacity); err != nil {
 		r.Release()
@@ -279,6 +282,17 @@ func (r *Renderer) renderScene(s *scene.Scene, encoder *wgpu.CommandEncoder, tar
 	}
 
 	var buildErr error
+	st.builder.BlurredImage = func(img *scene.Image, bk scene.Backdrop) uintptr {
+		if buildErr != nil {
+			return 0
+		}
+		token, err := r.blurImage(encoder, img, bk)
+		if err != nil {
+			buildErr = err
+			return 0
+		}
+		return token
+	}
 	st.builder.Build(s, func(img *scene.Image) uintptr {
 		if buildErr != nil {
 			return 0
@@ -290,6 +304,7 @@ func (r *Renderer) renderScene(s *scene.Scene, encoder *wgpu.CommandEncoder, tar
 		}
 		return token
 	})
+	st.builder.BlurredImage = nil
 	if buildErr != nil {
 		return buildErr
 	}
@@ -692,6 +707,9 @@ func (r *Renderer) texture(token uintptr) *textureEntry {
 	if t := r.images[token]; t != nil {
 		return t
 	}
+	if t := r.blurred[token]; t != nil {
+		return t
+	}
 	if c := r.canvases[uint64(token)]; c != nil {
 		return c.tex
 	}
@@ -715,6 +733,10 @@ func (r *Renderer) FinishFrame() {
 		release()
 	}
 	r.pending = r.pending[:0]
+	for token, t := range r.blurred {
+		t.Release()
+		delete(r.blurred, token)
+	}
 }
 
 // Release frees the renderer's WebGPU resources.
@@ -734,6 +756,11 @@ func (r *Renderer) Release() {
 		t.Release()
 	}
 	r.images = nil
+	for token, t := range r.blurred {
+		t.Release()
+		delete(r.blurred, token)
+	}
+	r.blurred = nil
 	if r.sampler != nil {
 		r.sampler.Release()
 		r.sampler = nil

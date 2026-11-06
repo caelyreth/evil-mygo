@@ -201,3 +201,70 @@ func (r *Renderer) encodePass(
 	pass.Release()
 	return nil
 }
+
+// blurImage renders the area of img that bk says blurred into a texture
+// owned by the renderer. The source is sampled with the image's own
+// texture coordinates; canvases and imported textures therefore need no
+// CPU readback or upload.
+func (r *Renderer) blurImage(encoder *wgpu.CommandEncoder, img *scene.Image, bk scene.Backdrop) (uintptr, error) {
+	if img == nil {
+		return 0, nil
+	}
+	w, h := bk.Size()
+	if w <= 0 || h <= 0 {
+		return 0, nil
+	}
+	source, err := r.syncImage(img)
+	if err != nil {
+		return 0, err
+	}
+	src := r.texture(source)
+	if src == nil || src.view == nil {
+		return 0, errors.New("webgpu: blurred image has no source texture")
+	}
+	out, err := r.createRenderTexture("MyGo blurred image", wgpu.TextureFormatRGBA8Unorm, w, h)
+	if err != nil {
+		return 0, fmt.Errorf("webgpu: blurred image target: %w", err)
+	}
+	fail := func(err error) (uintptr, error) {
+		out.Release()
+		return 0, err
+	}
+	var tmp [2]*textureEntry
+	if bk.Radius > 0 {
+		for i := range tmp {
+			tmp[i], err = r.createRenderTexture("MyGo image blur", wgpu.TextureFormatRGBA8Unorm, w, h)
+			if err != nil {
+				if tmp[0] != nil {
+					tmp[0].Release()
+				}
+				return fail(fmt.Errorf("webgpu: image blur target: %w", err))
+			}
+		}
+		r.pending = append(r.pending, func() {
+			tmp[0].Release()
+			tmp[1].Release()
+		})
+	}
+	downTarget := out
+	if bk.Radius > 0 {
+		downTarget = tmp[0]
+	}
+	if err := r.encodePass(encoder, r.downPipe, r.passLayout, src.view, downTarget.view, w, h, gpu.ImageDownPass(bk)); err != nil {
+		return fail(err)
+	}
+	if bk.Radius > 0 {
+		if err := r.encodePass(encoder, r.blurPipe, r.blurLayout, tmp[0].view, tmp[1].view, w, h,
+			gpu.ImageBlurPass(bk, [2]int32{1, 0})); err != nil {
+			return fail(err)
+		}
+		if err := r.encodePass(encoder, r.blurPipe, r.blurLayout, tmp[1].view, out.view, w, h,
+			gpu.ImageBlurPass(bk, [2]int32{0, 1})); err != nil {
+			return fail(err)
+		}
+	}
+	r.blurID++
+	token := ^uintptr(r.blurID)
+	r.blurred[token] = out
+	return token, nil
+}

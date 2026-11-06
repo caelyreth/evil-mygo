@@ -611,6 +611,62 @@ func TestRendererDrawsBlurredShadow(t *testing.T) {
 	}
 }
 
+func TestRendererDrawsBlurredImage(t *testing.T) {
+	if _, ok := RuntimePath(); !ok {
+		t.Skip("wgpu-native is not installed")
+	}
+	g, err := Open()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer g.Release()
+	pixels := make([]byte, 8*8*4)
+	for i := 0; i < len(pixels); i += 4 {
+		pixels[i] = 255
+		pixels[i+3] = 255
+	}
+	img := scene.NewImageRGBA(8, 8, pixels)
+	const width, height = 64, 32
+	target, view := testTarget(t, g, width, height)
+	defer target.Release()
+	defer view.Release()
+	renderer, err := NewRenderer(g, wgpu.TextureFormatRGBA8Unorm)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer renderer.Release()
+	s := &scene.Scene{
+		Width: width, Height: height,
+		Clear: scene.Color{A: 255},
+		Ops: []scene.Op{{
+			Kind:  scene.OpImage,
+			Image: img,
+			Rect:  scene.Rect{X: 8, Y: 8, W: 48, H: 16},
+			Src:   scene.Rect{W: 8, H: 8},
+			Blur:  8,
+		}},
+	}
+	encoder, err := g.Device().CreateCommandEncoder(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g.Device().PushErrorScope(wgpu.ErrorFilterValidation)
+	if err := renderer.Render(s, encoder, view); err != nil {
+		t.Fatal(err)
+	}
+	pixelsOut := readTarget(t, g, target, encoder, width, height)
+	renderer.FinishFrame()
+	if typ, message, err := g.Device().PopErrorScopeAsync(g.Instance()); err != nil {
+		t.Fatal(err)
+	} else if typ != wgpu.ErrorTypeNoError {
+		t.Fatalf("WebGPU validation error %v: %s", typ, message)
+	}
+	center := pixelsOut[(16*256 + 32*4):][:4]
+	if center[0] == 0 {
+		t.Fatalf("blurred image center = %v, want red", center)
+	}
+}
+
 func TestRendererDrawsNestedCanvas(t *testing.T) {
 	if _, ok := RuntimePath(); !ok {
 		t.Skip("wgpu-native is not installed")
@@ -961,8 +1017,8 @@ func TestRendererErasesHoles(t *testing.T) {
 	} else if typ != wgpu.ErrorTypeNoError {
 		t.Fatalf("WebGPU validation error %v: %s", typ, message)
 	}
-	outside := pixels[(4*256+4*4):][:4]
-	inside := pixels[(12*256+20*4):][:4]
+	outside := pixels[(4*256 + 4*4):][:4]
+	inside := pixels[(12*256 + 20*4):][:4]
 	if outside[0] != 240 || outside[1] != 240 || outside[2] != 240 || outside[3] != 255 {
 		t.Fatalf("hole outside pixel = %v, want the fill", outside)
 	}
