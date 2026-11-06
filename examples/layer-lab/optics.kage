@@ -1,0 +1,135 @@
+package main
+
+var Mode int
+var Time float
+var Center vec2
+var Strength float
+var Radius float
+var Dispersion float
+
+// Every color comes from the native subtree, not the window backdrop.
+func sample(p vec2) vec4 {
+	return layerSample(clamp(p, vec2(0.5), rectSize()-0.5))
+}
+
+func spectrum(p, offset vec2) vec4 {
+	r := sample(p+offset)
+	g := sample(p)
+	b := sample(p-offset)
+	return vec4(min(vec3(r.r, g.g, b.b), vec3(g.a)), g.a)
+}
+
+func roundBox(p, half vec2, radius float) float {
+	q := abs(p)-half+radius
+	return length(max(q, vec2(0)))+min(max(q.x, q.y), 0)-radius
+}
+
+func glassNormal(p, half vec2, radius float) vec2 {
+	e := vec2(0.5, 0)
+	n := vec2(roundBox(p+e, half, radius)-roundBox(p-e, half, radius),
+		roundBox(p+e.yx, half, radius)-roundBox(p-e.yx, half, radius))
+	return n/max(length(n), 0.001)
+}
+
+func glass(pos vec2, size float, fluted bool) vec4 {
+	delta := pos-Center
+	half := vec2(size*1.18, size*0.86)
+	if fluted {
+		half = vec2(size*1.55, size*1.05)
+	}
+	radius := min(size*0.32, 42)
+	d := roundBox(delta, half, radius)
+	base := sample(pos)
+	shadowD := roundBox(delta-vec2(3, 7), half, radius)
+	shadow := (1-smoothstep(0, 14, shadowD))*smoothstep(-1, 2, d)
+	base.rgb *= 1-shadow*0.13*Strength
+	if d > 1.5 {
+		return base
+	}
+	n := glassNormal(delta, half, radius)
+	edge := exp(-abs(d)/13)
+	q := Center+delta*(1-0.14*Strength)-n*edge*19*Strength
+	spread := n*(0.4+edge*3.4)*Dispersion*Strength
+	col := spectrum(q, spread)
+	if fluted {
+		phase := delta.x/10+sin(Time*0.65)*0.18
+		q = pos+vec2(sin(phase)*14*Strength, sin(delta.x/35+Time*0.4)*1.8*Strength)
+		spread = vec2(cos(phase)*Dispersion*2.2*Strength, 0)
+		col = spectrum(q, spread)*0.5+sample(q+vec2(0, 1.8))*0.25+sample(q-vec2(0, 1.8))*0.25
+		shine := pow(0.5+0.5*cos(phase-0.7), 6)*0.13*Strength
+		col.rgb = mix(col.rgb, vec3(col.a), shine)
+	}
+	light := clamp(dot(n, normalize(vec2(-0.65+sin(Time*0.7)*0.3, -0.85))), 0, 1)
+	rim := exp(-abs(d+1.2)/0.8)
+	inner := exp(-abs(d+4)/1.6)
+	glow := (rim*(0.25+0.65*light)+inner*light*0.22)*Strength
+	col.rgb = mix(col.rgb, vec3(col.a), clamp(glow, 0, 0.85))
+	col.rgb = mix(col.rgb, vec3(0.85, 0.95, 0.94)*col.a, 0.035*Strength)
+	return mix(base, col, (1-smoothstep(-0.7, 1.0, d))*Strength)
+}
+
+func ripple(pos vec2, size float) vec4 {
+	delta := pos-Center
+	dist := length(delta)
+	n := delta/max(dist, 0.001)
+	phase := dist/13-Time*3.4
+	envelope := exp(-dist/max(size*2.2, 1))
+	wave := sin(phase)*envelope*Strength
+	col := spectrum(pos+n*wave*15, n*cos(phase)*envelope*Dispersion*2.5*Strength)
+	col.rgb = mix(col.rgb, vec3(col.a), max(0, cos(phase))*envelope*0.035*Strength)
+	return col
+}
+
+func prism(pos vec2, size float) vec4 {
+	delta := pos-Center
+	d := roundBox(delta, vec2(size*1.6, size), min(32, size*0.3))
+	base := sample(pos)
+	if d > 1 {
+		return base
+	}
+	axis := vec2(0.94, 0.34)
+	stripe := dot(delta, axis)/32+sin(Time*0.6)*0.15
+	facet := fract(stripe)
+	bend := (facet-0.5)*Strength*28
+	q := pos+axis*bend
+	col := spectrum(q, axis*(2+Dispersion*10)*Strength)
+	echo := spectrum(q-axis*18*Strength, -axis*Dispersion*5)
+	col = mix(col, echo, 0.16*Strength)
+	seam := 1-smoothstep(0, 0.055, min(facet, 1-facet))
+	col.rgb = mix(col.rgb, vec3(col.a), seam*0.22*Strength)
+	return mix(base, col, (1-smoothstep(-1, 1, d))*Strength)
+}
+
+func mosaic(pos vec2, size float) vec4 {
+	cell := 2+Strength*18
+	q := (floor(pos/cell)+0.5)*cell
+	col := sample(q)
+	grid := min(fract(pos.x/cell), fract(pos.y/cell))
+	col.rgb *= 0.94+0.06*smoothstep(0, 0.06, grid)
+	d := length(pos-Center)-size*(0.86+sin(Time*0.8)*0.035)
+	clear := 1-smoothstep(-5, 5, d)
+	col = mix(col, sample(pos), clear)
+	rim := exp(-abs(d)/0.9)*0.6*Strength
+	col.rgb = mix(col.rgb, vec3(col.a), rim)
+	return mix(sample(pos), col, Strength)
+}
+
+func LayerEffect(pos vec2) vec4 {
+	if Strength <= 0 {
+		return layerSample(pos)
+	}
+	size := min(rectSize().x, rectSize().y)*(0.15+Radius*0.21)
+	if Mode == 0 {
+		return glass(pos, size, false)
+	}
+	if Mode == 1 {
+		return glass(pos, size, true)
+	}
+	if Mode == 2 {
+		return ripple(pos, size)
+	}
+	if Mode == 3 {
+		return prism(pos, size)
+	}
+	return mosaic(pos, size)
+}

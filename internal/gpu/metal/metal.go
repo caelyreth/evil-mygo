@@ -85,6 +85,7 @@ const (
 	pixelFormatRGBA32Float = 125
 
 	usageShaderRead   = 1
+	usageShaderWrite  = 2
 	usageRenderTarget = 4
 	storageManaged    = 1
 
@@ -379,6 +380,15 @@ type canvasTexture struct {
 	canvas weak.Pointer[scene.Image]
 }
 
+// gpuCanvasTexture keeps a texture per frame slot. Application code draws
+// a version into each slot before the frame that samples it.
+type gpuCanvasTexture struct {
+	textures  [ringSize]texture
+	versions  [ringSize]uint64
+	canvas    weak.Pointer[scene.Image]
+	lastFrame uint64
+}
+
 // formatState is what a renderer draws into targets of a pixel format
 // with.
 type formatState struct {
@@ -451,6 +461,8 @@ type Renderer struct {
 	images map[uint64]*texture
 	// canvases are the textures canvases are drawn into.
 	canvases map[uint64]*canvasTexture
+	// gpuCanvases are render targets encoded by application Metal code.
+	gpuCanvases map[uint64]*gpuCanvasTexture
 	// blurred are the textures of the images the frame draws blurred
 	// (gpu.Builder.BlurredImage), the first used of them, and blurTmp the
 	// textures their passes go through; stopsTex is the texture of the
@@ -959,6 +971,14 @@ func (r *Renderer) syncAtlas(t *texture, a *scene.Atlas, format uint) error {
 // imageTexture returns the texture of an image, uploading it when new or
 // changed.
 func (r *Renderer) imageTexture(img *scene.Image) uintptr {
+	if img.GPU != nil {
+		t := r.gpuCanvases[img.ID()]
+		if t == nil {
+			return 0
+		}
+		t.lastFrame = r.frame
+		return t.textures[r.inUse].tex
+	}
 	if img.Scene != nil {
 		// A canvas, drawn before the scene showing it.
 		if c := r.canvases[img.ID()]; c != nil {
@@ -1081,10 +1101,29 @@ func (r *Renderer) prepare(s *scene.Scene) (cb id, built *scene.Scene, err error
 			return 0, nil, err
 		}
 	}
-	// Canvases first, into textures of their own, which the frame samples.
+	// Native canvases draw first, then MyGo canvases that may show them;
+	// the native pass runs again so that a native canvas reading a MyGo
+	// canvas gets this frame's texture. The second call is a version
+	// check for the first call's results.
+	s.EachGPUCanvas(func(c *scene.Image) {
+		if err == nil {
+			err = r.drawGPUCanvas(cb, c)
+		}
+	})
+	if err != nil {
+		return 0, nil, err
+	}
 	s.EachCanvas(func(c *scene.Image) {
 		if err == nil {
 			err = r.drawCanvas(cb, c)
+		}
+	})
+	if err != nil {
+		return 0, nil, err
+	}
+	s.EachGPUCanvas(func(c *scene.Image) {
+		if err == nil {
+			err = r.drawGPUCanvas(cb, c)
 		}
 	})
 	if err != nil {
@@ -1095,6 +1134,60 @@ func (r *Renderer) prepare(s *scene.Scene) (cb id, built *scene.Scene, err error
 		return 0, nil, err
 	}
 	return cb, built, nil
+}
+
+// drawGPUCanvas clears and draws a native Metal canvas into the texture of
+// this frame's slot, unless that slot already holds the canvas's version.
+func (r *Renderer) drawGPUCanvas(cb id, c *scene.Image) error {
+	if r.gpuCanvases == nil {
+		r.gpuCanvases = map[uint64]*gpuCanvasTexture{}
+	}
+	t := r.gpuCanvases[c.ID()]
+	if t == nil {
+		t = &gpuCanvasTexture{canvas: weak.Make(c)}
+		r.gpuCanvases[c.ID()] = t
+	}
+	t.lastFrame = r.frame
+	slot := &t.textures[r.inUse]
+	if slot.tex == 0 || slot.w != c.W || slot.h != c.H {
+		release(&slot.tex)
+		clear := make([]byte, 4*c.W*c.H)
+		if slot.tex = r.newTexture(c.W, c.H, pixelFormatRGBA8Unorm, usageRenderTarget|usageShaderRead|usageShaderWrite, clear, c.W*4); slot.tex == 0 {
+			*slot = texture{}
+			return errors.New("metal: cannot create a GPU canvas's texture")
+		}
+		slot.w, slot.h, slot.ver = c.W, c.H, 0
+	}
+	if t.versions[r.inUse] == c.Version() {
+		return nil
+	}
+	var source unsafe.Pointer
+	sourceWidth, sourceHeight := 0, 0
+	if sourceImg := c.GPU.Source.Value(); sourceImg != nil && sourceImg != c {
+		if sourceImg.Scene != nil {
+			if err := r.drawCanvas(cb, sourceImg); err != nil {
+				return err
+			}
+		} else if sourceImg.GPU != nil {
+			if err := r.drawGPUCanvas(cb, sourceImg); err != nil {
+				return err
+			}
+		}
+		if tex := r.imageTexture(sourceImg); tex != 0 {
+			source = ptr(tex)
+			sourceWidth, sourceHeight = sourceImg.W, sourceImg.H
+		}
+	}
+	if c.GPU.Draw != nil {
+		if err := c.GPU.Draw(scene.GPUFrame{
+			Device: ptr(r.device), CommandBuffer: ptr(cb), Texture: ptr(slot.tex), Source: source,
+			Width: c.W, Height: c.H, SourceWidth: sourceWidth, SourceHeight: sourceHeight, Scale: float32(max(r.scale, 1)),
+		}); err != nil {
+			return fmt.Errorf("metal: GPU canvas: %w", err)
+		}
+	}
+	t.versions[r.inUse] = c.Version()
+	return nil
 }
 
 // drawCanvas draws a canvas into its texture, unless it holds its version
@@ -1846,6 +1939,12 @@ func (r *Renderer) releaseTextures() {
 		t.drawState.release()
 		delete(r.canvases, key)
 	}
+	for key, t := range r.gpuCanvases {
+		for i := range t.textures {
+			release(&t.textures[i].tex)
+		}
+		delete(r.gpuCanvases, key)
+	}
 	r.drawState.release()
 	for i := range r.blurred {
 		release(&r.blurred[i].tex)
@@ -2034,6 +2133,14 @@ func (r *Renderer) sweep() {
 			release(&t.tex)
 			t.drawState.release()
 			delete(r.canvases, key)
+		}
+	}
+	for key, t := range r.gpuCanvases {
+		if t.canvas.Value() == nil || t.lastFrame+240 < r.frame {
+			for i := range t.textures {
+				release(&t.textures[i].tex)
+			}
+			delete(r.gpuCanvases, key)
 		}
 	}
 }

@@ -4198,6 +4198,14 @@ either.
   views; and pushed and popped clips.
   Renderers draw the whole scene each frame and retain only textures.
   Wavy underlines are stroked paths.
+- **Metal canvases** (`ui.MetalCanvas`) are images whose texture the
+  application encodes into through `ui.MetalFrame`. The Metal renderer
+  owns a per-frame-slot render target, calls the application's callback
+  before the frame samples it, and can pass a captured native layer as
+  `Source`. The callback uses the renderer's device and command buffer;
+  it does not commit or wait. Other renderers leave the image
+  transparent. This is the current opt-in Metal interoperability seam;
+  it does not yet map interaction through a non-affine presentation.
 - **Effects** (`scene.Effect`) are drawings that packages outside the
   renderers define, as the official plugins do (the glass plugin's Liquid
   Glass): a fragment shader for each GPU renderer, in Metal Shading

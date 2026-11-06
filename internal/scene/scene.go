@@ -9,6 +9,8 @@ import (
 	"image"
 	"image/draw"
 	"sync/atomic"
+	"unsafe"
+	"weak"
 )
 
 // Color is a straight (not premultiplied) sRGB color.
@@ -412,6 +414,29 @@ func (s *Scene) EachCanvas(fn func(*Image)) {
 	s.eachShown(visit)
 }
 
+// EachGPUCanvas calls fn with the native GPU canvases the scene draws or
+// shows, each once, including those inside canvases.
+func (s *Scene) EachGPUCanvas(fn func(*Image)) {
+	seen := map[*Image]bool{}
+	var visit func(c *Image)
+	visit = func(c *Image) {
+		if c == nil || seen[c] {
+			return
+		}
+		seen[c] = true
+		if c.Scene != nil {
+			c.Scene.eachShownAny(visit)
+		}
+		if c.GPU != nil {
+			fn(c)
+		}
+	}
+	for _, c := range s.Canvases {
+		visit(c)
+	}
+	s.eachShownAny(visit)
+}
+
 // eachShown calls fn with the canvases the scene's images show, and its
 // shaders read.
 func (s *Scene) eachShown(fn func(*Image)) {
@@ -423,6 +448,21 @@ func (s *Scene) eachShown(fn func(*Image)) {
 	for i := range s.Effects {
 		for _, img := range s.Effects[i].Images {
 			if img != nil && img.Scene != nil {
+				fn(img)
+			}
+		}
+	}
+}
+
+func (s *Scene) eachShownAny(fn func(*Image)) {
+	for i := range s.Ops {
+		if op := &s.Ops[i]; op.Kind == OpImage && op.Image != nil && (op.Image.Scene != nil || op.Image.GPU != nil) {
+			fn(op.Image)
+		}
+	}
+	for i := range s.Effects {
+		for _, img := range s.Effects[i].Images {
+			if img != nil && (img.Scene != nil || img.GPU != nil) {
 				fn(img)
 			}
 		}
@@ -464,6 +504,9 @@ type Image struct {
 	// PixVersion is the version Pix holds.
 	Scene      *Scene
 	PixVersion uint64
+	// GPU, in a native graphics canvas, is rendered by the platform's GPU
+	// renderer rather than uploaded from Pix or drawn from Scene.
+	GPU *GPUCanvas
 	// Transient marks a canvas drawn anew in every frame that shows it,
 	// as an element's effect layer: renderers free its texture once
 	// frames stop drawing it, rather than once it is collected, which
@@ -475,6 +518,29 @@ type Image struct {
 	// nil for images that keep their pixels.
 	Restore func() []byte
 	Dropped func()
+}
+
+// GPUFrame is what a GPUCanvas's Draw callback encodes into: the native
+// device, command buffer and render-target texture, as platform handles.
+// The renderer calls Draw on its main thread before it composites the
+// image in the same command buffer. The callback owns no resource, and
+// must not wait for the GPU: the texture stays valid through the frame.
+type GPUFrame struct {
+	Device        unsafe.Pointer
+	CommandBuffer unsafe.Pointer
+	Texture       unsafe.Pointer
+	Source        unsafe.Pointer
+	Width, Height int
+	SourceWidth   int
+	SourceHeight  int
+	Scale         float32
+}
+
+// GPUCanvas is a render-target texture that platform code draws through
+// Draw. The renderer calls Draw again when the image's version changes.
+type GPUCanvas struct {
+	Draw   func(GPUFrame) error
+	Source weak.Pointer[Image]
 }
 
 // NewCanvas returns a w×h image that renderers draw from a scene of its
@@ -497,6 +563,12 @@ func NewImage(img image.Image) *Image {
 // NewImageRGBA wraps premultiplied RGBA pixels of a w×h bitmap.
 func NewImageRGBA(w, h int, pix []byte) *Image {
 	return &Image{id: lastImageID.Add(1), version: 1, W: w, H: h, Pix: pix}
+}
+
+// NewGPUCanvas returns a w×h image rendered by draw on the GPU. It has no
+// CPU pixels or scene.
+func NewGPUCanvas(w, h int, draw func(GPUFrame) error) *Image {
+	return &Image{id: lastImageID.Add(1), version: 1, W: w, H: h, GPU: &GPUCanvas{Draw: draw}}
 }
 
 // ID identifies the image for texture caches.
@@ -531,6 +603,10 @@ func (m *Image) Uploaded() {
 // clip does not leave a new texture in the cache on every frame.
 func (m *Image) Resize(w, h int) {
 	m.W, m.H = w, h
+	if m.GPU != nil {
+		m.Changed()
+		return
+	}
 	switch {
 	case m.Scene != nil && m.Pix == nil:
 		// A canvas no renderer drew in memory: its pixels are made when

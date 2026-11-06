@@ -93,6 +93,8 @@ UI as they read other apps (see [Accessibility](accessibility.md)).
   and values that ease to their targets.
 - [Shaders](shaders.md): pixels computed on the GPU by shaders written in
   Go's syntax, with values and images the app passes them.
+- [Metal canvases](metal.md): application Metal passes rendering into
+  native UI images, without a CPU upload.
 - [Transitions](transitions.md): elements that move, resize, recolor and
   shade smoothly as the layout changes, and come and go.
 - [Motion](motion.md): springs that keep their velocity, curves, delays,
