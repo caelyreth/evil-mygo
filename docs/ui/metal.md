@@ -50,7 +50,10 @@ ui.Box(c).Fill().Cache().Effect(canvas.Effect()).Children(func() {
 The source is a rendered native subtree, not a DOM tree. Its hit testing,
 focus, text input and accessibility still use the original element
 geometry. A custom renderer can sample `Source` and write the target;
-the result is composited back as an ordinary image.
+the result is composited back as an ordinary image. Native transforms on
+the source element, including `RotateY` and `Perspective`, map pointer and
+keyboard interaction along with the visual result. Coordinate changes
+made only inside the Metal shader do not remap interaction.
 
 ## Scope
 

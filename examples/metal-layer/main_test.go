@@ -23,6 +23,11 @@ func TestLiveNativeLayerControls(t *testing.T) {
 	if !a.done || !tt.HasText("Acknowledged") {
 		t.Fatal("the native button did not update the source tree")
 	}
+	a.tilt = 0.85
+	tt.Frame()
+	if err := tt.Click("Acknowledge profile"); err != nil {
+		t.Fatal(err)
+	}
 	if err := tt.Click("Animate waves"); err != nil {
 		t.Fatal(err)
 	}

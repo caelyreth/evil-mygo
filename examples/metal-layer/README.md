@@ -17,8 +17,9 @@ shader in `layer_draw_darwin.m` reads the source and writes the target.
 No CPU readback or WebView is involved.
 
 The source controls still use their original geometry for pointer input,
-focus, IME and accessibility. The effect bends pixels only; it does not
-remap interaction. That limitation is intentional in this experiment.
+focus, IME and accessibility. Native `RotateY`/`Perspective` on the
+source element remaps interaction along with the panel. The Metal shader's
+wave is pixels-only and does not remap interaction.
 
 Without cgo the example builds and runs, but the Metal target is blank.
 The framework itself remains a `CGO_ENABLED=0` build; cgo is isolated to

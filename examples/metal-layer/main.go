@@ -19,6 +19,7 @@ type app struct {
 	started time.Time
 	animate bool
 	energy  float64
+	tilt    float64
 	name    string
 	volume  float64
 	done    bool
@@ -26,7 +27,7 @@ type app struct {
 
 func newApp() *app {
 	a := &app{
-		started: time.Now(), animate: true, energy: 0.7, name: "Mara Chen", volume: 0.62,
+		started: time.Now(), animate: true, energy: 0.7, tilt: 0.5, name: "Mara Chen", volume: 0.62,
 	}
 	a.canvas = ui.NewMetalCanvas(900, 520, a.draw)
 	return a
@@ -53,6 +54,7 @@ func (a *app) view(c *ui.Context) {
 				ui.Text(c, "The text field, slider and button are a real native subtree captured by Element.Effect. The Metal pass bends the captured texture.").FontSize(13).LineHeight(1.55).TextColor(ui.Hex("#697168"))
 				source := ui.Box(c).Fill().MinHeight(300).Radius(18).Clip().Background(ui.Hex("#fffdf7")).Shadow(0, 10, 25, 0, ui.RGBA(34, 57, 49, 0.13))
 				source.Cache().Effect(a.canvas.Effect())
+				source.RotateY(float32((a.tilt - 0.5) * 50)).Perspective(900)
 				source.Children(func() { a.form(c) })
 			})
 			ui.Column(c).Width(260).Gap(14).Children(func() {
@@ -62,8 +64,12 @@ func (a *app) view(c *ui.Context) {
 					ui.Text(c, "Wave energy").FontSize(12).TextColor(ui.Hex("#697168"))
 					ui.Slider(c.Key("energy"), &a.energy, 0, 1)
 				})
+				ui.Column(c).Gap(5).Children(func() {
+					ui.Text(c, "Panel turn").FontSize(12).TextColor(ui.Hex("#697168"))
+					ui.Slider(c.Key("tilt"), &a.tilt, 0, 1)
+				})
 				ui.Checkbox(c.Key("animate"), &a.animate, "Animate waves").FontSize(12)
-				ui.Text(c, "Hit testing, focus and keyboard input still use the original component geometry. The effect changes pixels, not interaction.").FontSize(11).LineHeight(1.45).TextColor(ui.Hex("#a55b3d"))
+				ui.Text(c, "Native RotateY/Perspective remaps pointer, focus and keyboard input along with the panel. The effect changes pixels; the transform changes interaction.").FontSize(11).LineHeight(1.45).TextColor(ui.Hex("#a55b3d"))
 				ui.Spacer(c)
 				ui.Text(c, "Element.Cache keeps the source texture stable while only the Metal pass animates.").FontSize(11).LineHeight(1.45).TextColor(ui.Hex("#8b9287"))
 			})
