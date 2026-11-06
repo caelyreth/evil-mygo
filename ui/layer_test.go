@@ -91,6 +91,22 @@ func TestUILayerResizePreservesScale(t *testing.T) {
 	}
 }
 
+func TestUILayerSetScaleKeepsLogicalSize(t *testing.T) {
+	layer := NewUILayer(func(c *Context) { Text(c, "hello") }, 40, 30)
+	defer layer.Close()
+	layer.SetScale(2)
+	if layer.Scale() != 2 || !layer.NeedsFrame() {
+		t.Fatalf("layer scale = %g, needs frame %v, want 2, true", layer.Scale(), layer.NeedsFrame())
+	}
+	layer.Render()
+	if w, h := layer.Size(); w != 40 || h != 30 {
+		t.Fatalf("scaled layer = %d×%d DIPs, want 40×30", w, h)
+	}
+	if w, h := layer.Bitmap().Size(); w != 80 || h != 60 {
+		t.Fatalf("scaled bitmap = %d×%d pixels, want 80×60", w, h)
+	}
+}
+
 func TestUILayerAccessibility(t *testing.T) {
 	name := "Ada"
 	layer := NewUILayer(func(c *Context) {
@@ -290,6 +306,9 @@ func TestHostLayerRejectsStaleSurfaceInput(t *testing.T) {
 	tt.Frame()
 
 	surface.SetVersion(1)
+	if info, ok := tt.Access("Stale"); !ok || !info.Offscreen {
+		t.Fatalf("stale accessibility target = %+v, %v, want offscreen", info, ok)
+	}
 	if host.HandleLayerInput(ctx, InputEvent{Kind: InputPointerDown, X: 20, Y: 20, Button: 0}) {
 		t.Fatal("input used geometry newer than the host's presented frame")
 	}
@@ -384,6 +403,14 @@ func TestUILayerTextInputClientProjectsGeometry(t *testing.T) {
 	if !ok || index != wantIndex {
 		t.Fatalf("surface index = %d, %v, want %d", index, ok, wantIndex)
 	}
+	surface.SetVersion(1)
+	if _, _, ok := client.BoundsForRange(selection.Range); ok {
+		t.Fatal("text geometry used a surface version newer than its client")
+	}
+	if _, ok := client.IndexForPoint(Point{X: want.X, Y: want.Y + want.H/2}); ok {
+		t.Fatal("point query used a surface version newer than its client")
+	}
+	surface.SetVersion(0)
 
 	all := TextInputRange{End: 3}
 	client.ReplaceText(&all, "Grace")

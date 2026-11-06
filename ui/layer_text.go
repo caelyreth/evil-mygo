@@ -7,6 +7,7 @@ import "github.com/egoist/mygo/internal/platform"
 type layerTextClient struct {
 	layer   *UILayer
 	surface SurfaceMap
+	version uint64
 }
 
 func (c *layerTextClient) client() platform.TextInputClient {
@@ -57,7 +58,7 @@ func (c *layerTextClient) UnmarkText() {
 
 func (c *layerTextClient) BoundsForRange(r TextInputRange) (Rect, TextInputRange, bool) {
 	client := c.client()
-	if client == nil || c.surface == nil {
+	if client == nil || c.surface == nil || c.surface.Version() != c.version {
 		return Rect{}, TextInputRange{}, false
 	}
 	bounds, actual, ok := client.BoundsForRange(r)
@@ -73,7 +74,7 @@ func (c *layerTextClient) BoundsForRange(r TextInputRange) (Rect, TextInputRange
 
 func (c *layerTextClient) IndexForPoint(p Point) (int, bool) {
 	client := c.client()
-	if client == nil || c.surface == nil {
+	if client == nil || c.surface == nil || c.surface.Version() != c.version {
 		return 0, false
 	}
 	hit, ok := c.surface.ScreenToSurface(p)

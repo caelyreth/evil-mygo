@@ -69,6 +69,23 @@ func (l *UILayer) Size() (w, h int) {
 // Scale returns the layer's device pixels per DIP.
 func (l *UILayer) Scale() float32 { return l.host.scale }
 
+// SetScale changes the layer's backing density without changing its DIP
+// size or input coordinates. It asks for a frame, which the host renders
+// as usual.
+func (l *UILayer) SetScale(scale float32) {
+	if l.closed {
+		return
+	}
+	if scale <= 0 {
+		scale = 1
+	}
+	if l.host.scale == scale {
+		return
+	}
+	l.host.scale = scale
+	l.host.invalidate()
+}
+
 // Render builds and paints one frame. It does nothing after Close.
 func (l *UILayer) Render() {
 	if l.closed || l.rt.closed {
@@ -257,6 +274,7 @@ func (e *node) HostLayer(layer *UILayer, surface SurfaceMap) *node {
 		return e
 	}
 	e.layer, e.surface = layer, surface
+	e.layerVer = layer.Version()
 	e.surfaceVer = surface.Version()
 	e.flags |= flagFocusable
 	active, _ := layer.TextInputActive()
@@ -273,12 +291,12 @@ func (e *node) HostLayer(layer *UILayer, surface SurfaceMap) *node {
 }
 
 // HandleLayerInput sends ev to the layer bound to r with the geometry
-// version that binding last built. Pointer, wheel and leave events are
-// refused if the surface map changed after that build, so a camera or
-// simulation tick cannot resolve input against pixels that have not been
-// presented. Keyboard and text events do not depend on the pointer map and
-// still pass through. Render the layer and invalidate its presenters when
-// NeedsFrame reports true, as with HandleSurfaceInput.
+// versions that binding last built. Pointer, wheel and leave events are
+// refused if either the UI snapshot or surface map changed after that
+// build, so a camera or simulation tick cannot resolve input against pixels
+// that have not been presented. Keyboard and text events still pass
+// through. Render the layer and invalidate its presenters when NeedsFrame
+// reports true, as with HandleSurfaceInput.
 func (r Handle) HandleLayerInput(c *Context, ev InputEvent) bool {
 	rt := c.runtime()
 	b := (&r).binding(rt, false)
@@ -293,7 +311,7 @@ func (r Handle) HandleLayerInput(c *Context, ev InputEvent) bool {
 	switch ev.Kind {
 	case InputPointerDown, InputPointerMove, InputPointerUp,
 		InputScroll, InputZoom, InputPointerLeave:
-		if s.surface.Version() != s.surfaceVer {
+		if s.surface.Version() != s.surfaceVer || s.layer.Version() != s.layerVer {
 			return false
 		}
 	}
@@ -341,13 +359,16 @@ func (l *UILayer) TextInputActive() (active, noInputMethod bool) {
 // returned value while the layer is presented and pass it to the
 // presenting element's HandleTextInput.
 //
-// The mapping is read when each method runs, so update it before the
-// frame that presents the layer. A nil mapping returns nil.
+// The client captures the mapping's geometry version. Caret bounds and
+// point queries report unavailable if the map advances without a new
+// client, so text services never target geometry newer than the frame
+// that created them. Build the client in the same pass as the presenting
+// element. A nil mapping returns nil.
 func (l *UILayer) TextInputClient(m SurfaceMap) TextInputClient {
 	if l.closed || m == nil {
 		return nil
 	}
-	return &layerTextClient{layer: l, surface: m}
+	return &layerTextClient{layer: l, surface: m, version: m.Version()}
 }
 
 // Close drops the layer's engine and rendered resources.

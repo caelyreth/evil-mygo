@@ -7,6 +7,7 @@ package main
 
 import (
 	"log"
+	"math"
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
@@ -43,6 +44,7 @@ func (a *app) draw(frame ui.MetalFrame) error {
 
 func (a *app) view(c *ui.Context) {
 	a.ctx = c
+	a.layer.SetScale(c.PixelsPerDIP())
 	if a.layer.NeedsFrame() {
 		a.layer.Render()
 		a.canvas.Invalidate()
@@ -51,12 +53,17 @@ func (a *app) view(c *ui.Context) {
 		target := ui.Box(c).Width(layerWidth).Shrink(0).FillHeight().Clip().
 			Bind(&a.host).
 			HostLayer(a.layer, a.surface)
+		if box := target.LayoutBounds(); box.W > 0 && box.H > 0 {
+			scale := c.PixelsPerDIP()
+			a.canvas.Resize(
+				int(math.Ceil(float64(box.W*scale))),
+				int(math.Ceil(float64(box.H*scale))),
+			)
+		}
 		target.HandleInput(func(ev ui.InputEvent) bool {
 			switch ev.Kind {
 			case ui.InputPointerDown, ui.InputPointerMove, ui.InputPointerUp, ui.InputScroll:
 				a.host.HandleLayerInput(a.ctx, ev)
-				a.layer.Render()
-				a.canvas.Invalidate()
 				return true
 			}
 			return false

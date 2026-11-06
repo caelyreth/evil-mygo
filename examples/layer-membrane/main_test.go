@@ -59,6 +59,7 @@ func TestMembraneActionUsesSurfaceUV(t *testing.T) {
 	}
 	tt.Press(x, y)
 	tt.Release(x, y)
+	tt.Frame()
 	if a.actions != 1 {
 		hit, _ := a.surf.ScreenToSurface(ui.Point{X: x - a.viewBox.X, Y: y - a.viewBox.Y})
 		t.Fatalf("surface action count = %d, want 1 (action %+v screen %g,%g hit %+v)", a.actions, action, x, y, hit)

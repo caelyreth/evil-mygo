@@ -503,6 +503,17 @@ func (_handle *Context) OpenURLThen(url string, done func(err error)) {
 	_ctx.OpenURLThen(url, done)
 }
 
+// PixelsPerDIP returns the window's device-pixel density, at least 1.
+// Use it to size application-owned GPU targets in pixels before drawing
+// them at the same size in DIPs.
+func (_handle *Context) PixelsPerDIP() float32 {
+	_ctx := _handle.build()
+	if _ctx == nil {
+		return 0
+	}
+	return _ctx.PixelsPerDIP()
+}
+
 // Preferences returns the settings of the desktop that controls follow.
 // A frame follows their changes.
 func (_handle *Context) Preferences() Preferences {

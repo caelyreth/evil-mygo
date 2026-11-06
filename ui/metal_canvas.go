@@ -54,6 +54,18 @@ func (c *MetalCanvas) Bitmap() *Bitmap { return c.bm }
 // Size returns the canvas's size in pixels.
 func (c *MetalCanvas) Size() (w, h int) { return c.img.W, c.img.H }
 
+// Resize changes the render target's pixel size. The texture is replaced
+// on the next frame and draw runs again at the new size. Like NewMetalCanvas,
+// w and h are pixels, not DIPs.
+func (c *MetalCanvas) Resize(w, h int) {
+	w, h = max(w, 1), max(h, 1)
+	if c.img.W == w && c.img.H == h {
+		return
+	}
+	c.img.Resize(w, h)
+	c.bm.w, c.bm.h = w, h
+}
+
 // Invalidate marks the canvas to be drawn again. Call it on the main
 // thread when what draw encodes changes.
 func (c *MetalCanvas) Invalidate() { c.img.Changed() }

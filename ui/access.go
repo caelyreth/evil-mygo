@@ -819,7 +819,8 @@ type layerAccessTarget struct {
 // routes pointer input.
 func (rt *engine) accessLayer(t *platform.AccessTree, e *node, parent int) {
 	l := e.layer
-	if l == nil || l.closed || l.rt.closed || e.surface == nil {
+	if l == nil || l.closed || l.rt.closed || e.surface == nil ||
+		l.Version() != e.layerVer {
 		return
 	}
 	inner := l.rt.accessTree()
@@ -910,7 +911,8 @@ func layerAccessID(host, id uint64) uint64 {
 // through the surface and the presenting element's transforms.
 func (rt *engine) layerAccessBounds(e *node, b platform.RectF) (platform.RectF, bool) {
 	l := e.layer
-	if l == nil || e.surface == nil || l.host.w <= 0 || l.host.h <= 0 {
+	if l == nil || e.surface == nil || e.surface.Version() != e.surfaceVer ||
+		l.host.w <= 0 || l.host.h <= 0 {
 		return platform.RectF{}, false
 	}
 	x, y := b.X, b.Y

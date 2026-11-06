@@ -32,6 +32,25 @@ animated canvas should call `Invalidate` and request a frame from the
 view. A paused canvas can be invalidated once to render a new still
 image without requesting continuous frames.
 
+`MetalCanvas.Resize(w, h)` changes the target's pixel dimensions. The
+renderer replaces the texture and calls `draw` again at the new size on
+the next frame. The canvas keeps the same image identity, so existing
+bitmaps and references remain valid.
+
+For a responsive viewport, size the target from the element's DIP box and
+`Context.PixelsPerDIP`:
+
+```go
+box := viewport.LayoutBounds()
+scale := c.PixelsPerDIP()
+canvas.Resize(
+	int(math.Ceil(float64(box.W*scale))),
+	int(math.Ceil(float64(box.H*scale))),
+)
+```
+
+Resizing is idempotent when the pixel size is unchanged.
+
 ## Native UI as a source
 
 `MetalCanvas.Effect` connects the other direction. It captures the
@@ -99,6 +118,17 @@ objects. MyGo retains the Go `owner`, does not wait for the GPU to finish
 sampling, and retires a replaced owner only after frames in flight that
 could read the old texture have completed.
 
+`BenchmarkRenderExternalTexture` samples a synchronized 512×512 imported
+texture into 1920×1080 and reports CPU encode time and GPU timestamps:
+
+```sh
+go test -run '^$' -bench BenchmarkRenderExternalTexture -benchmem ./internal/gpu/metal
+```
+
+On the current Apple M5 Pro, the offscreen frame is about 0.37 ms wall
+time, 0.013 ms encoding and 0.21 GPU-ms. The baseline is for regression
+comparison, not a cross-device promise.
+
 ## Scope
 
 This is a same-device, same-process Metal seam. The application must use
@@ -112,6 +142,9 @@ textures, not cross-device or cross-API imports yet. It does not change
 hit testing, focus, input methods or accessibility geometry for
 shader-only coordinate changes. Those are separate composition and
 interaction boundaries.
+
+See [GPU backend direction](gpu-future.md) for the portability boundary
+and the criteria for adding WebGPU or another backend.
 
 The [Metal canvas example](../../examples/metal-canvas) uses cgo only in
 the example to encode a compute shader. The framework's default build

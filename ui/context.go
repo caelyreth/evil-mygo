@@ -417,6 +417,14 @@ func (e *node) theme() *Theme {
 // Size returns the size of the window's content in DIPs.
 func (c *context) Size() (width, height float32) { return c.w, c.h }
 
+// PixelsPerDIP returns the window's device-pixel density, at least 1.
+// Use it to size application-owned GPU targets in pixels before drawing
+// them at the same size in DIPs.
+func (c *context) PixelsPerDIP() float32 {
+	_, _, scale := c.rt.host.size()
+	return max(scale, 1)
+}
+
 // TitleBar is the room the window controls take at the top of a window
 // with a hidden title bar, in DIPs: they sit in a band of Height along the
 // top edge, Left wide from the left edge and Right wide from the right.
@@ -887,6 +895,7 @@ type state struct {
 	textAdapter *textInputAdapter
 	layer       *UILayer
 	surface     SurfaceMap
+	layerVer    uint64
 	surfaceVer  uint64
 	caret       Rect
 	takesText   bool

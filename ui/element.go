@@ -448,6 +448,7 @@ type node struct {
 	textClient TextInputClient
 	layer      *UILayer
 	surface    SurfaceMap
+	layerVer   uint64
 	surfaceVer uint64
 	caret      Rect
 	takesText  bool

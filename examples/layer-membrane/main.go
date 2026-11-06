@@ -65,7 +65,7 @@ func newApp() *app {
 		message:   "A native field on a living surface.",
 	}
 	a.surf = &membraneSurface{cam: a.cam, amplitude: a.amplitude, version: 1}
-	a.layer = ui.NewUILayerWithScale(a.layerView, layerWidth, layerHeight, 1.5)
+	a.layer = ui.NewUILayer(a.layerView, layerWidth, layerHeight)
 	a.canvas = ui.NewMetalCanvas(viewportWidth, viewportHeight, a.draw)
 	a.canvas.SetSource(a.layer.Bitmap())
 	return a
@@ -81,6 +81,7 @@ func (a *app) draw(frame ui.MetalFrame) error {
 
 func (a *app) view(c *ui.Context) {
 	a.ctx = c
+	a.layer.SetScale(c.PixelsPerDIP())
 	a.tick(c)
 	if a.layer.NeedsFrame() {
 		a.layer.Render()
@@ -156,6 +157,13 @@ func (a *app) viewport(c *ui.Context) {
 	box := view.LayoutBounds()
 	a.viewBox = box
 	a.surf.setViewport(box.W, box.H)
+	if box.W > 0 && box.H > 0 {
+		scale := c.PixelsPerDIP()
+		a.canvas.Resize(
+			int(math.Ceil(float64(box.W*scale))),
+			int(math.Ceil(float64(box.H*scale))),
+		)
+	}
 	view.HostLayer(a.layer, a.surf)
 
 	if a.drag {
@@ -210,12 +218,7 @@ func (a *app) viewport(c *ui.Context) {
 }
 
 func (a *app) routeLayer(ev ui.InputEvent) bool {
-	taken := a.host.HandleLayerInput(a.ctx, ev)
-	if a.layer.NeedsFrame() {
-		a.layer.Render()
-		a.canvas.Invalidate()
-	}
-	return taken
+	return a.host.HandleLayerInput(a.ctx, ev)
 }
 
 func (a *app) layerView(c *ui.Context) {

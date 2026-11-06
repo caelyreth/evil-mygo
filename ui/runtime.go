@@ -1398,7 +1398,7 @@ func (rt *engine) commitElement(e *node, clip Rect, hidden bool) {
 	s.webView = e.webView
 	s.role, s.focusHighlights = e.role, e.focusHighlights
 	s.input, s.caret, s.takesText, s.noIME = e.inputFn, e.caret, e.takesText, e.noIME
-	s.layer, s.surface, s.surfaceVer = e.layer, e.surface, e.surfaceVer
+	s.layer, s.surface, s.layerVer, s.surfaceVer = e.layer, e.surface, e.layerVer, e.surfaceVer
 	if s.observe = e.observeFn; s.observe != nil {
 		rt.observers++
 	}

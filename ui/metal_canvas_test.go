@@ -15,6 +15,21 @@ func TestMetalCanvasIsAnImage(t *testing.T) {
 	}
 }
 
+func TestMetalCanvasResize(t *testing.T) {
+	c := NewMetalCanvas(12, 8, nil)
+	version := c.img.Version()
+	c.Resize(24, 16)
+	if w, h := c.Size(); w != 24 || h != 16 {
+		t.Fatalf("resized canvas = %d×%d, want 24×16", w, h)
+	}
+	if w, h := c.Bitmap().Size(); w != 24 || h != 16 {
+		t.Fatalf("resized bitmap = %d×%d, want 24×16", w, h)
+	}
+	if c.img.Version() == version {
+		t.Fatal("resize did not invalidate the canvas")
+	}
+}
+
 func TestMetalCanvasEffectUsesTheWholeTarget(t *testing.T) {
 	c := NewMetalCanvas(64, 32, nil)
 	tt := NewTester(func(ctx *Context) {

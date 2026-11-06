@@ -68,7 +68,8 @@ frames do not mutate a texture that another compositor is still showing.
 `Size` and input coordinates stay in DIPs. Use `NewUILayerWithScale` when
 the destination needs more backing pixels than one per DIP; `Scale`
 reports the chosen density and the bitmap grows with it while interactions
-remain in logical coordinates.
+remain in logical coordinates. A live host can call `SetScale` with
+`Context.PixelsPerDIP` when it moves to a display with another density.
 Use `ScreenToSurface` to turn a scene hit into a layer coordinate before
 calling `HandleInput`. Call `NeedsFrame` after rendering if the layer's
 view requested another frame. `Access`, `AccessByRole`, `TextCaret` and
@@ -114,10 +115,13 @@ view.HandleInput(func(ev ui.InputEvent) bool {
 `HostLayer` does not render the layer or take over the host's input
 callback; a scene host still needs that arbiter to decide whether a press
 belongs to the native control or to camera/object manipulation. Render
-when `NeedsFrame` reports true. `HandleLayerInput` uses the geometry
-version captured when that host was built: a pointer event is refused if
-the app advanced the surface before presenting a frame for it. Keyboard
-and text events still pass because they do not depend on the pointer map.
+when `NeedsFrame` reports true. `HandleLayerInput` uses the UI and
+geometry versions captured when that host was built: a pointer event is
+refused if the app advanced either one before presenting a frame for it.
+Render the off-window layer at the top of the next pass, not inside the
+input callback, so the event targets the pixels currently on screen.
+Keyboard and text events still pass because they do not depend on the
+pointer map.
 Use a `ui.Handle`, not an `Element`, for input that arrives after the
 build; elements expire at the end of their pass.
 Accessibility nodes carry layer-relative bounds projected through the
@@ -127,9 +131,10 @@ actions route back into the layer.
 For a lower-level integration, `UILayer.TextInputClient(surface)` returns
 the same bridge used by `HostLayer`. It forwards composition and editing
 into the layer, projects the inner caret's bounds back through the surface
-map and maps native point queries back to the inner text layout. Keep the
-client stable while the surface is presented; update the `SurfaceMap`
-before rendering the frame it describes.
+map and maps native point queries back to the inner text layout. The
+client captures the mapping version when it is created; geometry queries
+return unavailable if the map advances before the presenting host is
+rebuilt. Create it in the same pass as that host.
 
 [`examples/layer-membrane`](../../examples/layer-membrane) exercises the
 full path with an application-owned moving heightfield: ray intersection,
@@ -157,9 +162,15 @@ The layer benchmarks are:
 
 ```sh
 go test -run '^$' -bench 'BenchmarkUILayer' -benchmem ./ui
+go test -run '^$' -bench 'BenchmarkMembrane' -benchmem ./examples/layer-membrane
 ```
 
 On the current macOS arm64 development machine, the small layer benchmark
 is about 3.5 µs for a render and 0.36 µs for a down/up surface-input pair,
 with six allocations each. These are measurement baselines, not promises
 for a particular scene or GPU.
+
+The app-owned heightfield's CPU ray/root test takes about 331 ns with no
+allocations, and projecting a UV back to the screen about 80 ns. These are
+the costs a scene host pays outside GPU sampling; the Metal pass and
+presentation are measured separately.
