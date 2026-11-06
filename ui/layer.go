@@ -28,12 +28,23 @@ type UILayer struct {
 // NewUILayer creates a native UI layer of width×height DIPs and renders
 // its first frame.
 func NewUILayer(view func(*Context), width, height int) *UILayer {
+	return NewUILayerWithScale(view, width, height, 1)
+}
+
+// NewUILayerWithScale is NewUILayer at scale device pixels per DIP. The
+// layer's input and Size remain in DIPs; Bitmap dimensions are device
+// pixels.
+func NewUILayerWithScale(view func(*Context), width, height int, scale float32) *UILayer {
 	width, height = max(width, 1), max(height, 1)
-	h := &headless{w: float32(width), h: float32(height), scale: 1}
+	if scale <= 0 {
+		scale = 1
+	}
+	h := &headless{w: float32(width), h: float32(height), scale: scale}
 	lh := &layerHost{headless: h}
 	rt := newRuntime(func(c *context) { view(makeContext(c)) }, lh)
-	img := scene.NewCanvas(width, height)
-	l := &UILayer{rt: rt, host: lh, img: img, bm: &Bitmap{img: img, w: width, h: height}}
+	pixelW, pixelH := max(int(float32(width)*scale), 1), max(int(float32(height)*scale), 1)
+	img := scene.NewCanvas(pixelW, pixelH)
+	l := &UILayer{rt: rt, host: lh, img: img, bm: &Bitmap{img: img, w: pixelW, h: pixelH}}
 	l.Render()
 	return l
 }
@@ -53,6 +64,9 @@ func (l *UILayer) Bitmap() *Bitmap { return l.bm }
 func (l *UILayer) Size() (w, h int) {
 	return int(l.host.w), int(l.host.h)
 }
+
+// Scale returns the layer's device pixels per DIP.
+func (l *UILayer) Scale() float32 { return l.host.scale }
 
 // Render builds and paints one frame. It does nothing after Close.
 func (l *UILayer) Render() {
@@ -121,7 +135,11 @@ func (l *UILayer) HandleInput(ev InputEvent) bool {
 	case InputPointerDown:
 		pe.Kind = platform.PointerDown
 	case InputPointerUp:
-		pe.Kind = platform.PointerUp
+		if ev.Canceled {
+			pe.Kind = platform.PointerCancel
+		} else {
+			pe.Kind = platform.PointerUp
+		}
 	case InputScroll:
 		pe.Kind = platform.PointerScroll
 	case InputZoom:
@@ -157,8 +175,8 @@ func (l *UILayer) HandleSurfaceInput(m SurfaceMap, ev InputEvent) bool {
 	}
 	if m == nil || l.surfacePressed {
 		if l.surfacePressed {
-			ev.X = l.lastUV.U * float32(l.bm.w)
-			ev.Y = l.lastUV.V * float32(l.bm.h)
+			ev.X = l.lastUV.U * l.host.w
+			ev.Y = l.lastUV.V * l.host.h
 			if ev.Kind == InputPointerUp {
 				l.surfacePressed = false
 			}
@@ -171,15 +189,15 @@ func (l *UILayer) HandleSurfaceInput(m SurfaceMap, ev InputEvent) bool {
 		if ev.Kind == InputPointerUp && l.surfacePressed {
 			// The press began inside and the release is outside.
 			l.surfacePressed = false
-			ev.X = l.lastUV.U * float32(l.bm.w)
-			ev.Y = l.lastUV.V * float32(l.bm.h)
+			ev.X = l.lastUV.U * l.host.w
+			ev.Y = l.lastUV.V * l.host.h
 			return l.HandleInput(ev)
 		}
 		return false
 	}
 	l.lastUV = hit.UV
-	ev.X = hit.UV.U * float32(l.bm.w)
-	ev.Y = hit.UV.V * float32(l.bm.h)
+	ev.X = hit.UV.U * l.host.w
+	ev.Y = hit.UV.V * l.host.h
 	taken := l.HandleInput(ev)
 	if ev.Kind == InputPointerDown {
 		l.surfacePressed = true

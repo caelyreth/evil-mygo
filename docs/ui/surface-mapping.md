@@ -18,9 +18,13 @@ carets and focus geometry back onto the surface. Implementations for
 cloth, heightfields, meshes, or fluid simulations belong to the package
 that owns that surface.
 
-The `Version` must identify the geometry snapshot used for the pixels
-the user saw. Do not use a newer or older deformation to resolve a click;
-that produces the familiar “the button is beside the cursor” bug.
+`Version` identifies the geometry snapshot used for the pixels the user
+saw. Do not use a newer or older deformation to resolve a click; that
+produces the familiar "the button is beside the cursor" bug. This version
+belongs to the surface, not to `UILayer.Version`, which identifies the
+layer's rendered UI content. A host updates both atomically for the frame
+it presents: the surface deformation and the UI snapshot may change
+independently, but input must use the pair that was actually rendered.
 
 `PlanarSurface` handles an axis-aligned native panel. `ProjectiveSurface`
 handles a rectangular panel through `ui.Transform`, including
@@ -54,12 +58,17 @@ layer.Render()
 The layer has its own layout, focus, IME, scrolling, pointer capture,
 and accessibility state. `Render` snapshots the display list, so later
 frames do not mutate a texture that another compositor is still showing.
+`Size` and input coordinates stay in DIPs. Use `NewUILayerWithScale` when
+the destination needs more backing pixels than one per DIP; `Scale`
+reports the chosen density and the bitmap grows with it while interactions
+remain in logical coordinates.
 Use `ScreenToSurface` to turn a scene hit into a layer coordinate before
 calling `HandleInput`. Call `NeedsFrame` after rendering if the layer's
 view requested another frame. `Access`, `AccessByRole`, `TextCaret` and
 `TextInputActive` expose the layer's accessibility and text-input state
-to the host that presents it. `Version` identifies the current rendered
-snapshot and should match the version of the `SurfaceMap` used for input.
+to the host that presents it. `Version` identifies the current rendered UI
+snapshot. It is independent of the version of the `SurfaceMap` used for
+input.
 
 `HandleSurfaceInput` combines the two steps and preserves pointer capture
 while a press moves beyond the surface. It never performs GPU picking or
