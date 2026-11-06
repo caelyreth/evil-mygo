@@ -77,7 +77,9 @@ surface's content in a persistent WebGPU texture, redraws only the
 `scene.Differ` damage through a scissored clear, and copies that texture
 to the presented surface. This does not depend on a swapchain preserving
 its contents. The offscreen `Renderer.RenderTargetPart` primitive is
-always available for targets whose contents the application owns.
+always available for targets whose contents the application owns. The copy
+has a fixed full-surface cost, so the mode remains opt-in; use it when the
+damage is small relative to the work saved in a complex frame.
 
 ## Native UI
 

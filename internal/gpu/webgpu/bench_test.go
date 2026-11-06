@@ -44,7 +44,7 @@ func benchRender(b *testing.B, s *scene.Scene) {
 	defer g.Release()
 	target, err := g.Device().CreateTexture(&wgpu.TextureDescriptor{
 		Label:         "WebGPU benchmark target",
-		Usage:         wgpu.TextureUsageRenderAttachment | wgpu.TextureUsageCopySrc,
+		Usage:         wgpu.TextureUsageTextureBinding | wgpu.TextureUsageRenderAttachment | wgpu.TextureUsageCopySrc,
 		Size:          wgpu.Extent3D{Width: uint32(s.Width), Height: uint32(s.Height), DepthOrArrayLayers: 1},
 		Format:        wgpu.TextureFormatRGBA8Unorm,
 		MipLevelCount: 1,
@@ -91,7 +91,8 @@ func benchRender(b *testing.B, s *scene.Scene) {
 }
 
 // BenchmarkRenderPartial updates a small part of the box scene in a
-// reusable target, exercising the scissored clear and clipped batch path.
+// reusable content target and copies it to a presentation-sized target,
+// exercising the scissored clear, clipped batches and native copy pass.
 func BenchmarkRenderPartial(b *testing.B) {
 	s := gputest.BoxesScene(1280, 800, 600, false)
 	g, err := Open()
@@ -116,6 +117,23 @@ func BenchmarkRenderPartial(b *testing.B) {
 		b.Fatal(err)
 	}
 	defer view.Release()
+	content, err := g.Device().CreateTexture(&wgpu.TextureDescriptor{
+		Label:         "WebGPU partial benchmark content",
+		Usage:         wgpu.TextureUsageTextureBinding | wgpu.TextureUsageRenderAttachment | wgpu.TextureUsageCopySrc,
+		Size:          wgpu.Extent3D{Width: uint32(s.Width), Height: uint32(s.Height), DepthOrArrayLayers: 1},
+		Format:        wgpu.TextureFormatRGBA8Unorm,
+		MipLevelCount: 1,
+		SampleCount:   1,
+	})
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer content.Release()
+	contentView, err := content.CreateView(nil)
+	if err != nil {
+		b.Fatal(err)
+	}
+	defer contentView.Release()
 	r, err := NewRenderer(g, wgpu.TextureFormatRGBA8Unorm)
 	if err != nil {
 		b.Fatal(err)
@@ -125,7 +143,11 @@ func BenchmarkRenderPartial(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	if err := r.Render(s, encoder, view); err != nil {
+	if err := r.Render(s, encoder, contentView); err != nil {
+		encoder.Release()
+		b.Fatal(err)
+	}
+	if err := r.copyTexture(encoder, contentView, view, s.Width, s.Height); err != nil {
 		encoder.Release()
 		b.Fatal(err)
 	}
@@ -148,7 +170,11 @@ func BenchmarkRenderPartial(b *testing.B) {
 		if err != nil {
 			b.Fatal(err)
 		}
-		if err := r.RenderTargetPart(s, encoder, target, view, part); err != nil {
+		if err := r.RenderTargetPart(s, encoder, content, contentView, part); err != nil {
+			encoder.Release()
+			b.Fatal(err)
+		}
+		if err := r.copyTexture(encoder, contentView, view, s.Width, s.Height); err != nil {
 			encoder.Release()
 			b.Fatal(err)
 		}
