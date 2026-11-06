@@ -5,7 +5,10 @@ package webgpu
 import (
 	"errors"
 	"fmt"
+	"sync"
 
+	"github.com/ebitengine/purego"
+	"github.com/ebitengine/purego/objc"
 	"github.com/go-webgpu/webgpu/wgpu"
 
 	"github.com/egoist/mygo/internal/scene"
@@ -23,11 +26,34 @@ type NativeRenderer struct {
 	height   int
 }
 
-// NewNative creates the macOS presentation renderer for layer, a
-// CAMetalLayer owned by the window host.
-func NewNative(layer uintptr) (*NativeRenderer, error) {
-	if layer == 0 {
-		return nil, errors.New("webgpu: no CAMetalLayer")
+type nsPoint struct{ X, Y float64 }
+type nsSize struct{ Width, Height float64 }
+type nsRect struct {
+	Origin nsPoint
+	Size   nsSize
+}
+
+var (
+	metalLayerOnce sync.Once
+	metalLayerErr  error
+	metalDevice    func() uintptr
+)
+
+const (
+	metalPixelFormatBGRA8Unorm = 80
+	nsViewSizable              = 2 | 16
+)
+
+// NewNative creates the macOS presentation renderer for view, an NSView
+// whose layer host receives a CAMetalLayer. A caller that already owns a
+// CAMetalLayer may pass it directly, as the surface tests do.
+func NewNative(viewOrLayer uintptr) (*NativeRenderer, error) {
+	if viewOrLayer == 0 {
+		return nil, errors.New("webgpu: no NSView or CAMetalLayer")
+	}
+	layer, err := ensureMetalLayer(viewOrLayer)
+	if err != nil {
+		return nil, err
 	}
 	g, err := Open()
 	if err != nil {
@@ -50,6 +76,62 @@ func NewNative(layer uintptr) (*NativeRenderer, error) {
 		return fail(err)
 	}
 	return &NativeRenderer{gpu: g, surface: surface, renderer: renderer}, nil
+}
+
+func ensureMetalLayer(viewOrLayer uintptr) (uintptr, error) {
+	metalLayerOnce.Do(func() {
+		if _, err := purego.Dlopen("/System/Library/Frameworks/QuartzCore.framework/QuartzCore", purego.RTLD_NOW|purego.RTLD_GLOBAL); err != nil {
+			metalLayerErr = fmt.Errorf("webgpu: load QuartzCore: %w", err)
+			return
+		}
+		metal, err := purego.Dlopen("/System/Library/Frameworks/Metal.framework/Metal", purego.RTLD_NOW|purego.RTLD_GLOBAL)
+		if err != nil {
+			metalLayerErr = fmt.Errorf("webgpu: load Metal: %w", err)
+			return
+		}
+		purego.RegisterLibFunc(&metalDevice, metal, "MTLCreateSystemDefaultDevice")
+	})
+	if metalLayerErr != nil {
+		return 0, metalLayerErr
+	}
+	obj := objc.ID(viewOrLayer)
+	class := objc.GetClass("CAMetalLayer")
+	if class == 0 {
+		return 0, errors.New("webgpu: CAMetalLayer is unavailable")
+	}
+	isLayer := objc.Send[bool](obj, objc.RegisterName("isKindOfClass:"), objc.ID(class))
+	if isLayer {
+		return viewOrLayer, nil
+	}
+	parent := objc.Send[objc.ID](obj, objc.RegisterName("layer"))
+	if parent == 0 {
+		return 0, errors.New("webgpu: NSView has no layer")
+	}
+	layer := objc.Send[objc.ID](objc.ID(class), objc.RegisterName("alloc"))
+	layer = objc.Send[objc.ID](layer, objc.RegisterName("init"))
+	if layer == 0 {
+		return 0, errors.New("webgpu: cannot create CAMetalLayer")
+	}
+	device := metalDevice()
+	if device == 0 {
+		return 0, errors.New("webgpu: no Metal device")
+	}
+	objc.Send[objc.ID](layer, objc.RegisterName("setDevice:"), device)
+	objc.Send[objc.ID](layer, objc.RegisterName("setPixelFormat:"), uintptr(metalPixelFormatBGRA8Unorm))
+	objc.Send[objc.ID](layer, objc.RegisterName("setFramebufferOnly:"), uintptr(0))
+	objc.Send[objc.ID](layer, objc.RegisterName("setOpaque:"), uintptr(0))
+	objc.Send[objc.ID](layer, objc.RegisterName("setPresentsWithTransaction:"), uintptr(0))
+	objc.Send[objc.ID](layer, objc.RegisterName("setAutoresizingMask:"), uintptr(nsViewSizable))
+	bounds := objc.Send[nsRect](obj, objc.RegisterName("bounds"))
+	objc.Send[objc.ID](layer, objc.RegisterName("setFrame:"), bounds)
+	ifwindow := objc.Send[objc.ID](obj, objc.RegisterName("window"))
+	if ifwindow != 0 {
+		scale := objc.Send[float64](ifwindow, objc.RegisterName("backingScaleFactor"))
+		objc.Send[objc.ID](layer, objc.RegisterName("setContentsScale:"), scale)
+	}
+	objc.Send[objc.ID](parent, objc.RegisterName("addSublayer:"), layer)
+	objc.Send[objc.ID](layer, objc.RegisterName("release"))
+	return uintptr(layer), nil
 }
 
 // Render draws s into the next surface texture, submits it and presents it.
