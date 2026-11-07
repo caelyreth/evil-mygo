@@ -54,4 +54,22 @@ func TestProjectiveSurfaceBackface(t *testing.T) {
 	}
 }
 
+func TestProjectiveSurfaceBehindOrigin(t *testing.T) {
+	s := NewProjectiveSurface(Rect{X: 1000, Y: 1000, W: 100, H: 100},
+		RotationX(-60).Then(Perspective(600)))
+	if !s.affine.Behind {
+		t.Fatal("fixture must put the drawing origin behind the viewer")
+	}
+	for _, uv := range []UV{{U: .1, V: .2}, {U: .5, V: .5}, {U: .9, V: .8}} {
+		p, ok := s.SurfaceToScreen(uv)
+		if !ok {
+			t.Fatalf("visible UV %+v did not project", uv)
+		}
+		hit, ok := s.ScreenToSurface(p)
+		if !ok || absSurface(hit.UV.U-uv.U) > 1e-4 || absSurface(hit.UV.V-uv.V) > 1e-4 {
+			t.Fatalf("UV %+v round trip = %+v, %v", uv, hit, ok)
+		}
+	}
+}
+
 func absSurface(v float32) float32 { return float32(math.Abs(float64(v))) }

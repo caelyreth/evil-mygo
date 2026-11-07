@@ -9,6 +9,8 @@ require (
 	github.com/gogpu/gputypes v0.5.1
 	github.com/hajimehoshi/go-mp3 v0.3.4
 	github.com/jfreymuth/oggvorbis v1.0.5
+	github.com/mewkiz/flac v1.0.14
+	github.com/tphakala/go-aac v0.7.1
 	golang.org/x/image v0.46.0
 	golang.org/x/net v0.59.0
 	golang.org/x/text v0.43.0
@@ -16,5 +18,10 @@ require (
 
 require (
 	github.com/go-webgpu/goffi v0.6.3 // indirect
+	github.com/icza/bitio v1.1.0 // indirect
 	github.com/jfreymuth/vorbis v1.0.2 // indirect
+	github.com/mewkiz/pkg v0.0.0-20250417130911-3f050ff8c56d // indirect
+	github.com/mewpkg/term v0.0.0-20241026122259-37a80af23985 // indirect
+	github.com/tphakala/simd v1.11.0 // indirect
+	golang.org/x/sys v0.48.0 // indirect
 )

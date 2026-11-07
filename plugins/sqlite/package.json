@@ -1,6 +1,6 @@
 {
   "name": "@caelyreth/evil-mygo-sqlite",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Parameterized SQLite queries and transactions for MyGo desktop apps",
   "keywords": [
     "mygo",
@@ -34,9 +34,9 @@
     "test": "bun test"
   },
   "peerDependencies": {
-    "@caelyreth/evil-mygo-runtime": "^0.1.0"
+    "@caelyreth/evil-mygo-runtime": "^0.1.1"
   },
   "devDependencies": {
-    "@caelyreth/evil-mygo-runtime": "^0.1.0"
+    "@caelyreth/evil-mygo-runtime": "^0.1.1"
   }
 }

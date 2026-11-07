@@ -638,10 +638,13 @@ type node struct {
 	gridFit    *gridFit
 	// roleDescription names the element's role to assistive technology
 	// (RoleDescription), controls are the elements it controls
-	// (Controls), and hasPopup the kind of popup it opens (HasPopup).
+	// (Controls), and hasPopup the kind of popup it opens (HasPopup),
+	// which popupSet marks the app as having said, over a menu button's
+	// PopupMenu.
 	roleDescription string
 	controls        []*node
 	hasPopup        Popup
+	popupSet        bool
 	tl              *text.Layout
 	measured
 	// lay says what the layout cache may do with the element
@@ -1829,8 +1832,12 @@ func (e *node) FontFeatures(features ...string) *node {
 //
 //	ui.Text(c, "直").Lang("ja")
 //
-// "" takes the language of the elements around it. Browsers draw text in
-// the page's language whatever the element's.
+// Korean text ("ko", "ko-KR") breaks its lines between words, at spaces
+// and after punctuation, as Korean is written and as CSS's word-break:
+// keep-all has it, rather than between any two syllables; a word longer
+// than a line still breaks within it. "" takes the language of the
+// elements around it. Browsers draw text in the page's language whatever
+// the element's.
 func (e *node) Lang(tag string) *node {
 	e.ts.lang = tag
 	e.ts.set |= setLang

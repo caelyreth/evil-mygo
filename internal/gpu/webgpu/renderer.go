@@ -56,6 +56,7 @@ type Renderer struct {
 	external map[*scene.ExternalTexture]bool
 	pending  []func()
 	frame    uint64
+	swept    uint64
 }
 
 type scenePipelines struct {
@@ -314,6 +315,7 @@ func (r *Renderer) render(s *scene.Scene, encoder *wgpu.CommandEncoder, target *
 	}
 	r.encoder = nil
 	r.sweepCanvases()
+	r.sweepImagesIfDue()
 	return nil
 }
 
@@ -744,6 +746,28 @@ func (r *Renderer) sweepCanvases() {
 		}
 		entry.state.release(r)
 		delete(r.canvases, id)
+		removed = true
+	}
+	if removed {
+		r.forgetBindings()
+	}
+}
+
+// Match the other renderers' idle-image policy so discarded clip masks do
+// not outlive their CPU cache indefinitely. Every encoded root frame counts,
+// including a frame drawn after its native drawable was initially unavailable.
+func (r *Renderer) sweepImagesIfDue() {
+	if r.frame-r.swept < 120 {
+		return
+	}
+	r.swept = r.frame
+	removed := false
+	for token, t := range r.images {
+		if r.frame-t.lastFrame <= 240 {
+			continue
+		}
+		t.Release()
+		delete(r.images, token)
 		removed = true
 	}
 	if removed {

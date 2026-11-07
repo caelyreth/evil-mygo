@@ -24,85 +24,85 @@
     },
     "packages/cli": {
       "name": "@caelyreth/evil-mygo-cli",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "bin": {
         "mygo": "bin/mygo.js",
       },
       "optionalDependencies": {
-        "@caelyreth/evil-mygo-cli-darwin-arm64": "0.1.0",
-        "@caelyreth/evil-mygo-cli-darwin-x64": "0.1.0",
-        "@caelyreth/evil-mygo-cli-linux-arm64": "0.1.0",
-        "@caelyreth/evil-mygo-cli-linux-x64": "0.1.0",
-        "@caelyreth/evil-mygo-cli-win32-arm64": "0.1.0",
-        "@caelyreth/evil-mygo-cli-win32-x64": "0.1.0",
+        "@caelyreth/evil-mygo-cli-darwin-arm64": "0.1.1",
+        "@caelyreth/evil-mygo-cli-darwin-x64": "0.1.1",
+        "@caelyreth/evil-mygo-cli-linux-arm64": "0.1.1",
+        "@caelyreth/evil-mygo-cli-linux-x64": "0.1.1",
+        "@caelyreth/evil-mygo-cli-win32-arm64": "0.1.1",
+        "@caelyreth/evil-mygo-cli-win32-x64": "0.1.1",
       },
     },
     "packages/cli/npm/darwin-arm64": {
       "name": "@caelyreth/evil-mygo-cli-darwin-arm64",
-      "version": "0.1.0",
+      "version": "0.1.1",
     },
     "packages/cli/npm/darwin-x64": {
       "name": "@caelyreth/evil-mygo-cli-darwin-x64",
-      "version": "0.1.0",
+      "version": "0.1.1",
     },
     "packages/cli/npm/linux-arm64": {
       "name": "@caelyreth/evil-mygo-cli-linux-arm64",
-      "version": "0.1.0",
+      "version": "0.1.1",
     },
     "packages/cli/npm/linux-x64": {
       "name": "@caelyreth/evil-mygo-cli-linux-x64",
-      "version": "0.1.0",
+      "version": "0.1.1",
     },
     "packages/cli/npm/win32-arm64": {
       "name": "@caelyreth/evil-mygo-cli-win32-arm64",
-      "version": "0.1.0",
+      "version": "0.1.1",
     },
     "packages/cli/npm/win32-x64": {
       "name": "@caelyreth/evil-mygo-cli-win32-x64",
-      "version": "0.1.0",
+      "version": "0.1.1",
     },
     "packages/runtime": {
       "name": "@caelyreth/evil-mygo-runtime",
-      "version": "0.1.0",
+      "version": "0.1.1",
     },
     "plugins/fetch": {
       "name": "@caelyreth/evil-mygo-fetch",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "devDependencies": {
-        "@caelyreth/evil-mygo-runtime": "^0.1.0",
+        "@caelyreth/evil-mygo-runtime": "^0.1.1",
       },
       "peerDependencies": {
-        "@caelyreth/evil-mygo-runtime": "^0.1.0",
+        "@caelyreth/evil-mygo-runtime": "^0.1.1",
       },
     },
     "plugins/sqlite": {
       "name": "@caelyreth/evil-mygo-sqlite",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "devDependencies": {
-        "@caelyreth/evil-mygo-runtime": "^0.1.0",
+        "@caelyreth/evil-mygo-runtime": "^0.1.1",
       },
       "peerDependencies": {
-        "@caelyreth/evil-mygo-runtime": "^0.1.0",
+        "@caelyreth/evil-mygo-runtime": "^0.1.1",
       },
     },
     "plugins/watch": {
       "name": "@caelyreth/evil-mygo-watch",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "devDependencies": {
-        "@caelyreth/evil-mygo-runtime": "^0.1.0",
+        "@caelyreth/evil-mygo-runtime": "^0.1.1",
       },
       "peerDependencies": {
-        "@caelyreth/evil-mygo-runtime": "^0.1.0",
+        "@caelyreth/evil-mygo-runtime": "^0.1.1",
       },
     },
     "plugins/websocket": {
       "name": "@caelyreth/evil-mygo-websocket",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "devDependencies": {
-        "@caelyreth/evil-mygo-runtime": "^0.1.0",
+        "@caelyreth/evil-mygo-runtime": "^0.1.1",
       },
       "peerDependencies": {
-        "@caelyreth/evil-mygo-runtime": "^0.1.0",
+        "@caelyreth/evil-mygo-runtime": "^0.1.1",
       },
     },
     "website": {

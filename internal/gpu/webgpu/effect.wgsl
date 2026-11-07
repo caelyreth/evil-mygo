@@ -67,7 +67,7 @@ fn effect_frame_h(inst: EffectInstance, p: vec2<f32>) -> vec3<f32> {
 	return vec3<f32>(
 		dot(inst.transform0.xyz, vec3<f32>(p, 1.0)),
 		dot(inst.transform1.xyz, vec3<f32>(p, 1.0)),
-		dot(vec3<f32>(inst.transform2.x, inst.transform2.y, 1.0), vec3<f32>(p, 1.0)),
+		dot(vec3<f32>(inst.transform2.xy, 1.0 - 2.0 * inst.transform2.z), vec3<f32>(p, 1.0)),
 	);
 }
 
@@ -175,7 +175,7 @@ fn effect_frame_point(e: Effect, q: vec2<f32>) -> vec2<f32> {
 	let h = vec3<f32>(
 		dot(e.transform0.xyz, vec3<f32>(q, 1.0)),
 		dot(e.transform1.xyz, vec3<f32>(q, 1.0)),
-		dot(vec3<f32>(e.transform2.x, e.transform2.y, 1.0), vec3<f32>(q, 1.0)),
+		dot(vec3<f32>(e.transform2.xy, 1.0 - 2.0 * e.transform2.z), vec3<f32>(q, 1.0)),
 	);
 	return h.xy / h.z;
 }

@@ -24,7 +24,11 @@ as an icon button: `tt.Click("Close")`, `tt.Find("Volume")`,
 `Click`, `ClickWith` and `RightClick` check the first matching element
 before sending input. They return an error if it has no visible area or
 the center of that area would reach another control or nothing. They do
-not scroll it into view or search for another uncovered point. `Find`
+not scroll it into view or search for another uncovered point. On an
+element without a context menu of its own, as a list's row, `RightClick`
+opens the menu of the content the element holds at that point, as a
+right-click there does; a control inside it that takes clicks or input
+of its own is another control. `Find`
 still returns a matching clipped box, which may have zero width or height;
 `ClickAt` sends input at the given coordinates without a named target.
 
@@ -78,8 +82,8 @@ panics where the second key was given, as apps only log it.
   and `tt.FailClipboard` its writes of text to the clipboard, as a
   browser refuses them (`WriteClipboardThen`).
 - **What assistive technology sees.** `tt.Access` and `tt.AccessByRole`
-  read an element's role, name, value and states
-  ([below](#what-assistive-technology-sees)).
+  read an element's role, name, value and states, and `tt.AccessAll`
+  every element's ([below](#what-assistive-technology-sees)).
 - **Frames.** `tt.Frame` draws a frame, for what changed outside the view,
   and `tt.Image()` is the last frame, for snapshots; `ui.Render` draws a
   view once at a given scale. Inputs and `tt.Frame` run the frames the
@@ -145,6 +149,18 @@ if !ok || !reply.Busy {
 }
 if docs, _ := tt.AccessByRole(ui.RoleLink, "Docs"); docs.Current != ui.CurrentPage {
 	t.Errorf("Docs is not the current page: %+v", docs)
+}
+```
+
+`tt.AccessAll()` returns the same of every element of the last frame,
+in the order screen readers read them, for checks over a whole view, as
+that no control is left without a name:
+
+```go
+for _, a := range tt.AccessAll() {
+	if a.Role == ui.RoleButton && a.Name == "" {
+		t.Errorf("a button at %v has no name", a.Bounds)
+	}
 }
 ```
 

@@ -1,6 +1,6 @@
 {
   "name": "@caelyreth/evil-mygo-cli-win32-x64",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "The Windows x64 binary of @caelyreth/evil-mygo-cli",
   "repository": {
     "type": "git",

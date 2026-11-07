@@ -116,6 +116,9 @@ func TestUILayerAccessibility(t *testing.T) {
 	if a, ok := layer.Access("Name"); !ok || a.Role != RoleTextField {
 		t.Fatalf("access = %+v, %v", a, ok)
 	}
+	if a, ok := layer.AccessByRole(RoleTextField, "Name"); !ok || a.Name != "Name" {
+		t.Fatalf("access by role = %+v, %v", a, ok)
+	}
 }
 
 func TestUILayerSurfaceInput(t *testing.T) {

@@ -3,7 +3,7 @@
 //
 //   bun scripts/version.ts 0.2.0            # set it everywhere, bun.lock too
 //   bun scripts/version.ts --check v0.2.0   # check that everything has it
-//   bun scripts/version.ts --upstream 0.8.0 <full-commit>  # after integrating upstream
+//   bun scripts/version.ts --upstream 0.8.3 <full-commit>  # after integrating upstream
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { platformDir, platformName, releaseInfo, versionFile, writeManifests } from "../packages/cli/build.ts";

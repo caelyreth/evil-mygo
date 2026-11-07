@@ -21,7 +21,9 @@ Use `github.com/caelyreth/evil-mygo` for Go imports. The package is still `mygo`
 and the CLI is still `mygo`. npm packages use the `@caelyreth/evil-mygo-` prefix,
 including `@caelyreth/evil-mygo-runtime` and `@caelyreth/evil-mygo-cli`.
 
-Fork releases have independent SemVer versions, starting at **0.1.0**.
+Current release: **0.1.1**, based on **MyGo 0.8.3** at `94f22c384d0e`.
+See the [changelog](CHANGELOG.md) for the upstream sync. Fork releases have
+independent SemVer versions.
 `mygo.Version` identifies the fork; `mygo.UpstreamVersion` and
 `mygo.UpstreamRevision` record the integrated upstream baseline.
 `mygo version` prints both. Release and provenance commands are in the

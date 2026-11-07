@@ -35,4 +35,8 @@ func TestExternalImageHasNoPixels(t *testing.T) {
 	if img.W != 4 || img.H != 3 || img.Pixels() != nil || img.External == nil {
 		t.Fatalf("external image is %d×%d pixels=%v external=%v", img.W, img.H, img.Pixels() != nil, img.External != nil)
 	}
+	img.Resize(9, 7)
+	if img.W != 9 || img.H != 7 || img.Pixels() != nil {
+		t.Fatalf("resized external image is %d×%d with pixels %v", img.W, img.H, img.Pixels() != nil)
+	}
 }

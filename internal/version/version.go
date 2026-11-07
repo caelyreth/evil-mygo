@@ -3,13 +3,13 @@
 package version
 
 // Version is the independent evil-mygo release, shared by Go and npm packages.
-const Version = "0.1.0"
+const Version = "0.1.1"
 
 // UpstreamVersion is the MyGo release at the last integrated upstream baseline.
-const UpstreamVersion = "0.8.0"
+const UpstreamVersion = "0.8.3"
 
 // UpstreamRevision identifies that baseline, not the current upstream HEAD.
-const UpstreamRevision = "442d09c293e9586809175fe55beff0be905459c7"
+const UpstreamRevision = "94f22c384d0ecd8486899e5a4662cbec2577d310"
 
 // UpstreamRepository is the original project's repository.
 const UpstreamRepository = "https://github.com/egoist/mygo"

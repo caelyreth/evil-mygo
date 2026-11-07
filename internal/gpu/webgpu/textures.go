@@ -17,6 +17,7 @@ type textureEntry struct {
 	owned      bool
 	generation uint64
 	version    uint64
+	lastFrame  uint64
 }
 
 type bindKey struct {
@@ -216,6 +217,7 @@ func (r *Renderer) syncImage(img *scene.Image) (uintptr, error) {
 		t.version = img.Version()
 		img.Uploaded()
 	}
+	t.lastFrame = r.frame
 	return token, nil
 }
 
@@ -263,6 +265,7 @@ func (r *Renderer) syncExternalImage(img *scene.Image) (uintptr, error) {
 		r.forgetBindings()
 	}
 	t.version = img.Version()
+	t.lastFrame = r.frame
 	return token, nil
 }
 

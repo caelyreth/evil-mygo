@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log"
 	"net"
 	"net/http"
@@ -444,43 +445,130 @@ func relaunchUpdated() bool {
 }
 
 // swapFiles replaces the entries of the app directory target with those in
-// dir. The running executable is renamed away, which Windows allows, and
-// removed at the next launch (cleanUpdateLeftovers).
+// dir, and removes those that the version it replaces installed and dir
+// lacks, which target's update.FileList names. Entries that no list names
+// stay, as the data of a portable copy, and so do all the entries of an
+// app installed before versions had a list: they cannot be told from the
+// user's. Replaced and removed entries are renamed aside, and deleted once
+// every entry of dir is in place; if one cannot be, dir's go back and the
+// others are put back. The running executable is renamed away, which
+// Windows allows, and removed at the next launch (cleanUpdateLeftovers).
+// dir gets the list of its entries, which moves into target with them.
 func swapFiles(dir, target string) error {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return err
 	}
-	if len(entries) == 0 {
+	var names []string
+	ours := map[string]bool{}
+	for _, e := range entries {
+		if e.Name() != update.FileList {
+			names = append(names, e.Name())
+			ours[e.Name()] = true
+		}
+	}
+	if len(names) == 0 {
 		return errors.New("the update is empty")
 	}
 	suffix := ".old-" + strconv.Itoa(os.Getpid())
-	var moved [][2]string // renamed away: old name, new name
+	var moved, placed [][2]string // renamed: old name, new name
 	undo := func() {
+		for i := len(placed) - 1; i >= 0; i-- {
+			if rename(placed[i][1], placed[i][0]) != nil {
+				_ = os.RemoveAll(placed[i][1])
+			}
+		}
 		for i := len(moved) - 1; i >= 0; i-- {
-			_ = os.RemoveAll(moved[i][0])
 			_ = rename(moved[i][1], moved[i][0])
 		}
 	}
-	for _, e := range entries {
-		dst := filepath.Join(target, e.Name())
+	moveAside := func(dst string) error {
+		aside := filepath.Join(target, "."+filepath.Base(dst)+suffix)
+		if err := rename(dst, aside); err != nil {
+			return err
+		}
+		moved = append(moved, [2]string{dst, aside})
+		return nil
+	}
+
+	// The entries that the replaced version installed and dir lacks go
+	// first, so that one that dir has under another case, which is the same
+	// entry on Windows and macOS, is moved aside before dir's takes its
+	// place. The executable the app runs from stays, whatever the new
+	// version calls its own: shortcuts, the desktop entry and Relaunch start
+	// it. One that cannot be moved stays listed, for the next update to
+	// remove.
+	running := runningEntry(target)
+	var left []string
+	for _, name := range installedEntries(target) {
+		dst := filepath.Join(target, name)
+		if ours[name] || name == running {
+			continue
+		}
+		if _, err := os.Lstat(dst); err != nil {
+			continue
+		}
+		if err := moveAside(dst); err != nil {
+			log.Printf("mygo: leaving %s, which the update no longer has: %v", dst, err)
+			left = append(left, name)
+		}
+	}
+	if err := update.WriteFileList(dir, append(names, left...)); err != nil {
+		undo()
+		return err
+	}
+
+	for _, name := range append(names, update.FileList) {
+		src, dst := filepath.Join(dir, name), filepath.Join(target, name)
 		if _, err := os.Lstat(dst); err == nil {
-			aside := filepath.Join(target, "."+e.Name()+suffix)
-			if err := rename(dst, aside); err != nil {
+			if err := moveAside(dst); err != nil {
 				undo()
 				return err
 			}
-			moved = append(moved, [2]string{dst, aside})
 		}
-		if err := rename(filepath.Join(dir, e.Name()), dst); err != nil {
+		if err := rename(src, dst); err != nil {
 			undo()
 			return err
 		}
+		placed = append(placed, [2]string{src, dst})
 	}
 	for _, m := range moved {
 		_ = os.RemoveAll(m[1])
 	}
 	return nil
+}
+
+// installedEntries returns the entries of the app directory target that
+// its version installed, which its update.FileList names: none without
+// one.
+func installedEntries(target string) []string {
+	b, err := readAppFile(filepath.Join(target, update.FileList))
+	if err != nil {
+		if !errors.Is(err, fs.ErrNotExist) {
+			log.Printf("mygo: removing none of the files that the update no longer has: %v", err)
+		}
+		return nil
+	}
+	return update.ParseFileList(b)
+}
+
+// runningEntry returns the entry of the app directory target that the app
+// runs from, or "" when it runs from elsewhere.
+func runningEntry(target string) string {
+	if startExe == "" {
+		return ""
+	}
+	exe, dir := startExe, target
+	if real, err := filepath.EvalSymlinks(exe); err == nil {
+		exe = real
+	}
+	if real, err := filepath.EvalSymlinks(dir); err == nil {
+		dir = real
+	}
+	if filepath.Dir(exe) != filepath.Clean(dir) {
+		return ""
+	}
+	return filepath.Base(exe)
 }
 
 // relaunchNow starts the app again; it runs after the quit sequence.
@@ -537,6 +625,8 @@ func cleanUpdateLeftovers() {
 
 // httpGet fetches a URL over HTTPS (or plain HTTP from the loopback
 // interface, for tests), through the system's proxy (package netproxy).
+// A failure that a moment may mend, as a gateway timing out in front of
+// the store of a release's assets, is tried again (httpRetries).
 func httpGet(ctx context.Context, rawURL string) (io.ReadCloser, error) {
 	u, err := url.Parse(rawURL)
 	if err != nil {
@@ -545,23 +635,65 @@ func httpGet(ctx context.Context, rawURL string) (io.ReadCloser, error) {
 	if u.Scheme != "https" && !(u.Scheme == "http" && isLoopback(u.Hostname())) {
 		return nil, fmt.Errorf("refusing to download %s: updates need HTTPS", rawURL)
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
-	if err != nil {
-		return nil, err
+	client := &http.Client{Transport: netproxy.Transport()}
+	for try := 0; ; try++ {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+		if err != nil {
+			return nil, err
+		}
+		// Not the app's name: GitHub's release assets come from a store that
+		// answers 400 to a User-Agent with bytes outside ASCII, as 云音乐, for
+		// every file its CDN has not cached yet.
+		req.Header.Set("User-Agent", "mygo-updater")
+		resp, err := client.Do(req)
+		var wait time.Duration
+		switch {
+		case err != nil:
+			if ctx.Err() != nil || try >= len(httpRetries) {
+				return nil, err
+			}
+		case resp.StatusCode == http.StatusOK:
+			return resp.Body, nil
+		default:
+			resp.Body.Close()
+			if !transientStatus(resp.StatusCode) || try >= len(httpRetries) {
+				return nil, fmt.Errorf("GET %s: %s", rawURL, resp.Status)
+			}
+			wait = retryAfter(resp.Header.Get("Retry-After"))
+		}
+		wait = max(wait, httpRetries[try])
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(wait):
+		}
 	}
-	// Not the app's name: GitHub's release assets come from a store that
-	// answers 400 to a User-Agent with bytes outside ASCII, as 云音乐, for
-	// every file its CDN has not cached yet.
-	req.Header.Set("User-Agent", "mygo-updater")
-	resp, err := (&http.Client{Transport: netproxy.Transport()}).Do(req)
-	if err != nil {
-		return nil, err
+}
+
+// httpRetries are how long httpGet waits before each try after the first
+// of a request that failed for a while: three tries in all.
+var httpRetries = []time.Duration{time.Second, 3 * time.Second}
+
+// transientStatus reports whether a response of status code may succeed
+// when asked again: too many requests, or a server or gateway failing for
+// now.
+func transientStatus(code int) bool {
+	switch code {
+	case http.StatusTooManyRequests, http.StatusInternalServerError, http.StatusBadGateway,
+		http.StatusServiceUnavailable, http.StatusGatewayTimeout:
+		return true
 	}
-	if resp.StatusCode != http.StatusOK {
-		resp.Body.Close()
-		return nil, fmt.Errorf("GET %s: %s", rawURL, resp.Status)
+	return false
+}
+
+// retryAfter is the wait of a Retry-After header in seconds, up to 30
+// seconds; 0 for none, or for a date.
+func retryAfter(h string) time.Duration {
+	n, err := strconv.Atoi(strings.TrimSpace(h))
+	if err != nil || n <= 0 {
+		return 0
 	}
-	return resp.Body, nil
+	return min(time.Duration(n)*time.Second, 30*time.Second)
 }
 
 func isLoopback(host string) bool {
