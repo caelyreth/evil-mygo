@@ -488,6 +488,12 @@ func (h *windowHost) present(s *scene.Scene) {
 		if h.degraded {
 			h.path = "drawn by the GPU renderer in software"
 		}
+		if p, ok := h.gpu.(interface{ FramePending() bool }); ok && p.FramePending() {
+			// No drawable yet, not a lost device. Retry at the next refresh;
+			// holdFrame keeps hidden windows asleep until SurfaceShown.
+			h.path = "waiting for a GPU drawable"
+			h.requestFrame()
+		}
 		return
 	}
 	h.path = "drawn in memory"

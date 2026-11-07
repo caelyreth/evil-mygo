@@ -30,6 +30,7 @@ type NativeRenderer struct {
 	wide     bool
 	partial  bool
 	held     bool
+	pending  bool
 	diff     scene.Differ
 	part     gpu.Part
 	content  *textureEntry
@@ -164,6 +165,7 @@ func (r *NativeRenderer) Render(s *scene.Scene) error {
 	if r == nil || r.renderer == nil || r.surface == nil {
 		return errors.New("webgpu: renderer is released")
 	}
+	r.pending = false
 	if s == nil || s.Width <= 0 || s.Height <= 0 {
 		return nil
 	}
@@ -178,8 +180,9 @@ func (r *NativeRenderer) Render(s *scene.Scene) error {
 
 	surfaceTexture, suboptimal, err := r.surface.Acquire()
 	if errors.Is(err, wgpu.ErrSurfaceOccluded) {
-		// A minimized or fully covered window has no drawable. The next
-		// requested frame acquires one after the window shows again.
+		// A new layer can have no drawable until its first transaction
+		// commits, even in a visible window. Do not lose a static frame.
+		r.pending = true
 		return nil
 	}
 	if err != nil {
@@ -267,6 +270,10 @@ func (r *NativeRenderer) Render(s *scene.Scene) error {
 	}
 	return nil
 }
+
+// FramePending reports that the last frame had no drawable. The host
+// requests another frame, which waits while the window is out of sight.
+func (r *NativeRenderer) FramePending() bool { return r.pending }
 
 func (r *NativeRenderer) ensureContent(width, height int) error {
 	if r.content != nil && r.contentW == width && r.contentH == height {

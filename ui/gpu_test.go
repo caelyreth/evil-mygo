@@ -52,6 +52,64 @@ func (g *testGPU) Render(*scene.Scene) error {
 
 func (g *testGPU) Release() { g.released++ }
 
+// pendingGPU has no drawable until pending clears, without losing its device.
+type pendingGPU struct {
+	testGPU
+	pending bool
+}
+
+func (g *pendingGPU) Render(s *scene.Scene) error {
+	if g.pending {
+		return nil
+	}
+	return g.testGPU.Render(s)
+}
+
+func (g *pendingGPU) FramePending() bool { return g.pending }
+
+func TestGPUDeferredFrameRetries(t *testing.T) {
+	for _, hidden := range []bool{false, true} {
+		name := "visible"
+		if hidden {
+			name = "hidden"
+		}
+		t.Run(name, func(t *testing.T) {
+			g := &pendingGPU{pending: true}
+			h, _, frame := gpuHost(t, func() (gpuRenderer, error) { return g, nil })
+			s := &occludedSurface{occluded: hidden}
+			h.conn.Surface = s
+			defer h.detach()
+			frame()
+			if s.requested != 1 || !h.frameAsked || !h.shown || g.frames != 0 || g.released != 0 {
+				t.Fatalf("no drawable: requested %d, pending %v, ready %v, drawn %d, released %d",
+					s.requested, h.frameAsked, h.shown, g.frames, g.released)
+			}
+
+			frame()
+			if hidden {
+				if !h.rt.held || h.frameAsked || s.requested != 1 {
+					t.Fatalf("hidden: held %v, pending %v, requested %d", h.rt.held, h.frameAsked, s.requested)
+				}
+				s.occluded = false
+				h.event(platform.SurfaceEvent{Kind: platform.SurfaceShown})
+				if !h.frameAsked {
+					t.Fatal("shown without input: no retry requested")
+				}
+			} else if !h.frameAsked || s.requested != 2 {
+				t.Fatal("drawable still unavailable: no retry requested")
+			}
+
+			g.pending = false
+			requested := s.requested
+			frame()
+			if g.frames != 1 || g.released != 0 || h.frameAsked || s.requested != requested || h.rt.held {
+				t.Fatalf("drawable available: drawn %d, released %d, pending %v, requested %d more, held %v",
+					g.frames, g.released, h.frameAsked, s.requested-requested, h.rt.held)
+			}
+		})
+	}
+}
+
 // gpuHost returns a window host on a test surface whose GPU renderers
 // newGPU makes, and a function drawing a frame.
 func gpuHost(t *testing.T, make func() (gpuRenderer, error)) (*windowHost, *testSurface, func()) {

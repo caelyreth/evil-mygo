@@ -4822,7 +4822,10 @@ either.
     nested canvases into the same command encoder, submits it on the
     device's default queue and presents it. wgpu-native selects Metal on
     macOS while the WebGPU resource, texture-view, bind-group and queue
-    model remains portable. The renderer uses WGSL scene, effect and
+    model remains portable. An occluded acquisition leaves `FramePending`:
+    the host requests a retry, held while the window is out of sight, so
+    static windows draw once a new layer has a drawable without input.
+    The renderer uses WGSL scene, effect and
     backdrop shaders, keeps per-target instance and atlas buffers, and
     renders native UI canvases into WebGPU textures. Effects may sample a
     copy of the target for backdrop blur; imported `wgpu.Texture` views are
