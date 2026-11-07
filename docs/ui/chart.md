@@ -10,7 +10,7 @@ areas and pie slices for `Draw` functions, stacking, and a selection that
 the pointer and the keyboard move. Every color, size and font is yours.
 
 ```go
-import "github.com/egoist/mygo/ui/chart"
+import "github.com/caelyreth/evil-mygo/ui/chart"
 
 t := c.Theme()
 x := chart.NewBand(app.months...).Padding(0.3, 0.15)

@@ -3,8 +3,8 @@ package terminal
 import (
 	"slices"
 
-	"github.com/egoist/mygo/plugins/terminal/internal/vt"
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/plugins/terminal/internal/vt"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // placeholder is the character of a cell that shows part of an image

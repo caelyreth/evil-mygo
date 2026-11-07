@@ -9,7 +9,7 @@ Go's syntax, and draws them on whichever GPU renderer draws the window
 can, the same pixels within rounding.
 
 ```go
-import "github.com/egoist/mygo/ui/shader"
+import "github.com/caelyreth/evil-mygo/ui/shader"
 
 var waves = shader.MustCompile(`package main
 

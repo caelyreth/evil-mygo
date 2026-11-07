@@ -27,9 +27,9 @@ type templateData struct {
 	Slug       string
 	Module     string
 	Identifier string
-	// Runtime is the version of the mygo-runtime npm package.
+	// Runtime is the version of the @caelyreth/evil-mygo-runtime npm package.
 	Runtime string
-	// CLI is the version of the mygo-cli npm package, which runs mygo in
+	// CLI is the version of the @caelyreth/evil-mygo-cli npm package, which runs mygo in
 	// the scripts of package.json, and Mygo the command they run.
 	CLI, Mygo string
 	// ConfigImport is the module mygo.config.ts imports defineConfig from.
@@ -44,10 +44,10 @@ const (
 
 // cliTool is the package of the CLI, which projects of native UI depend on
 // as a tool of their module.
-const cliTool = "github.com/egoist/mygo/cmd/mygo"
+const cliTool = "github.com/caelyreth/evil-mygo/cmd/mygo"
 
 func runInit(args []string) error {
-	flags := newFlags("init", "[flags] <dir>", "Creates a new MyGo project. The web template has a TypeScript frontend built\nwith Vite: Bun installs its dependencies, the mygo-cli package among them,\nand runs its scripts, bun run dev and bun run build. The native template\nshows a user interface MyGo draws itself, written in Go with package ui:\nthe module has the CLI as a tool, for go tool mygo dev and go tool mygo\nbuild.")
+	flags := newFlags("init", "[flags] <dir>", "Creates a new MyGo project. The web template has a TypeScript frontend built\nwith Vite: Bun installs its dependencies, the @caelyreth/evil-mygo-cli package among them,\nand runs its scripts, bun run dev and bun run build. The native template\nshows a user interface MyGo draws itself, written in Go with package ui:\nthe module has the CLI as a tool, for go tool mygo dev and go tool mygo\nbuild.")
 	name := flags.String("name", "", "application name (default: directory name)")
 	module := flags.String("module", "", "Go module path (default: directory name)")
 	local := flags.String("mygo", "", "path to a local checkout of MyGo to use via a replace directive")
@@ -69,7 +69,7 @@ func runInit(args []string) error {
 	if *tmpl == nativeTemplate {
 		return initNative(dir, data, *local)
 	}
-	data.Runtime, data.CLI, data.Mygo, data.ConfigImport = "^"+version, "^"+version, "mygo", "mygo-cli"
+	data.Runtime, data.CLI, data.Mygo, data.ConfigImport = "^"+version, "^"+version, "mygo", "@caelyreth/evil-mygo-cli"
 	if *local != "" {
 		// The packages of the local checkout, like the Go module, and its
 		// CLI, which go run builds from the replaced module.
@@ -82,7 +82,7 @@ func runInit(args []string) error {
 			return fmt.Errorf("the packages of %s are not built: run bun install && bun run build there first", checkout)
 		}
 		data.Runtime = "file:" + runtime
-		data.CLI, data.Mygo = "", "go run github.com/egoist/mygo/cmd/mygo"
+		data.CLI, data.Mygo = "", "go run github.com/caelyreth/evil-mygo/cmd/mygo"
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return err
 		}
@@ -171,18 +171,18 @@ func writeProject(dir, tmpl string, data templateData, local string, tool bool) 
 		if tool {
 			gomod += "\ntool " + cliTool + "\n"
 		}
-		gomod += fmt.Sprintf("\nrequire github.com/egoist/mygo v0.0.0\n\nreplace github.com/egoist/mygo => %s\n", abs)
+		gomod += fmt.Sprintf("\nrequire github.com/caelyreth/evil-mygo v0.0.0\n\nreplace github.com/caelyreth/evil-mygo => %s\n", abs)
 	}
 	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte(gomod), 0o644); err != nil {
 		return err
 	}
 	if local == "" {
-		get := []string{"get", "github.com/egoist/mygo@latest"}
+		get := []string{"get", "github.com/caelyreth/evil-mygo@v" + version}
 		if tool {
-			get = []string{"get", "-tool", cliTool + "@latest"}
+			get = []string{"get", "-tool", cliTool + "@v" + version}
 		}
 		if err := goCommand(dir, nil, get...).Run(); err != nil {
-			warnf("Could not fetch github.com/egoist/mygo: %v", err)
+			warnf("Could not fetch github.com/caelyreth/evil-mygo: %v", err)
 		}
 	}
 	if err := goCommand(dir, nil, "mod", "tidy").Run(); err != nil {

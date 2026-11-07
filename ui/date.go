@@ -3,7 +3,7 @@ package ui
 import (
 	"time"
 
-	"github.com/egoist/mygo/i18n"
+	"github.com/caelyreth/evil-mygo/i18n"
 )
 
 // DateInput creates a field showing *date in the user's regional formats,

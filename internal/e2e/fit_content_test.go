@@ -9,9 +9,9 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/egoist/mygo"
-	"github.com/egoist/mygo/internal/wait"
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo"
+	"github.com/caelyreth/evil-mygo/internal/wait"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 const fitPage = `<!doctype html><body style="margin:0;background:#fc0"><div id="d" style="width:120px;height:80px"></div></body>`

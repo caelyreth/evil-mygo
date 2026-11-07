@@ -3,8 +3,8 @@ package main
 import (
 	"testing"
 
-	"github.com/egoist/mygo/plugins/permissionflow"
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/plugins/permissionflow"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // The window lists the permissions with their status, and its buttons ask

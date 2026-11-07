@@ -5,7 +5,7 @@ package mygo
 import (
 	"context"
 
-	"github.com/egoist/mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/platform"
 )
 
 // Browsers show no web pages (backend_js.go), and so have no bridge to

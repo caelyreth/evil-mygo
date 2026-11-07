@@ -1,4 +1,4 @@
-// The public types are those of the mygo-runtime package.
+// The public types are those of the @caelyreth/evil-mygo-runtime package.
 import type { Direction, Platform } from "../../runtime/src/types";
 import type { ContextTarget } from "./context-menu";
 import type { FitLimits } from "./fit-content";

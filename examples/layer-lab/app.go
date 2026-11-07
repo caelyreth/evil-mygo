@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 const sidebarWidth = 230

@@ -13,8 +13,8 @@ import (
 	"testing"
 	"unicode/utf16"
 
-	"github.com/egoist/mygo"
-	"github.com/egoist/mygo/internal/wait"
+	"github.com/caelyreth/evil-mygo"
+	"github.com/caelyreth/evil-mygo/internal/wait"
 )
 
 // sessionPage serves app://localhost/session/<name>: a page titled name,

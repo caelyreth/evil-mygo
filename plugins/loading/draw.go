@@ -3,7 +3,7 @@ package loading
 import (
 	"math"
 
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // drawing is an indicator's frame being painted: its square of side s at

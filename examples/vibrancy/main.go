@@ -11,8 +11,8 @@ import (
 	"log"
 	"time"
 
-	"github.com/egoist/mygo"
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // material is a Vibrancy the sidebar offers: its constant in package mygo,

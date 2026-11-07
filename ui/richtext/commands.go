@@ -3,7 +3,7 @@ package richtext
 import (
 	"strings"
 
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // FormatState is whether a format holds for a selection: all of it, none,

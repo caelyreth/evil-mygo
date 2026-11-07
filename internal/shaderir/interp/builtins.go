@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/egoist/mygo/internal/shaderir"
+	"github.com/caelyreth/evil-mygo/internal/shaderir"
 )
 
 // convert returns a lane of kind from converts to kind to, as the

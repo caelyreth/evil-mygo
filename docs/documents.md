@@ -308,7 +308,7 @@ follows its state:
 
 ```ts
 import { Note } from "./mygo"; // generated
-import { onDocumentReload, onDocumentState } from "mygo-runtime";
+import { onDocumentReload, onDocumentState } from "@caelyreth/evil-mygo-runtime";
 
 editor.value = (await Note.content()).body;
 editor.oninput = () => Note.setContent({ body: editor.value });

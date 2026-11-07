@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // linkIcons makes an object for links but those to anchors, and notes

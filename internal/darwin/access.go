@@ -10,7 +10,7 @@ import (
 	"github.com/ebitengine/purego"
 	"github.com/ebitengine/purego/objc"
 
-	"github.com/egoist/mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/platform"
 )
 
 // VoiceOver and other assistive technology see the content of a surface

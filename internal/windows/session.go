@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"unsafe"
 
-	"github.com/egoist/mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/platform"
 )
 
 // Sessions (mygo.Session): a store is a WebView2 profile of the app's

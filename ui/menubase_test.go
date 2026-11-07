@@ -5,7 +5,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/egoist/mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/platform"
 )
 
 // baseMenuApp is a view with a menu button on MenuBase and a row with a

@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/egoist/mygo/i18n"
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/i18n"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 func TestSidebarNavigation(t *testing.T) {

@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // OnInput sees keys and typed text before the editor: what it takes the

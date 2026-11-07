@@ -6,9 +6,9 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/egoist/mygo"
-	"github.com/egoist/mygo/internal/linux"
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo"
+	"github.com/caelyreth/evil-mygo/internal/linux"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // TestAccessDisabled reads, as Orca does through ATK, a button that is

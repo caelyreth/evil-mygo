@@ -3,7 +3,7 @@ package main
 import (
 	"math"
 
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // charset is the characters an atlas holds, ASCII's printable ones and a

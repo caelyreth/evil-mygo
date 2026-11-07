@@ -6,7 +6,7 @@ import (
 	"math/rand/v2"
 	"testing"
 
-	"github.com/egoist/mygo/internal/scene"
+	"github.com/caelyreth/evil-mygo/internal/scene"
 )
 
 // A clip masked by a gradient lets through, at each pixel, the alpha of

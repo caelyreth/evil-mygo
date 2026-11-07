@@ -8,14 +8,14 @@ Linux and Windows on amd64 and arm64.
 ## Using the page plugin
 
 Call `mygo.Use(sqlite.Plugin)` only when the web frontend uses
-`@mygo-plugins/sqlite`. It registers the Go service called by that
+`@caelyreth/evil-mygo-sqlite`. It registers the Go service called by that
 TypeScript client. Go and native UI apps use `sqlite.Open` directly, as
 shown [below](#from-go-or-native-ui).
 
 ```go
 import (
-    "github.com/egoist/mygo"
-    "github.com/egoist/mygo/plugins/sqlite"
+    "github.com/caelyreth/evil-mygo"
+    "github.com/caelyreth/evil-mygo/plugins/sqlite"
 )
 
 func main() {
@@ -24,10 +24,10 @@ func main() {
 }
 ```
 
-Install the frontend package with `bun add @mygo-plugins/sqlite`, then:
+Install the frontend package with `bun add @caelyreth/evil-mygo-sqlite`, then:
 
 ```ts
-import { open } from "@mygo-plugins/sqlite";
+import { open } from "@caelyreth/evil-mygo-sqlite";
 
 const db = await open("app.db");
 await db.execute("CREATE TABLE IF NOT EXISTS notes (id INTEGER PRIMARY KEY, title TEXT)");
@@ -164,7 +164,7 @@ library among the app's resources, signed with the app on macOS. macOS
 universal builds merge both architectures. Packaged apps need no runtime
 downloads. `MYGO_SQLITE_LIBRARY` names a custom build for development.
 
-See [the plugin README](https://github.com/egoist/mygo/tree/main/plugins/sqlite)
+See [the plugin README](https://github.com/caelyreth/evil-mygo/tree/main/plugins/sqlite)
 for release-asset publication and compile options. SQLite's upstream
 [C API](https://www.sqlite.org/c3ref/intro.html) describes its SQL behavior.
 

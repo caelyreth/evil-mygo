@@ -5,8 +5,8 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/egoist/mygo/internal/text"
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/internal/text"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // Reveal is how Stream shows text as it comes: rather than in the bursts

@@ -5,7 +5,7 @@
  * platform:
  *
  * ```ts
- * import { currentWindow, runtime } from "mygo-runtime";
+ * import { currentWindow, runtime } from "@caelyreth/evil-mygo-runtime";
  *
  * if (runtime().platform === "darwin") document.body.classList.add("mac");
  * await currentWindow.toggleMaximize();

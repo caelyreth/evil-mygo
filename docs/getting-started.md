@@ -24,20 +24,20 @@ The `mygo` command line tool creates, runs and packages apps. It is a Go
 program, which Go runs without installing it:
 
 ```sh
-go run github.com/egoist/mygo/cmd/mygo@latest init my-app
+go run github.com/caelyreth/evil-mygo/cmd/mygo@latest init my-app
 ```
 
 Projects with a web frontend also depend on it through npm, as the
-`mygo-cli` package, so Bun or npm create one too:
+`@caelyreth/evil-mygo-cli` package, so Bun or npm create one too:
 
 ```sh
-bunx mygo-cli init my-app      # or: npx mygo-cli init my-app
+bunx @caelyreth/evil-mygo-cli init my-app      # or: npx @caelyreth/evil-mygo-cli init my-app
 ```
 
 You can also install the CLI with Go, which puts `mygo` on your `PATH`:
 
 ```sh
-go install github.com/egoist/mygo/cmd/mygo@latest
+go install github.com/caelyreth/evil-mygo/cmd/mygo@latest
 mygo init my-app
 ```
 
@@ -89,7 +89,7 @@ my-app/
 The module has the CLI as a
 [tool](https://go.dev/doc/modules/managing-dependencies#tools): `go tool
 mygo` runs it at the version `go.mod` pins, which
-`go get -tool github.com/egoist/mygo/cmd/mygo@latest` updates with MyGo.
+`go get -tool github.com/caelyreth/evil-mygo/cmd/mygo@latest` updates with MyGo.
 
 ## Develop
 

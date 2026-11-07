@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/egoist/mygo"
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // TestContentWindowInspector opens the inspector of native UI with the

@@ -9,10 +9,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/egoist/mygo"
-	"github.com/egoist/mygo/internal/darwin"
-	"github.com/egoist/mygo/internal/wait"
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo"
+	"github.com/caelyreth/evil-mygo/internal/darwin"
+	"github.com/caelyreth/evil-mygo/internal/wait"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // TestDialogFromClick shows each kind of dialog from a button's Clicked,

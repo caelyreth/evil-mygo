@@ -4,8 +4,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/egoist/mygo/internal/l10n"
-	"github.com/egoist/mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/l10n"
+	"github.com/caelyreth/evil-mygo/internal/platform"
 )
 
 // Assistive technology, such as screen readers, sees the elements of each

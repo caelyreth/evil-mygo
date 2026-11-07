@@ -10,7 +10,7 @@ import (
 func TestMigrateUIPreviewWriteAndIgnoredDirectories(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "main.go")
-	source := []byte("package main\nimport \"github.com/egoist/mygo/ui\"\nfunc view(c *ui.Context) *ui.Element { return ui.Text(c,\"Hello\") }\n")
+	source := []byte("package main\nimport \"github.com/caelyreth/evil-mygo/ui\"\nfunc view(c *ui.Context) *ui.Element { return ui.Text(c,\"Hello\") }\n")
 	if err := os.WriteFile(path, source, 0600); err != nil {
 		t.Fatal(err)
 	}

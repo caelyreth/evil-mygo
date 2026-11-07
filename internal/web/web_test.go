@@ -12,7 +12,7 @@ import (
 	"syscall/js"
 	"testing"
 
-	"github.com/egoist/mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/platform"
 )
 
 func TestKeyOf(t *testing.T) {

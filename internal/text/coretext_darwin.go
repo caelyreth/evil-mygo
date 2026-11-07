@@ -17,9 +17,9 @@ import (
 	"unicode"
 	"unsafe"
 
+	"github.com/caelyreth/evil-mygo/internal/scene"
 	"github.com/ebitengine/purego"
 	"github.com/ebitengine/purego/objc"
-	"github.com/egoist/mygo/internal/scene"
 	"github.com/go-text/typesetting/segmenter"
 )
 

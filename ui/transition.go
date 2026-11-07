@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/egoist/mygo/internal/scene"
+	"github.com/caelyreth/evil-mygo/internal/scene"
 )
 
 // ElementTransition animates an element (Element.Transition) from what the

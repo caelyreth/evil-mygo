@@ -5,9 +5,9 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/egoist/mygo/internal/platform"
-	"github.com/egoist/mygo/internal/scene"
-	"github.com/egoist/mygo/internal/text"
+	"github.com/caelyreth/evil-mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/scene"
+	"github.com/caelyreth/evil-mygo/internal/text"
 )
 
 // fillsOf returns the rectangles the last frame filled with c.

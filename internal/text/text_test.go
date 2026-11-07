@@ -10,8 +10,8 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/egoist/mygo/internal/scene"
-	"github.com/egoist/mygo/internal/wait"
+	"github.com/caelyreth/evil-mygo/internal/scene"
+	"github.com/caelyreth/evil-mygo/internal/wait"
 	"golang.org/x/image/font/gofont/gobold"
 	"golang.org/x/image/font/gofont/goitalic"
 	"golang.org/x/image/font/gofont/gomedium"

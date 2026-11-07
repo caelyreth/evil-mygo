@@ -239,14 +239,14 @@ Some things reach every page, trusted or not:
   ([pages](windows.md#pages)). A page that navigates to a trusted URL is
   trusted.
 
-## The mygo-runtime package
+## The @caelyreth/evil-mygo-runtime package
 
 MyGo injects its runtime into every page as `window.mygo`. The
-`mygo-runtime` npm package, which new projects depend on, gives it types
+`@caelyreth/evil-mygo-runtime` npm package, which new projects depend on, gives it types
 and imports; the generated client is built on it.
 
 ```ts
-import { currentWindow, isMyGo, onFileDrop, runtime } from "mygo-runtime";
+import { currentWindow, isMyGo, onFileDrop, runtime } from "@caelyreth/evil-mygo-runtime";
 
 if (isMyGo() && runtime().platform === "darwin") {
   document.documentElement.classList.add("mac");
@@ -269,7 +269,7 @@ await currentWindow.toggleMaximize();
 | `windowActive()`, `onWindowActive(listener)` | whether the page's window is drawn as active, the one the user's input goes to, and its changes, see [inactive windows](#inactive-windows) |
 | `locale()`, `direction()`, `onLocaleChange(listener)` | the language the app shows (`App.Locale`), such as `"zh-Hans"`, its direction, `"ltr"` or `"rtl"`, and its changes; the page has them from document start, as `mygo.locale` and `mygo.dir` |
 
-`mygo-runtime/i18n` formats messages of ICU MessageFormat, as package
+`@caelyreth/evil-mygo-runtime/i18n` formats messages of ICU MessageFormat, as package
 `i18n` does in Go. The module `mygo generate` writes for the app's
 [catalogs](i18n.md#in-pages), `locales.ts`, is built on it, and holds the
 messages of every language, which the frontend's build bundles: a page
@@ -299,7 +299,7 @@ mygo.NewWindow(mygo.WindowOptions{URL: "/", Frameless: true})
 ```
 
 ```ts
-import { currentWindow } from "mygo-runtime";
+import { currentWindow } from "@caelyreth/evil-mygo-runtime";
 
 minimizeButton.onclick = () => currentWindow.minimize();
 maximizeButton.onclick = () => currentWindow.toggleMaximize();
@@ -405,7 +405,7 @@ Files dragged from Finder or Explorer and dropped on the page reach the
 page with their paths, which DOM drop events do not tell:
 
 ```ts
-import { onFileDrop } from "mygo-runtime";
+import { onFileDrop } from "@caelyreth/evil-mygo-runtime";
 
 onFileDrop(({ paths, x, y }) => {
   const target = document.elementFromPoint(x, y);
@@ -456,13 +456,13 @@ by are what the media queries do not tell a page: they are CSS variables on
 }
 ```
 
-`preferences()` of `mygo-runtime` returns the settings themselves, current
+`preferences()` of `@caelyreth/evil-mygo-runtime` returns the settings themselves, current
 from document start on, and `onPreferences` tells their changes, which only
 the desktop makes; a component reads the first and subscribes to the
 second, as with `matchMedia`:
 
 ```ts
-import { onPreferences, preferences, type ThemePreferences } from "mygo-runtime";
+import { onPreferences, preferences, type ThemePreferences } from "@caelyreth/evil-mygo-runtime";
 
 const apply = ({ reduceTransparency }: ThemePreferences) =>
   document.documentElement.classList.toggle("opaque", reduceTransparency);
@@ -507,7 +507,7 @@ flyout of the window leaves it active, where DOM focus would leave the
 page. Panels, flyouts without a
 parent and windows `SetActiveAppearance` keeps active always are. A page
 starts active and is told otherwise as its DOM is ready; `windowActive()`
-of `mygo-runtime` reads the state and `onWindowActive` tells its changes.
+of `@caelyreth/evil-mygo-runtime` reads the state and `onWindowActive` tells its changes.
 The material behind a transparent page follows on its own (macOS's in
 windows other than panels and flyouts, Windows's Mica). See
 [native UI](ui/windows.md#active-and-inactive-windows) for windows that

@@ -8,10 +8,10 @@ import (
 	"testing"
 	"unsafe"
 
-	"github.com/egoist/mygo/internal/gpu"
+	"github.com/caelyreth/evil-mygo/internal/gpu"
 	"github.com/go-webgpu/webgpu/wgpu"
 
-	"github.com/egoist/mygo/internal/scene"
+	"github.com/caelyreth/evil-mygo/internal/scene"
 )
 
 func TestRendererPartialFrame(t *testing.T) {

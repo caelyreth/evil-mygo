@@ -5,7 +5,7 @@ package darwin
 import (
 	"unicode/utf16"
 
-	"github.com/egoist/mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/platform"
 )
 
 // attributedAccessString returns the attributed string of the UTF-16

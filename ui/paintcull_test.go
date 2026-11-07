@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/egoist/mygo/internal/scene"
+	"github.com/caelyreth/evil-mygo/internal/scene"
 )
 
 // pcExtras style the random trees' elements further for painting: moved

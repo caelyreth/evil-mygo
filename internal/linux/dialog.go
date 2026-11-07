@@ -8,7 +8,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/egoist/mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/platform"
 )
 
 type dialogs struct{ b *Backend }

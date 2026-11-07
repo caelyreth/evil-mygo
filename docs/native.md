@@ -377,11 +377,11 @@ calls that need the running app, `Preferences` panics in `main` before
 `App.Run`, and another goroutine calling it waits for the app to start.
 
 Pages get them from document start on, as `preferences()` of
-`mygo-runtime` and the `--mygo-accent` and `--mygo-text-scale` CSS
+`@caelyreth/evil-mygo-runtime` and the `--mygo-accent` and `--mygo-text-scale` CSS
 variables, see [the frontend guide](frontend.md#accent-color-and-accessibility);
 `prefers-reduced-motion` and `prefers-contrast` already follow the desktop.
 A `ThemePreferences` sent through an event or returned by a bound method
-is that same JSON, and the generated client types it with mygo-runtime's
+is that same JSON, and the generated client types it with @caelyreth/evil-mygo-runtime's
 `ThemePreferences`.
 
 ## Power
@@ -517,7 +517,7 @@ settings as the pages do, and MyGo's own requests use it: those of the
 Your own clients opt in with its transport:
 
 ```go
-import "github.com/egoist/mygo/netproxy"
+import "github.com/caelyreth/evil-mygo/netproxy"
 
 client := &http.Client{Transport: netproxy.Transport(), Timeout: time.Minute}
 ```

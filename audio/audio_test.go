@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/egoist/mygo/internal/wait"
+	"github.com/caelyreth/evil-mygo/internal/wait"
 )
 
 // setup mixes by hand, with nothing playing.

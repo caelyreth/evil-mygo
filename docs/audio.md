@@ -8,8 +8,8 @@ included.
 
 ```go
 import (
-	"github.com/egoist/mygo/audio"
-	_ "github.com/egoist/mygo/audio/vorbis" // Ogg Vorbis
+	"github.com/caelyreth/evil-mygo/audio"
+	_ "github.com/caelyreth/evil-mygo/audio/vorbis" // Ogg Vorbis
 )
 
 //go:embed sounds

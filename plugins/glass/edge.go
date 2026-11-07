@@ -1,6 +1,6 @@
 package glass
 
-import "github.com/egoist/mygo/ui"
+import "github.com/caelyreth/evil-mygo/ui"
 
 // ScrollEdge is the scroll edge effect of macOS 26 and later, a
 // ui.Material: what macOS draws over content scrolling under a bar of

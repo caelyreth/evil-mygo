@@ -5,9 +5,9 @@ package e2e
 import (
 	"testing"
 
-	"github.com/egoist/mygo"
-	win "github.com/egoist/mygo/internal/windows"
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo"
+	win "github.com/caelyreth/evil-mygo/internal/windows"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // Hit-test codes.

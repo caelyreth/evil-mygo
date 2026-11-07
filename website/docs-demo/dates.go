@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // datesHex is a color in hex, as the color picker shows it.

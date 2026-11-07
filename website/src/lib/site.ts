@@ -1,8 +1,8 @@
 export const site = {
-  name: "MyGo",
-  url: "https://mygo.egoist.dev",
-  title: "MyGo — Desktop apps in Go, with native UI or a web frontend",
+  name: "evil-mygo",
+  url: (import.meta.env?.VITE_SITE_URL || (typeof process !== "undefined" && process.env.VITE_SITE_URL) || "http://localhost:3000").replace(/\/$/, ""),
+  title: "evil-mygo — A MyGo fork for native GPU scenes",
   description:
-    "Build desktop apps in Go. Windows draw native UI that MyGo paints on the GPU, written in Go alone with package ui, or show a web frontend in the system webview that calls Go through a TypeScript client generated from your code. Pure Go with no cgo, and a few megabytes per app.",
-  repo: "https://github.com/egoist/mygo",
+    "An independently versioned fork of MyGo, focused on WebGPU scenes, shared GPU textures and interactive native UI on three-dimensional surfaces. Includes the shared MyGo framework documentation.",
+  repo: "https://github.com/caelyreth/evil-mygo",
 }

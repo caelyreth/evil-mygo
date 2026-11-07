@@ -13,8 +13,8 @@ import (
 	"github.com/ebitengine/purego/objc"
 	"github.com/go-webgpu/webgpu/wgpu"
 
-	"github.com/egoist/mygo/internal/gpu"
-	"github.com/egoist/mygo/internal/scene"
+	"github.com/caelyreth/evil-mygo/internal/gpu"
+	"github.com/caelyreth/evil-mygo/internal/scene"
 )
 
 // NativeRenderer draws MyGo scenes through a wgpu-native surface backed by

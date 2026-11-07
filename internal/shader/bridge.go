@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/egoist/mygo/internal/shaderir"
+	"github.com/caelyreth/evil-mygo/internal/shaderir"
 )
 
 // MaxImages is how many images a shader reads, image0 to image3.

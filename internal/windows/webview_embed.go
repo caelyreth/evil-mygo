@@ -8,7 +8,7 @@ import (
 	"slices"
 	"unsafe"
 
-	"github.com/egoist/mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/platform"
 )
 
 // A web view in a window of native UI (platform.Surface.NewWebView) is a

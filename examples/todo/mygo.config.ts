@@ -1,4 +1,4 @@
-import { defineConfig } from "mygo-cli";
+import { defineConfig } from "@caelyreth/evil-mygo-cli";
 
 export default defineConfig({
   name: "Todo",

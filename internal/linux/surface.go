@@ -13,8 +13,8 @@ import (
 
 	"github.com/ebitengine/purego"
 
-	"github.com/egoist/mygo/internal/gpu/gl"
-	"github.com/egoist/mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/gpu/gl"
+	"github.com/caelyreth/evil-mygo/internal/platform"
 )
 
 // The surface of a window that shows content MyGo draws itself is a

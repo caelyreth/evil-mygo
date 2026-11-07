@@ -1,7 +1,7 @@
 // Package i18ngen reads the catalogs of an app's messages, checks them,
 // and writes their typed accessors: Go functions in the catalogs'
 // directory, which embed and register them, and a TypeScript module that
-// formats the same messages in pages with mygo-runtime. `mygo generate`,
+// formats the same messages in pages with @caelyreth/evil-mygo-runtime. `mygo generate`,
 // `mygo dev`, `mygo build` and `mygo i18n check` use it, and so does
 // internal/l10n for MyGo's own strings.
 package i18ngen
@@ -20,7 +20,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/egoist/mygo/i18n"
+	"github.com/caelyreth/evil-mygo/i18n"
 )
 
 // Options say what catalogs to read.
@@ -38,7 +38,7 @@ type Options struct {
 	// keys "<namespace>.<key>" change, by namespace.
 	Libraries map[string]*Catalog
 	// Translations are the languages MyGo's own strings are translated
-	// to, each in a package of github.com/egoist/mygo/locales, which the
+	// to, each in a package of github.com/caelyreth/evil-mygo/locales, which the
 	// accessors of an app's catalogs import for the app's languages.
 	Translations []string
 	// Own is set for MyGo's own strings (internal/l10n), whose accessors

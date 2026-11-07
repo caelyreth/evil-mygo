@@ -2,7 +2,7 @@
 // without cgo. Each window shows a web page, in the system webview
 // (WKWebView on macOS, WebKitGTK on Linux, WebView2 on Windows), or native
 // UI that MyGo draws itself, written in Go with package
-// [github.com/egoist/mygo/ui]; one app can have windows of both kinds.
+// [github.com/caelyreth/evil-mygo/ui]; one app can have windows of both kinds.
 //
 // A window with a web page shows the app's frontend, which calls the Go
 // services the app binds through a TypeScript client that `mygo generate`
@@ -63,11 +63,21 @@ import (
 	"runtime"
 	"sync"
 
-	"github.com/egoist/mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/platform"
+	buildversion "github.com/caelyreth/evil-mygo/internal/version"
 )
 
-// Version is the MyGo version.
-const Version = "0.8.0"
+// Version is the independent evil-mygo release version.
+const Version = buildversion.Version
+
+// UpstreamVersion is the MyGo release at this fork's upstream baseline.
+const UpstreamVersion = buildversion.UpstreamVersion
+
+// UpstreamRevision is the full upstream commit integrated at that baseline.
+const UpstreamRevision = buildversion.UpstreamRevision
+
+// UpstreamRepository is the original MyGo project's repository.
+const UpstreamRepository = buildversion.UpstreamRepository
 
 func init() {
 	// Cocoa, GTK and Win32 all require the UI to live on the thread that

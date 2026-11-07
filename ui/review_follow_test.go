@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	transfer "github.com/egoist/mygo/transfer"
+	transfer "github.com/caelyreth/evil-mygo/transfer"
 )
 
 func followTester(s *ListState, n *int, last *float32, below *float32) (*Tester, *time.Time) {

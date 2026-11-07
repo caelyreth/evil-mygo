@@ -1,6 +1,6 @@
 // Builds the mygo binaries of the platform packages in npm/, for every
 // platform or for those given as arguments (e.g. `bun run build.ts
-// darwin-arm64`), and writes the manifests of mygo-cli and its platform
+// darwin-arm64`), and writes the manifests of @caelyreth/evil-mygo-cli and its platform
 // packages with the version of the Go module (mygo.Version), and their
 // license.
 import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
@@ -22,22 +22,34 @@ export const goTargets: Record<string, [goos: string, goarch: string]> = {
 
 const osNames: Record<string, string> = { darwin: "macOS", linux: "Linux", win32: "Windows" };
 
-const repository = { type: "git", url: "git+https://github.com/egoist/mygo.git" };
+const repository = { type: "git", url: "git+https://github.com/caelyreth/evil-mygo.git" };
 
-/** Returns mygo.Version, which every package is released with. */
-export async function version(): Promise<string> {
-  const source = await readFile(join(root, "mygo.go"), "utf8");
-  const match = source.match(/^const Version = "([^"]+)"$/m);
-  if (!match?.[1]) throw new Error("mygo.go declares no Version");
-  return match[1];
+/** The canonical Go metadata, shared by the public API, CLI and release scripts. */
+export const versionFile = "internal/version/version.go";
+
+export async function releaseInfo() {
+  const source = await readFile(join(root, versionFile), "utf8");
+  function value(name: string): string {
+    const match = source.match(new RegExp(`^const ${name} = "([^"]+)"$`, "m"));
+    if (!match?.[1]) throw new Error(`${versionFile} declares no ${name}`);
+    return match[1];
+  }
+  return {
+    version: value("Version"),
+    upstreamVersion: value("UpstreamVersion"),
+    upstreamRevision: value("UpstreamRevision"),
+    upstreamRepository: value("UpstreamRepository"),
+  };
 }
 
-/**
- * Returns the name of a platform package. Its scope keeps npm from taking
- * names such as mygo-cli-win32-x64 for spam.
- */
+/** Returns the independent fork SemVer used for dependency versions and tags. */
+export async function version(): Promise<string> {
+  return (await releaseInfo()).version;
+}
+
+/** Returns a platform binary package in the fork's npm scope. */
 export function platformName(platform: string): string {
-  return `@egoist/mygo-cli-${platform}`;
+  return `@caelyreth/evil-mygo-cli-${platform}`;
 }
 
 /** Returns the directory of a platform package. */
@@ -45,7 +57,7 @@ export function platformDir(platform: string): string {
   return join(dir, "npm", platform);
 }
 
-/** Writes the manifests of mygo-cli and its platform packages. */
+/** Writes the manifests of @caelyreth/evil-mygo-cli and its platform packages. */
 export async function writeManifests(v: string): Promise<void> {
   const main = JSON.parse(await readFile(join(dir, "package.json"), "utf8"));
   main.version = v;
@@ -54,7 +66,7 @@ export async function writeManifests(v: string): Promise<void> {
   for (const platform of platforms) {
     const [os, cpu] = platform.split("-") as [string, string];
     const name = platformName(platform);
-    const description = `The ${osNames[os]} ${cpu} binary of mygo-cli`;
+    const description = `The ${osNames[os]} ${cpu} binary of @caelyreth/evil-mygo-cli`;
     await mkdir(platformDir(platform), { recursive: true });
     await writeJSON(join(platformDir(platform), "package.json"), {
       name,
@@ -70,8 +82,8 @@ export async function writeManifests(v: string): Promise<void> {
     await copyFile(join(root, "LICENSE"), join(platformDir(platform), "LICENSE"));
     await writeFile(
       join(platformDir(platform), "README.md"),
-      `# ${name}\n\n${description}, the command line tool of MyGo. Install\n` +
-        `[mygo-cli](https://www.npmjs.com/package/mygo-cli) instead: package managers\n` +
+      `# ${name}\n\n${description}, the command line tool of evil-mygo. Install\n` +
+        `[@caelyreth/evil-mygo-cli](https://www.npmjs.com/package/@caelyreth/evil-mygo-cli) instead: package managers\n` +
         `install the package of the platform they run on.\n`,
     );
   }

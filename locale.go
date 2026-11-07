@@ -9,9 +9,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/egoist/mygo/i18n"
-	"github.com/egoist/mygo/internal/l10n"
-	"github.com/egoist/mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/i18n"
+	"github.com/caelyreth/evil-mygo/internal/l10n"
+	"github.com/caelyreth/evil-mygo/internal/platform"
 )
 
 // The locale model: the one language the app shows, which its own texts,
@@ -264,7 +264,7 @@ func (a *Application) startLocale() {
 	langs := appLanguages(locales.languages)
 	locales.mu.Unlock()
 	for _, missing := range missingTranslations(langs, l10n.Languages, l10n.Catalog.Languages()) {
-		log.Printf("mygo: the app is written in %s, but MyGo's own strings are in English there: import _ \"github.com/egoist/mygo/locales/%s\", as the code mygo generate writes for an app's catalogs does, or translate them with keys \"mygo.<key>\" in the app's catalog", missing[0], missing[1])
+		log.Printf("mygo: the app is written in %s, but MyGo's own strings are in English there: import _ \"github.com/caelyreth/evil-mygo/locales/%s\", as the code mygo generate writes for an app's catalogs does, or translate them with keys \"mygo.<key>\" in the app's catalog", missing[0], missing[1])
 	}
 }
 

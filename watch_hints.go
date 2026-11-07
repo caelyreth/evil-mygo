@@ -11,7 +11,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/egoist/mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/platform"
 )
 
 // fileWatchLooker is what the goroutine of a watch looks with: the

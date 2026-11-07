@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/egoist/mygo/internal/shader"
-	"github.com/egoist/mygo/internal/shaderir/wgsl"
+	"github.com/caelyreth/evil-mygo/internal/shader"
+	"github.com/caelyreth/evil-mygo/internal/shaderir/wgsl"
 )
 
 func TestFragmentWritesWGSL(t *testing.T) {

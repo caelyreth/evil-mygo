@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // parserHighlighter stands for a parser's highlighter, as tree-sitter's

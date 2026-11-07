@@ -25,7 +25,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/egoist/mygo/internal/shaderir"
+	"github.com/caelyreth/evil-mygo/internal/shaderir"
 )
 
 func canTruncateToInteger(v gconstant.Value) bool {

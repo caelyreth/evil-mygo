@@ -9,8 +9,8 @@ import (
 	"unicode/utf16"
 	"unicode/utf8"
 
-	"github.com/egoist/mygo/internal/rope"
-	"github.com/egoist/mygo/internal/text"
+	"github.com/caelyreth/evil-mygo/internal/rope"
+	"github.com/caelyreth/evil-mygo/internal/text"
 )
 
 // buffer is the text of a text input: the string the app's value holds,

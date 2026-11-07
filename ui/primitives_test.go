@@ -7,8 +7,8 @@ import (
 	"math"
 	"testing"
 
-	"github.com/egoist/mygo/internal/platform"
-	"github.com/egoist/mygo/internal/vec"
+	"github.com/caelyreth/evil-mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/vec"
 )
 
 // These tests cover what widgets of your own are made of: the states and

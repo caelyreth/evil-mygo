@@ -3,7 +3,7 @@ package ui
 import (
 	"runtime"
 
-	"github.com/egoist/mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/platform"
 )
 
 // Key identifies a key. Letter and digit keys follow the keyboard layout:

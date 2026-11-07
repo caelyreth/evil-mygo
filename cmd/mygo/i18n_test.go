@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/egoist/mygo/internal/i18ngen"
+	"github.com/caelyreth/evil-mygo/internal/i18ngen"
 )
 
 func TestI18nConfig(t *testing.T) {
@@ -49,9 +49,9 @@ func TestI18nModule(t *testing.T) {
 		{"without a frontend", `{"i18n": {}}`, nil, ""},
 		{"a workspace root", `{"i18n": {}}`, map[string]string{"package.json": `{"private": true, "workspaces": ["website"]}`}, ""},
 		{"a Yarn workspace root", `{"i18n": {}}`, map[string]string{"package.json": `{"workspaces": {"packages": ["site"]}}`}, ""},
-		{"the app's own package.json", `{"i18n": {}}`, map[string]string{"package.json": `{"name": "app", "dependencies": {"mygo-runtime": "^1"}}`}, "src/locales.ts"},
-		{"a package.json of native UI", `{"i18n": {}}`, map[string]string{"package.json": `{"name": "app", "devDependencies": {"mygo-cli": "^1"}}`}, ""},
-		{"a frontend directory", `{"i18n": {}}`, map[string]string{"frontend/package.json": `{"dependencies": {"mygo-runtime": "^1"}}`}, "frontend/src/locales.ts"},
+		{"the app's own package.json", `{"i18n": {}}`, map[string]string{"package.json": `{"name": "app", "dependencies": {"@caelyreth/evil-mygo-runtime": "^1"}}`}, "src/locales.ts"},
+		{"a package.json of native UI", `{"i18n": {}}`, map[string]string{"package.json": `{"name": "app", "devDependencies": {"@caelyreth/evil-mygo-cli": "^1"}}`}, ""},
+		{"a frontend directory", `{"i18n": {}}`, map[string]string{"frontend/package.json": `{"dependencies": {"@caelyreth/evil-mygo-runtime": "^1"}}`}, "frontend/src/locales.ts"},
 		{"the frontend options", `{"i18n": {}, "frontendDist": "dist"}`, nil, "locales.ts"},
 		{"an explicit bindings path", `{"bindings": "web/api.ts", "i18n": {}}`, nil, "web/locales.ts"},
 		{"explicit bindings at a workspace root", `{"bindings": "web/api.ts", "i18n": {}}`, map[string]string{"package.json": `{"workspaces": ["website"]}`}, "web/locales.ts"},
@@ -153,7 +153,7 @@ func TestI18nApp(t *testing.T) {
 	checkout, _ := filepath.Abs(filepath.Join("..", ".."))
 	sum, _ := os.ReadFile(filepath.Join(checkout, "go.sum"))
 	writeFiles(t, dir, map[string]string{
-		"go.mod":          "module demo-app\n\ngo " + goVersion() + "\n\nrequire github.com/egoist/mygo v0.0.0\n\nreplace github.com/egoist/mygo => " + checkout + "\n",
+		"go.mod":          "module demo-app\n\ngo " + goVersion() + "\n\nrequire github.com/caelyreth/evil-mygo v0.0.0\n\nreplace github.com/caelyreth/evil-mygo => " + checkout + "\n",
 		"go.sum":          string(sum),
 		jsonConfig:        `{"i18n": {}}`,
 		"locales/en.json": `{"files": "{n, plural, one {# file} other {# files}}"}`,
@@ -164,7 +164,7 @@ import (
 	"fmt"
 
 	"demo-app/locales"
-	"github.com/egoist/mygo/i18n"
+	"github.com/caelyreth/evil-mygo/i18n"
 )
 
 func main() {

@@ -4,7 +4,7 @@ import (
 	"math"
 	"time"
 
-	"github.com/egoist/mygo/internal/scene"
+	"github.com/caelyreth/evil-mygo/internal/scene"
 )
 
 // DraggableOptions are how an element that the pointer drags moves

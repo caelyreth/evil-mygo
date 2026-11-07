@@ -7,8 +7,8 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/egoist/mygo/internal/platform"
-	"github.com/egoist/mygo/transfer"
+	"github.com/caelyreth/evil-mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/transfer"
 )
 
 // Backend reports that the platform is not supported.

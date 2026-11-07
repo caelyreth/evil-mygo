@@ -4,7 +4,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/egoist/mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/platform"
 )
 
 func dragSelectList(t *testing.T, n int) (*Tester, *ListState, *Selection[int]) {

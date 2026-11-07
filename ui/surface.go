@@ -1,6 +1,6 @@
 package ui
 
-import "github.com/egoist/mygo/internal/scene"
+import "github.com/caelyreth/evil-mygo/internal/scene"
 
 // UV is a point in a surface's parameter space. U runs across the surface
 // and V runs down it, both from 0 to 1.

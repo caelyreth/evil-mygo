@@ -6,8 +6,8 @@ import (
 	"encoding/json/v2"
 	"testing"
 
-	"github.com/egoist/mygo/internal/platform"
-	"github.com/egoist/mygo/internal/wait"
+	"github.com/caelyreth/evil-mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/wait"
 )
 
 func TestNetwork(t *testing.T) {

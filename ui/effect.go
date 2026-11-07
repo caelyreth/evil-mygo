@@ -3,7 +3,7 @@ package ui
 import (
 	"math"
 
-	"github.com/egoist/mygo/internal/scene"
+	"github.com/caelyreth/evil-mygo/internal/scene"
 )
 
 // Effect draws an element from what it renders, as SwiftUI's colorEffect,

@@ -12,7 +12,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/egoist/mygo/internal/wait"
+	"github.com/caelyreth/evil-mygo/internal/wait"
 )
 
 func TestParseArgs(t *testing.T) {

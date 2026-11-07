@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/egoist/mygo/ui"
-	"github.com/egoist/mygo/ui/markdown/parser"
+	"github.com/caelyreth/evil-mygo/ui"
+	"github.com/caelyreth/evil-mygo/ui/markdown/parser"
 )
 
 // mathRecorder makes inline math objects of every TeX but "bad", and

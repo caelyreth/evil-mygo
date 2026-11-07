@@ -1,6 +1,6 @@
 {
-  "name": "@mygo-plugins/sqlite",
-  "version": "0.8.0",
+  "name": "@caelyreth/evil-mygo-sqlite",
+  "version": "0.1.0",
   "description": "Parameterized SQLite queries and transactions for MyGo desktop apps",
   "keywords": [
     "mygo",
@@ -11,7 +11,7 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/egoist/mygo.git",
+    "url": "git+https://github.com/caelyreth/evil-mygo.git",
     "directory": "plugins/sqlite"
   },
   "license": "MIT",
@@ -34,9 +34,9 @@
     "test": "bun test"
   },
   "peerDependencies": {
-    "mygo-runtime": "^0.8.0"
+    "@caelyreth/evil-mygo-runtime": "^0.1.0"
   },
   "devDependencies": {
-    "mygo-runtime": "^0.8.0"
+    "@caelyreth/evil-mygo-runtime": "^0.1.0"
   }
 }

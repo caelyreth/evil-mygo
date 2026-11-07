@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/egoist/mygo/internal/scene"
+	"github.com/caelyreth/evil-mygo/internal/scene"
 )
 
 // strokesAndFills returns the glyphs the last frame painted in stroke and

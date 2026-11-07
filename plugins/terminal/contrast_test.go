@@ -3,7 +3,7 @@ package terminal
 import (
 	"testing"
 
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 func TestContrasted(t *testing.T) {

@@ -2,7 +2,7 @@
 
 package main
 
-import "github.com/egoist/mygo/ui"
+import "github.com/caelyreth/evil-mygo/ui"
 
 // Small print textures are native drawing commands, not images or GPU readbacks.
 func paintHUDHalftone(p *ui.Painter, r ui.Rect, color ui.Color) {

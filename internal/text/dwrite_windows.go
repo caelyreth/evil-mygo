@@ -15,8 +15,8 @@ import (
 	"syscall"
 	"unsafe"
 
+	"github.com/caelyreth/evil-mygo/internal/scene"
 	"github.com/ebitengine/purego"
-	"github.com/egoist/mygo/internal/scene"
 )
 
 // DirectWrite lays out paragraphs with IDWriteTextLayout, which finds the

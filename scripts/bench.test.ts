@@ -6,18 +6,18 @@ import { type Latest, type Run, latestCommits, merge, parse } from "./bench.ts";
 
 const output = `goos: darwin
 goarch: arm64
-pkg: github.com/egoist/mygo
+pkg: github.com/caelyreth/evil-mygo
 cpu: Apple M5
 BenchmarkCallNoop-10       	   43904	     27364 ns/op	   2.89 MB/s	     719 B/op	      14 allocs/op
 BenchmarkCallNoop-10       	   43000	     27000 ns/op	   2.91 MB/s	     720 B/op	      14 allocs/op
 BenchmarkCallNoop-10       	   44000	     29000 ns/op	   2.80 MB/s	     721 B/op	      14 allocs/op
 PASS
-ok  	github.com/egoist/mygo	9.634s
+ok  	github.com/caelyreth/evil-mygo	9.634s
 skipping e2e tests; set MYGO_E2E=1 to run them in a desktop session
-ok  	github.com/egoist/mygo/internal/e2e	0.376s
+ok  	github.com/caelyreth/evil-mygo/internal/e2e	0.376s
 goos: darwin
 goarch: arm64
-pkg: github.com/egoist/mygo/ui
+pkg: github.com/caelyreth/evil-mygo/ui
 cpu: Apple M5
 BenchmarkTextAreaType/1000-10        	    3018	   1258632 ns/op	  199799 B/op	     248 allocs/op
 BenchmarkTextAreaType/1000-10        	    3018	   1258000 ns/op	  199801 B/op	     250 allocs/op

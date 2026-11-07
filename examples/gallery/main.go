@@ -21,10 +21,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/egoist/mygo"
-	"github.com/egoist/mygo/plugins/glass"
-	"github.com/egoist/mygo/ui"
-	"github.com/egoist/mygo/ui/richtext"
+	"github.com/caelyreth/evil-mygo"
+	"github.com/caelyreth/evil-mygo/plugins/glass"
+	"github.com/caelyreth/evil-mygo/ui"
+	"github.com/caelyreth/evil-mygo/ui/richtext"
 )
 
 type gallery struct {
@@ -837,7 +837,7 @@ func (g *gallery) controls(c *ui.Context) {
 					}
 				}
 			})
-			ui.Link(c, "Open mygo.dev", "https://github.com/egoist/mygo")
+			ui.Link(c, "Open mygo.dev", "https://github.com/caelyreth/evil-mygo")
 		})
 		ui.Text(c, "Tab moves the focus; Enter or Space presses the focused button.").TextColor(t.TextMuted)
 	})

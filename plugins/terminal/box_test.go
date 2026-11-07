@@ -4,7 +4,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // Powerline's rounded caps span the cell as its triangles do: at a line

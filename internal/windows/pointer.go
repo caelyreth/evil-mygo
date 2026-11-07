@@ -5,7 +5,7 @@ package windows
 import (
 	"unsafe"
 
-	"github.com/egoist/mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/platform"
 )
 
 // Pens and fingers come as WM_POINTER messages, which the surface leaves

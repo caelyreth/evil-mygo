@@ -15,8 +15,8 @@ import (
 
 	"github.com/ebitengine/purego"
 
-	"github.com/egoist/mygo/internal/platform"
-	"github.com/egoist/mygo/transfer"
+	"github.com/caelyreth/evil-mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/transfer"
 )
 
 var (

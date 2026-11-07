@@ -23,7 +23,7 @@ import (
 	"math"
 	"time"
 
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // A Game is a game View runs: it updates the game's world in fixed

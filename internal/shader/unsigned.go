@@ -6,7 +6,7 @@ import (
 	"go/token"
 	"math"
 
-	"github.com/egoist/mygo/internal/shaderir"
+	"github.com/caelyreth/evil-mygo/internal/shaderir"
 )
 
 // blockEnv is a block's types, as the compiler parses it.

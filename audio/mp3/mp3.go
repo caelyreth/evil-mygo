@@ -1,14 +1,14 @@
 // Package mp3 decodes MP3 files for package audio, with
 // github.com/hajimehoshi/go-mp3. Import it for its side effect:
 //
-//	import _ "github.com/egoist/mygo/audio/mp3"
+//	import _ "github.com/caelyreth/evil-mygo/audio/mp3"
 package mp3
 
 import (
 	"encoding/binary"
 	"io"
 
-	"github.com/egoist/mygo/audio"
+	"github.com/caelyreth/evil-mygo/audio"
 	gomp3 "github.com/hajimehoshi/go-mp3"
 )
 

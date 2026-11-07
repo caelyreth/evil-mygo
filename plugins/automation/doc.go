@@ -12,7 +12,7 @@
 //
 //	package main
 //
-//	import _ "github.com/egoist/mygo/plugins/automation"
+//	import _ "github.com/caelyreth/evil-mygo/plugins/automation"
 //
 // Then it listens only when the environment variable MYGO_AUTOMATION names
 // the path of a Unix domain socket, which only the user can open, and

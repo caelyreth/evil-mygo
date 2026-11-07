@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/egoist/mygo"
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // TestAccessDisabled reads, as VoiceOver does, a button that is only

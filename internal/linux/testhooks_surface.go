@@ -7,8 +7,8 @@ import (
 	"sync"
 	"unicode/utf8"
 
-	"github.com/egoist/mygo/internal/platform"
-	"github.com/egoist/mygo/transfer"
+	"github.com/caelyreth/evil-mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/transfer"
 )
 
 // Hooks for tests of native UI with input methods, file drops and

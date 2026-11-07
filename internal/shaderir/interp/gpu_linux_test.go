@@ -7,11 +7,11 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/egoist/mygo/internal/gpu/gl"
-	"github.com/egoist/mygo/internal/gpu/gputest"
-	"github.com/egoist/mygo/internal/scene"
-	"github.com/egoist/mygo/internal/shaderir/glsl"
-	"github.com/egoist/mygo/internal/shaderir/interp"
+	"github.com/caelyreth/evil-mygo/internal/gpu/gl"
+	"github.com/caelyreth/evil-mygo/internal/gpu/gputest"
+	"github.com/caelyreth/evil-mygo/internal/scene"
+	"github.com/caelyreth/evil-mygo/internal/shaderir/glsl"
+	"github.com/caelyreth/evil-mygo/internal/shaderir/interp"
 )
 
 // TestOpenGL draws a shader with OpenGL 3.3 and OpenGL ES 3.0, its GLSL

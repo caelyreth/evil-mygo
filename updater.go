@@ -23,8 +23,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/egoist/mygo/internal/update"
-	"github.com/egoist/mygo/netproxy"
+	"github.com/caelyreth/evil-mygo/internal/update"
+	"github.com/caelyreth/evil-mygo/netproxy"
 )
 
 // Set by `mygo build` with -ldflags -X when mygo.config.ts configures updates:

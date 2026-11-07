@@ -7,7 +7,7 @@ import (
 
 	"github.com/go-webgpu/webgpu/wgpu"
 
-	"github.com/egoist/mygo/internal/gpu"
+	"github.com/caelyreth/evil-mygo/internal/gpu"
 )
 
 //go:embed clear.wgsl

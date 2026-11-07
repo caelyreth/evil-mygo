@@ -6,7 +6,7 @@ import (
 	"encoding/base64"
 	"fmt"
 
-	"github.com/egoist/mygo/plugins/terminal/internal/vt"
+	"github.com/caelyreth/evil-mygo/plugins/terminal/internal/vt"
 )
 
 // imageKey is a placement of an image as a Mirror placed it in the other

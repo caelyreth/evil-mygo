@@ -8,9 +8,9 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/egoist/mygo"
-	"github.com/egoist/mygo/internal/wait"
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo"
+	"github.com/caelyreth/evil-mygo/internal/wait"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // TestContentWindowHiddenReadyToShow checks that a window of native UI

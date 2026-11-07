@@ -3,7 +3,7 @@ package main
 import (
 	"fmt"
 
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // Icons of the dialogs' demos.

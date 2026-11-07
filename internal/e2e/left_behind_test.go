@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/egoist/mygo"
+	"github.com/caelyreth/evil-mygo"
 )
 
 // watchLeftBehind notes what a package's tests share and one can change for

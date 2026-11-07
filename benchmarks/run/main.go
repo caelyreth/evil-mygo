@@ -198,7 +198,7 @@ func build(root, bin, f string) (string, error) {
 	var cmd *exec.Cmd
 	if f == "mygo" {
 		cmd = exec.Command("go", "build", "-trimpath", "-tags", "mygo_noinspector",
-			"-ldflags", "-s -w -X github.com/egoist/mygo.production=1", "-o", path, "./benchmarks/mygo")
+			"-ldflags", "-s -w -X github.com/caelyreth/evil-mygo.production=1", "-o", path, "./benchmarks/mygo")
 		cmd.Dir = root
 	} else {
 		cmd = exec.Command("cargo", "build", "--release", "--locked")
@@ -387,7 +387,7 @@ func versions(root string) map[string]string {
 		"go":    strings.TrimPrefix(strings.Fields(output(root, "go", "version"))[2], "go"),
 		"rustc": strings.Fields(output(root, "rustc", "--version"))[1],
 	}
-	if b, err := os.ReadFile(filepath.Join(root, "mygo.go")); err == nil {
+	if b, err := os.ReadFile(filepath.Join(root, "internal", "version", "version.go")); err == nil {
 		if m := regexp.MustCompile(`const Version = "([^"]+)"`).FindSubmatch(b); m != nil {
 			v["mygo"] = string(m[1])
 		}

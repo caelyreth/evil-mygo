@@ -7,7 +7,7 @@ import (
 	"runtime"
 	"sync"
 
-	"github.com/egoist/mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/platform"
 )
 
 // Session is a website data store of pages: their cookies, local and

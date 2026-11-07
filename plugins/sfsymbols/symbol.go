@@ -3,7 +3,7 @@ package sfsymbols
 import (
 	"math"
 
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // SymbolElement is the element Symbol makes: a ui.Element, with the

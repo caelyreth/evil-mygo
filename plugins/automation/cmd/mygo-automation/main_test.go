@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/egoist/mygo/internal/automationcli"
+	"github.com/caelyreth/evil-mygo/internal/automationcli"
 )
 
 // TestSkills checks that skills prints SKILL.md as it is, and that the

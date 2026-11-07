@@ -6,10 +6,10 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/egoist/mygo"
-	"github.com/egoist/mygo/transfer"
-	"github.com/egoist/mygo/ui"
-	"github.com/egoist/mygo/ui/richtext"
+	"github.com/caelyreth/evil-mygo"
+	"github.com/caelyreth/evil-mygo/transfer"
+	"github.com/caelyreth/evil-mygo/ui"
+	"github.com/caelyreth/evil-mygo/ui/richtext"
 )
 
 // TestRichTextEditor drives a rich text editor in a window through the

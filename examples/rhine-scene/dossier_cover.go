@@ -2,7 +2,7 @@
 
 package main
 
-import "github.com/egoist/mygo/ui"
+import "github.com/caelyreth/evil-mygo/ui"
 
 // The archive cover is deliberately not a reduced detail screen: identity,
 // material and custody remain legible at the browsing camera's oblique angle.

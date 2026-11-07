@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/egoist/mygo/ui"
-	"github.com/egoist/mygo/ui/shader"
+	"github.com/caelyreth/evil-mygo/ui"
+	"github.com/caelyreth/evil-mygo/ui/shader"
 )
 
 // A shader fills its rectangle, rounded, with what it computes from its

@@ -1,6 +1,6 @@
-// Publishes the npm packages of a release: mygo-runtime, the official
-// plugins' packages (@mygo-plugins/*), the platform
-// packages of mygo-cli with freshly built binaries, then mygo-cli, which
+// Publishes the npm packages of a release: @caelyreth/evil-mygo-runtime, the official
+// plugins' packages (@caelyreth/evil-mygo-*), the platform
+// packages of @caelyreth/evil-mygo-cli with freshly built binaries, then @caelyreth/evil-mygo-cli, which
 // depends on them, once npm serves them. Versions already on npm are
 // skipped, so a release that failed halfway can run again, and prereleases
 // get the next dist-tag. Arguments go to npm publish, e.g. --dry-run or
@@ -26,9 +26,9 @@ for (const platform of platforms) {
   publishing.push(publish(platformDir(platform)));
 }
 if (!(await Promise.all(publishing)).every(Boolean)) process.exit(1);
-// A package manager installs mygo-cli without the platform packages it
+// A package manager installs @caelyreth/evil-mygo-cli without the platform packages it
 // cannot fetch: bun then keeps them out of later installs while its lockfile
-// lacks them. The projects mygo init creates depend on mygo-runtime too.
+// lacks them. The projects mygo init creates depend on @caelyreth/evil-mygo-runtime too.
 if (!flags.includes("--dry-run")) {
   for (const pkg of [...libraries, ...platforms.map(platformDir)]) await waitUntilServed(await manifest(pkg));
 }

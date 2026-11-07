@@ -10,7 +10,7 @@ Swift apps. It is all Go: no JavaScript package, and nothing to
 `mygo.Use`. Pages reach it through the app's own bindings.
 
 ```go
-import "github.com/egoist/mygo/plugins/permissionflow"
+import "github.com/caelyreth/evil-mygo/plugins/permissionflow"
 
 st, err := permissionflow.Check(permissionflow.Accessibility)
 if err == nil && st != permissionflow.Granted {

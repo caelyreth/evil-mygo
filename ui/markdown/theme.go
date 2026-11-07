@@ -1,8 +1,8 @@
 package markdown
 
 import (
-	"github.com/egoist/mygo/ui"
-	"github.com/egoist/mygo/ui/editor"
+	"github.com/caelyreth/evil-mygo/ui"
+	"github.com/caelyreth/evil-mygo/ui/editor"
 )
 
 // Theme is how Markdown looks: fonts, colors and spacing for each kind

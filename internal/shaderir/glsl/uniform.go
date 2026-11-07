@@ -3,7 +3,7 @@ package glsl
 import (
 	"fmt"
 
-	"github.com/egoist/mygo/internal/shaderir"
+	"github.com/caelyreth/evil-mygo/internal/shaderir"
 )
 
 // UniformLanes returns, for each lane of p's uniforms as package interp

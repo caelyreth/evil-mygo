@@ -5,8 +5,8 @@ package e2e
 import (
 	"testing"
 
-	"github.com/egoist/mygo"
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // A window with a material and the system's title bar extends its frame all

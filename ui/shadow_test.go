@@ -4,7 +4,7 @@ import (
 	"image/color"
 	"testing"
 
-	"github.com/egoist/mygo/internal/scene"
+	"github.com/caelyreth/evil-mygo/internal/scene"
 )
 
 // TestInsetShadow checks that an inner shadow tints the box just inside

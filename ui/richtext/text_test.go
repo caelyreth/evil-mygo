@@ -1,7 +1,7 @@
 package richtext
 
 import (
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/ui"
 	"math/rand/v2"
 	"strings"
 	"testing"

@@ -6,7 +6,7 @@ import (
 	"math"
 	"slices"
 
-	"github.com/egoist/mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/platform"
 )
 
 // Fingers on a touchscreen do what the mouse and a touchpad do, as on

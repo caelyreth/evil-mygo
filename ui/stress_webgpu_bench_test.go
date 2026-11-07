@@ -7,8 +7,8 @@ import (
 
 	"github.com/go-webgpu/webgpu/wgpu"
 
-	"github.com/egoist/mygo/internal/gpu/webgpu"
-	"github.com/egoist/mygo/internal/scene"
+	"github.com/caelyreth/evil-mygo/internal/gpu/webgpu"
+	"github.com/caelyreth/evil-mygo/internal/scene"
 )
 
 // BenchmarkStressFrameWebGPU runs the stress scenes through a reusable

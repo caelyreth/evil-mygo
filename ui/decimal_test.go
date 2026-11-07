@@ -5,7 +5,7 @@ import (
 	"math/big"
 	"testing"
 
-	"github.com/egoist/mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/platform"
 )
 
 // decimalTester shows a DecimalInput of *value in a field named Amount,

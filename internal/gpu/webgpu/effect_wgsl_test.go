@@ -8,9 +8,9 @@ import (
 
 	"github.com/go-webgpu/webgpu/wgpu"
 
-	"github.com/egoist/mygo/internal/scene"
-	"github.com/egoist/mygo/internal/shader"
-	"github.com/egoist/mygo/internal/shaderir/wgsl"
+	"github.com/caelyreth/evil-mygo/internal/scene"
+	"github.com/caelyreth/evil-mygo/internal/shader"
+	"github.com/caelyreth/evil-mygo/internal/shaderir/wgsl"
 )
 
 func TestEffectAcceptsGeneratedShaderLibrary(t *testing.T) {

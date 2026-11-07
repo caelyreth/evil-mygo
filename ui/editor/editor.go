@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/egoist/mygo/internal/l10n"
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/internal/l10n"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // The sides of a diff viewer, of options.diffSide.

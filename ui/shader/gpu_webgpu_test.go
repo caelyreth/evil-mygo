@@ -7,10 +7,10 @@ import (
 	"os"
 	"testing"
 
-	"github.com/egoist/mygo/internal/gpu/gputest"
-	"github.com/egoist/mygo/internal/gpu/webgpu"
-	"github.com/egoist/mygo/internal/scene"
-	"github.com/egoist/mygo/internal/shaderir"
+	"github.com/caelyreth/evil-mygo/internal/gpu/gputest"
+	"github.com/caelyreth/evil-mygo/internal/gpu/webgpu"
+	"github.com/caelyreth/evil-mygo/internal/scene"
+	"github.com/caelyreth/evil-mygo/internal/shaderir"
 )
 
 func TestWebGPUShader(t *testing.T) {

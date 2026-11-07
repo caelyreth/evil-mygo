@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // Items of a list box built only where it shows, and of a tree laid out

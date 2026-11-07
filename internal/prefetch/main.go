@@ -20,8 +20,8 @@ import (
 	"path/filepath"
 	"runtime"
 
-	"github.com/egoist/mygo/internal/download"
-	"github.com/egoist/mygo/internal/nsis"
+	"github.com/caelyreth/evil-mygo/internal/download"
+	"github.com/caelyreth/evil-mygo/internal/nsis"
 )
 
 func main() {

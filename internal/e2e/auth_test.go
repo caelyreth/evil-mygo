@@ -21,8 +21,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/egoist/mygo"
-	"github.com/egoist/mygo/internal/wait"
+	"github.com/caelyreth/evil-mygo"
+	"github.com/caelyreth/evil-mygo/internal/wait"
 )
 
 // offer sends v on ch unless ch is full: handlers run on the main thread,

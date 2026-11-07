@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/egoist/mygo/internal/fake"
-	"github.com/egoist/mygo/internal/surface"
+	"github.com/caelyreth/evil-mygo/internal/fake"
+	"github.com/caelyreth/evil-mygo/internal/surface"
 )
 
 // activeContent is a Content that records what its window tells of its

@@ -15,12 +15,12 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/egoist/mygo/internal/download"
+	"github.com/caelyreth/evil-mygo/internal/download"
 )
 
 // Release is the NSIS that mygo build downloads: the official zip,
 // checked against its SHA-256. The URLs are copies of that zip, tried in
-// order: the asset of the nsis-<version> release of MyGo's repository
+// order: the pinned asset of the upstream MyGo repository
 // first, since SourceForge, where NSIS publishes it, has been down for
 // hours at a time, its mirrors redirecting to it.
 var Release = struct {

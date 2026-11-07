@@ -5,8 +5,8 @@ package darwin
 import (
 	"fmt"
 
+	"github.com/caelyreth/evil-mygo/internal/platform"
 	"github.com/ebitengine/purego/objc"
-	"github.com/egoist/mygo/internal/platform"
 )
 
 // contentRules is the code of content rules, which LinkContentRules

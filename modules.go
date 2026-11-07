@@ -17,9 +17,9 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/egoist/mygo/internal/accelerator"
-	"github.com/egoist/mygo/internal/platform"
-	"github.com/egoist/mygo/transfer"
+	"github.com/caelyreth/evil-mygo/internal/accelerator"
+	"github.com/caelyreth/evil-mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/transfer"
 )
 
 var errLoopStopped = errors.New("mygo: the event loop has stopped")
@@ -339,7 +339,7 @@ const (
 
 // ThemePreferences are the accent color and the accessibility settings of
 // the desktop, which an app and its pages should follow. Pages get them
-// as JSON, as mygo-runtime's ThemePreferences, which is also what they
+// as JSON, as @caelyreth/evil-mygo-runtime's ThemePreferences, which is also what they
 // encode to: {"accent": "#rrggbb" or null, "reduceMotion": …,
 // "reduceTransparency": …, "highContrast": …, "textScale": …}.
 type ThemePreferences struct {
@@ -383,7 +383,7 @@ type ThemeModule struct {
 // Theme is the system appearance. Pages follow it through the
 // prefers-color-scheme media query, and the accent color and accessibility
 // settings through the --mygo-accent and --mygo-text-scale CSS variables
-// and preferences and onPreferences of mygo-runtime.
+// and preferences and onPreferences of @caelyreth/evil-mygo-runtime.
 var Theme = &ThemeModule{}
 
 // IsDark reports whether the app currently uses a dark appearance.
@@ -434,7 +434,7 @@ func themePreferences(p platform.Preferences) ThemePreferences {
 	return prefs
 }
 
-// themePreferencesJSON is ThemePreferences as pages see it, mygo-runtime's
+// themePreferencesJSON is ThemePreferences as pages see it, @caelyreth/evil-mygo-runtime's
 // ThemePreferences: the accent as a CSS color, null where there is none.
 type themePreferencesJSON struct {
 	Accent             *string `json:"accent"`
@@ -444,7 +444,7 @@ type themePreferencesJSON struct {
 	TextScale          float64 `json:"textScale"`
 }
 
-// MarshalJSON encodes the preferences as pages get them, mygo-runtime's
+// MarshalJSON encodes the preferences as pages get them, @caelyreth/evil-mygo-runtime's
 // ThemePreferences, with the accent as "#rrggbb" ("#rrggbbaa" when it is
 // not opaque), or null where the desktop has none.
 func (p ThemePreferences) MarshalJSON() ([]byte, error) {

@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/egoist/mygo/audio"
+	"github.com/caelyreth/evil-mygo/audio"
 )
 
 // tone.ogg is 0.5 s of a 440 Hz sine at 22.05 kHz, in stereo.

@@ -5,7 +5,7 @@ package ui
 import (
 	"time"
 
-	"github.com/egoist/mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/platform"
 )
 
 // Production builds (mygo build, unless MYGO_INSPECTOR=1 or --debug) leave

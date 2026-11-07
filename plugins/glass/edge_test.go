@@ -3,7 +3,7 @@ package glass
 import (
 	"testing"
 
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // edgeOver returns a tester of a window of black content 200 DIPs wide

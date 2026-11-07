@@ -10,7 +10,7 @@ changes collapsed, and the new text editable where it shows. It is a
 selections and commands, laid out and painted only where in view.
 
 ```go
-import "github.com/egoist/mygo/ui/editor"
+import "github.com/caelyreth/evil-mygo/ui/editor"
 
 lang := editor.LanguageFor("main.go")
 before, after := editor.NewBuffer(original), editor.NewBuffer(edited)

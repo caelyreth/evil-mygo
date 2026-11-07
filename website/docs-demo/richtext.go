@@ -3,8 +3,8 @@ package main
 import (
 	"fmt"
 
-	"github.com/egoist/mygo/ui"
-	"github.com/egoist/mygo/ui/richtext"
+	"github.com/caelyreth/evil-mygo/ui"
+	"github.com/caelyreth/evil-mygo/ui/richtext"
 )
 
 func init() {

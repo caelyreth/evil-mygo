@@ -3,7 +3,7 @@ package mygo
 import (
 	"fmt"
 
-	"github.com/egoist/mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/platform"
 )
 
 // FindOptions configures Page.FindInPage.

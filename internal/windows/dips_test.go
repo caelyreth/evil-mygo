@@ -3,7 +3,7 @@ package windows
 import (
 	"testing"
 
-	"github.com/egoist/mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/platform"
 )
 
 func display(x, y, width, height, dpi int) screenDisplay {

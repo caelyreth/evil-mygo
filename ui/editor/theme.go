@@ -1,8 +1,8 @@
 package editor
 
 import (
-	"github.com/egoist/mygo/internal/gamut"
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/internal/gamut"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // Theme colors editors and diffs. Colors left zero take

@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/egoist/mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/platform"
 )
 
 // savePNG writes the tester's frame into the directory MYGO_UI_PNG names,

@@ -3,7 +3,7 @@ package ui
 import (
 	"time"
 
-	"github.com/egoist/mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/platform"
 )
 
 // InputKind is the kind of an InputEvent.

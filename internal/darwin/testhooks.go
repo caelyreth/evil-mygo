@@ -11,10 +11,10 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/caelyreth/evil-mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/transfer"
 	"github.com/ebitengine/purego"
 	"github.com/ebitengine/purego/objc"
-	"github.com/egoist/mygo/internal/platform"
-	"github.com/egoist/mygo/transfer"
 )
 
 // The functions in this file drive native UI the way a user would, for the

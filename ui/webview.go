@@ -3,9 +3,9 @@ package ui
 import (
 	"slices"
 
-	"github.com/egoist/mygo/internal/platform"
-	"github.com/egoist/mygo/internal/scene"
-	"github.com/egoist/mygo/internal/surface"
+	"github.com/caelyreth/evil-mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/scene"
+	"github.com/caelyreth/evil-mygo/internal/surface"
 )
 
 // NativeWebView is a web view a window made for its content to show,

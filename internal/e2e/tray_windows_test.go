@@ -9,7 +9,7 @@ import (
 	"image/png"
 	"testing"
 
-	"github.com/egoist/mygo"
+	"github.com/caelyreth/evil-mygo"
 )
 
 // TestTrayAdded shows tray icons numbered by their IDs once NewTray is

@@ -37,7 +37,7 @@ import (
 //		return cmd.Wait()
 //	}
 //
-// and the page passes a Channel of mygo-runtime in its place, whose values
+// and the page passes a Channel of @caelyreth/evil-mygo-runtime in its place, whose values
 // it iterates or handles with onmessage:
 //
 //	const lines = new Channel<string>();

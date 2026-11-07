@@ -1,4 +1,4 @@
-# MyGo website
+# evil-mygo website
 
 The home page and, at `/docs`, the guides of [`../docs`](../docs), built with
 TanStack Start and shadcn/ui. Every page is prerendered at build time, and
@@ -11,6 +11,11 @@ bun run --cwd website build    # dist/client
 bun run --cwd website preview  # dist/client, served by wrangler as in production
 bun run --cwd website deploy   # build, then wrangler deploy
 ```
+
+Set `VITE_SITE_URL` to your site's public origin when building for deployment.
+It defaults to `http://localhost:3000`; this fork does not assume ownership of
+the upstream domain. Generated documentation links and repository links use
+this fork. Upstream analytics are not included.
 
 Pages of the docs are rendered from the markdown when the site is built:
 the order of the sidebar comes from the lists of `docs/README.md`, pages in

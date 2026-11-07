@@ -4,13 +4,13 @@
  * plugin with those directories:
  *
  * ```go
- * mygo.Use(watch.New(watch.Options{ // github.com/egoist/mygo/plugins/watch
+ * mygo.Use(watch.New(watch.Options{ // github.com/caelyreth/evil-mygo/plugins/watch
  * 	Roots: map[string]watch.Root{"project": {Path: dir, Recursive: true}},
  * }))
  * ```
  *
  * ```ts
- * import { watch } from "@mygo-plugins/watch";
+ * import { watch } from "@caelyreth/evil-mygo-watch";
  *
  * const watcher = await watch("project", { recursive: true });
  * for await (const events of watcher) {
@@ -20,7 +20,7 @@
  *
  * @module
  */
-import { Channel, call } from "mygo-runtime";
+import { Channel, call } from "@caelyreth/evil-mygo-runtime";
 
 /** The kind of a {@link FileEvent}. */
 export type FileOp = "create" | "write" | "remove" | "rename";

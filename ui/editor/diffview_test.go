@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/egoist/mygo/internal/diff"
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/internal/diff"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // checkHunks checks that hunks turn old's lines into new's.

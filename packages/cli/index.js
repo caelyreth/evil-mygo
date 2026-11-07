@@ -1,7 +1,7 @@
-// mygo-cli ships the mygo command line tool of MyGo as a prebuilt binary
+// @caelyreth/evil-mygo-cli ships the mygo command line tool of MyGo as a prebuilt binary
 // per platform. Each binary is in a package of its own,
-// @egoist/mygo-cli-<os>-<cpu>,
-// which mygo-cli lists as optional dependencies: package managers install
+// @caelyreth/evil-mygo-cli-<os>-<cpu>,
+// which @caelyreth/evil-mygo-cli lists as optional dependencies: package managers install
 // the one matching the machine's os and cpu fields.
 import { execFileSync } from "node:child_process";
 import { accessSync, chmodSync, constants, existsSync, readFileSync } from "node:fs";
@@ -16,7 +16,7 @@ const { version } = require("./package.json");
 /** The platforms with a prebuilt binary, as `${process.platform}-${process.arch}`. */
 export const platforms = ["darwin-arm64", "darwin-x64", "linux-arm64", "linux-x64", "win32-arm64", "win32-x64"];
 
-const goInstall = `go install github.com/egoist/mygo/cmd/mygo@v${version}`;
+const goInstall = `go install github.com/caelyreth/evil-mygo/cmd/mygo@v${version}`;
 
 /**
  * Returns the name of the package holding the mygo binary of a platform,
@@ -25,9 +25,9 @@ const goInstall = `go install github.com/egoist/mygo/cmd/mygo@v${version}`;
 export function platformPackage(platform = process.platform, arch = process.arch) {
   const target = `${platform}-${arch}`;
   if (!platforms.includes(target)) {
-    throw new Error(`mygo-cli: there is no prebuilt mygo binary for ${target}; install the CLI with Go instead: ${goInstall}`);
+    throw new Error(`@caelyreth/evil-mygo-cli: there is no prebuilt mygo binary for ${target}; install the CLI with Go instead: ${goInstall}`);
   }
-  return `@egoist/mygo-cli-${target}`;
+  return `@caelyreth/evil-mygo-cli-${target}`;
 }
 
 /**
@@ -52,7 +52,7 @@ export function binaryPath() {
     dir = dirname(require.resolve(`${pkg}/package.json`));
   } catch {
     throw new Error(
-      `mygo-cli: ${pkg}, the package with the mygo binary of this platform, is not installed. ` +
+      `@caelyreth/evil-mygo-cli: ${pkg}, the package with the mygo binary of this platform, is not installed. ` +
         `${reinstallHint(pkg)} Or install the CLI with Go: ${goInstall}`,
     );
   }
@@ -83,12 +83,12 @@ export function defineConfig(config) {
  * with --force.
  */
 function reinstallHint(pkg) {
-  // The directory whose node_modules holds mygo-cli, at any depth.
+  // The directory whose node_modules holds @caelyreth/evil-mygo-cli, at any depth.
   const i = here.indexOf(`${sep}node_modules${sep}`);
   const root = i < 0 ? here : here.slice(0, i);
   const runner = basename(root).startsWith("bunx-") ? "bunx" : basename(dirname(root)) === "_npx" ? "npx" : "";
   if (runner) {
-    return `${runner} installed mygo-cli without it in ${root}: remove that directory, then run ${runner} again.`;
+    return `${runner} installed @caelyreth/evil-mygo-cli without it in ${root}: remove that directory, then run ${runner} again.`;
   }
   const lockfile = join(root, "bun.lock");
   let lock = "";
@@ -96,16 +96,16 @@ function reinstallHint(pkg) {
     lock = readFileSync(lockfile, "utf8");
   } catch {}
   if (lock && !lock.includes(`"${pkg}": [`)) {
-    return `bun installed mygo-cli without it, and does so again while ${lockfile} lacks it, even with --force: remove that file, then install again.`;
+    return `bun installed @caelyreth/evil-mygo-cli without it, and does so again while ${lockfile} lacks it, even with --force: remove that file, then install again.`;
   }
-  return "Reinstall mygo-cli without omitting optional dependencies.";
+  return "Reinstall @caelyreth/evil-mygo-cli without omitting optional dependencies.";
 }
 
 /** Reports whether dir is a checkout of the MyGo repository. */
 function isCheckout(dir) {
   try {
     return (
-      readFileSync(join(dir, "go.mod"), "utf8").startsWith("module github.com/egoist/mygo\n") &&
+      readFileSync(join(dir, "go.mod"), "utf8").startsWith("module github.com/caelyreth/evil-mygo\n") &&
       existsSync(join(dir, "cmd", "mygo", "main.go"))
     );
   } catch {

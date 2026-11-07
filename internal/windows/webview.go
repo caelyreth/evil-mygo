@@ -20,9 +20,9 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/egoist/mygo/internal/accelerator"
-	"github.com/egoist/mygo/internal/platform"
-	"github.com/egoist/mygo/internal/schemehost"
+	"github.com/caelyreth/evil-mygo/internal/accelerator"
+	"github.com/caelyreth/evil-mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/schemehost"
 )
 
 // Custom schemes are served from http://<scheme>.localhost/, and their

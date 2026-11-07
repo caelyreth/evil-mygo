@@ -1,6 +1,6 @@
 package ui
 
-import "github.com/egoist/mygo/internal/platform"
+import "github.com/caelyreth/evil-mygo/internal/platform"
 
 // layerTextClient adapts an off-window layer's native text input to the
 // element that presents it.

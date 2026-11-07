@@ -12,7 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/egoist/mygo/internal/gpu"
+	"github.com/caelyreth/evil-mygo/internal/gpu"
 )
 
 // PrecompileEffect starts compiling the pixel shader of an effect whose

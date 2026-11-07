@@ -172,14 +172,14 @@ test("isPseudoLocale", () => {
 });
 
 // The module of internal/i18ngen's golden catalog, as mygo generate writes
-// it, importing this package's source in place of mygo-runtime/i18n: it
+// it, importing this package's source in place of @caelyreth/evil-mygo-runtime/i18n: it
 // type-checks, and says its messages.
 describe("the module mygo generate writes", () => {
   const dir = mkdtempSync(join(tmpdir(), "mygo-locales-"));
   const file = join(dir, "locales.ts");
   const source = readFileSync(join(import.meta.dir, "../../../internal/i18ngen/testdata/app/locales.ts"), "utf8");
-  expect(source).toContain(`from "mygo-runtime/i18n"`);
-  writeFileSync(file, source.replace(`from "mygo-runtime/i18n"`, `from ${JSON.stringify(join(import.meta.dir, "i18n.ts"))}`));
+  expect(source).toContain(`from "@caelyreth/evil-mygo-runtime/i18n"`);
+  writeFileSync(file, source.replace(`from "@caelyreth/evil-mygo-runtime/i18n"`, `from ${JSON.stringify(join(import.meta.dir, "i18n.ts"))}`));
   afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
   test("type-checks", () => {

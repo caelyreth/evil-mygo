@@ -1,12 +1,12 @@
 # terminal
 
-A terminal for [MyGo](https://github.com/egoist/mygo) apps of native UI: a
+A terminal for [MyGo](https://github.com/caelyreth/evil-mygo) apps of native UI: a
 view that runs the user's shell, or any program, in a pseudo-terminal, with
 [Ghostty](https://ghostty.org)'s terminal emulator, libghostty-vt, loaded
 at run time with no cgo.
 
 ```go
-import "github.com/egoist/mygo/plugins/terminal"
+import "github.com/caelyreth/evil-mygo/plugins/terminal"
 
 term, err := terminal.New(terminal.Options{})
 // ...

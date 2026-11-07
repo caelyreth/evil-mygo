@@ -5,7 +5,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/egoist/mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/platform"
 )
 
 // A chart in a scroll container zooms with a mouse wheel and pinches, and

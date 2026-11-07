@@ -5,11 +5,11 @@
  * Go reads it. The Go side must use the plugin:
  *
  * ```go
- * mygo.Use(fetch.Plugin) // github.com/egoist/mygo/plugins/fetch
+ * mygo.Use(fetch.Plugin) // github.com/caelyreth/evil-mygo/plugins/fetch
  * ```
  *
  * ```ts
- * import { fetch } from "@mygo-plugins/fetch";
+ * import { fetch } from "@caelyreth/evil-mygo-fetch";
  *
  * const res = await fetch("https://api.example.com/items", {
  *   headers: { authorization: `Bearer ${token}` },
@@ -22,7 +22,7 @@
  *
  * @module
  */
-import { Channel, call, isCallError } from "mygo-runtime";
+import { Channel, call, isCallError } from "@caelyreth/evil-mygo-runtime";
 
 /** What Go streams back: the response's head, then chunks of its body. */
 interface Part {
@@ -168,7 +168,7 @@ export default fetch;
 function failure(err: unknown): Error {
   if (!isCallError(err)) return err instanceof Error ? err : new TypeError(String(err));
   if (err.message.includes("plugin is not used")) {
-    return new Error("@mygo-plugins/fetch: the Go side does not use the plugin: call mygo.Use(fetch.Plugin) before App.Run");
+    return new Error("@caelyreth/evil-mygo-fetch: the Go side does not use the plugin: call mygo.Use(fetch.Plugin) before App.Run");
   }
   return new TypeError(`fetch failed: ${err.message}`, { cause: err });
 }

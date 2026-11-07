@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/egoist/mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/platform"
 )
 
 // expectChosen fails unless sel holds exactly keys.

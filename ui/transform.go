@@ -3,9 +3,9 @@ package ui
 import (
 	"math"
 
-	"github.com/egoist/mygo/internal/platform"
-	"github.com/egoist/mygo/internal/raster"
-	"github.com/egoist/mygo/internal/scene"
+	"github.com/caelyreth/evil-mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/raster"
+	"github.com/caelyreth/evil-mygo/internal/scene"
 )
 
 // Transform is a visual transform, in 2D, or in 3D seen in perspective.

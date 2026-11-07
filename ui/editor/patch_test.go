@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 const testPatch = `diff --git a/greet.go b/greet.go

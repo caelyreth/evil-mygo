@@ -8,8 +8,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/egoist/mygo/i18n"
-	"github.com/egoist/mygo/internal/l10n"
+	"github.com/caelyreth/evil-mygo/i18n"
+	"github.com/caelyreth/evil-mygo/internal/l10n"
 )
 
 // The languages a build declares to the systems, which they are in where

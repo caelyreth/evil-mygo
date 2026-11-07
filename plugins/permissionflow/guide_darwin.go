@@ -13,7 +13,7 @@ import (
 
 	"github.com/ebitengine/purego/objc"
 
-	"github.com/egoist/mygo"
+	"github.com/caelyreth/evil-mygo"
 )
 
 // Guide's panel is an NSPanel that never takes the focus, so that System

@@ -19,7 +19,7 @@ package msl
 import (
 	"fmt"
 
-	"github.com/egoist/mygo/internal/shaderir"
+	"github.com/caelyreth/evil-mygo/internal/shaderir"
 )
 
 func opString(op shaderir.Op) string {

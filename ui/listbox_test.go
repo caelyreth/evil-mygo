@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/egoist/mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/platform"
 )
 
 // listBoxDump describes the nodes labeled labels, in that order, as the

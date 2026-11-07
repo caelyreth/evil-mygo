@@ -3,7 +3,7 @@ package ui
 import (
 	"testing"
 
-	"github.com/egoist/mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/platform"
 )
 
 // dialogView is a window with buttons behind a dialog of a text input, a

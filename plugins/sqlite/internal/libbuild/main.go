@@ -58,7 +58,7 @@ func main() {
 	src := flag.String("src", "", "verified amalgamation directory (downloaded to the user's cache when empty)")
 	out := flag.String("out", "build", "output directory")
 	target := flag.String("target", "", "build only GOOS-GOARCH; 'host' means this machine (default: all six)")
-	release := flag.String("release", "https://github.com/egoist/mygo/releases/download/sqlite-"+version+"-1", "release asset base URL")
+	release := flag.String("release", "https://github.com/caelyreth/evil-mygo/releases/download/sqlite-"+version+"-1", "release asset base URL")
 	flag.Parse()
 	if *target == "host" {
 		*target = runtime.GOOS + "-" + runtime.GOARCH

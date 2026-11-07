@@ -3,7 +3,7 @@ import * as React from "react"
 
 import { cn } from "@/lib/utils"
 
-export function InstallCommand({ command = "bunx mygo-cli init my-app", className }: { command?: string; className?: string }) {
+export function InstallCommand({ command = "bunx @caelyreth/evil-mygo-cli init my-app", className }: { command?: string; className?: string }) {
   const [copied, setCopied] = React.useState(false)
   return (
     <button

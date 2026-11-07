@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/egoist/mygo/internal/scene"
+	"github.com/caelyreth/evil-mygo/internal/scene"
 )
 
 // paintedGlyphs returns how many glyphs the last frame painted, and how

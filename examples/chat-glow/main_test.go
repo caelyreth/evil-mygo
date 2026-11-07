@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // A suggestion asks the assistant, which thinks, the window glowing, then

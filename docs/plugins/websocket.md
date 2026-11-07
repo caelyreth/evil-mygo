@@ -15,8 +15,8 @@ Use the plugin in Go:
 
 ```go
 import (
-	"github.com/egoist/mygo"
-	"github.com/egoist/mygo/plugins/websocket"
+	"github.com/caelyreth/evil-mygo"
+	"github.com/caelyreth/evil-mygo/plugins/websocket"
 )
 
 func main() {
@@ -28,7 +28,7 @@ func main() {
 and add its package to the frontend:
 
 ```sh
-bun add @mygo-plugins/websocket
+bun add @caelyreth/evil-mygo-websocket
 ```
 
 A connection opened in an app that does not use the Go half fails, and the
@@ -39,7 +39,7 @@ console says to call `mygo.Use`.
 Import `WebSocket` from the package and use it as the browser's:
 
 ```ts
-import { WebSocket } from "@mygo-plugins/websocket";
+import { WebSocket } from "@caelyreth/evil-mygo-websocket";
 
 const ws = new WebSocket("wss://example.com/live", ["v1"], {
   headers: { authorization: `Bearer ${token}` },

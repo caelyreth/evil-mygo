@@ -7,7 +7,7 @@ import (
 
 	"github.com/ebitengine/purego/objc"
 
-	"github.com/egoist/mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/platform"
 )
 
 // Notifications use UNUserNotificationCenter, which only works for apps

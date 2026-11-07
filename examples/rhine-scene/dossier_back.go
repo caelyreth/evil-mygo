@@ -5,7 +5,7 @@ package main
 import (
 	"fmt"
 
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // Custody is a separate record, UI engine and input surface. Its controls never

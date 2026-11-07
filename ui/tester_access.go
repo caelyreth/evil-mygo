@@ -1,6 +1,6 @@
 package ui
 
-import "github.com/egoist/mygo/internal/platform"
+import "github.com/caelyreth/evil-mygo/internal/platform"
 
 // AccessInfo is what assistive technology sees of an element of the last
 // frame (Tester.Access): its role, name, value and states, as the

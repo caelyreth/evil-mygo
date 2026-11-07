@@ -10,8 +10,8 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/egoist/mygo/internal/platform"
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // flag returns a PNG image of w by h pixels in one color.

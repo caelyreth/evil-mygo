@@ -21,10 +21,10 @@ import (
 	"log"
 	"math"
 
-	"github.com/egoist/mygo"
-	"github.com/egoist/mygo/plugins/game"
-	"github.com/egoist/mygo/plugins/game/gamepad"
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo"
+	"github.com/caelyreth/evil-mygo/plugins/game"
+	"github.com/caelyreth/evil-mygo/plugins/game/gamepad"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // stepTime is the world's fixed step, as game.View runs it: 60 a second,

@@ -1,6 +1,6 @@
 package raster
 
-import "github.com/egoist/mygo/internal/scene"
+import "github.com/caelyreth/evil-mygo/internal/scene"
 
 // Effects for tests: lensEffect shows its backdrop, sampled further in
 // near its edge by Params[0][0] pixels a pixel, mixed with the color

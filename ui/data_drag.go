@@ -4,9 +4,9 @@ import (
 	"image"
 	"slices"
 
-	"github.com/egoist/mygo/internal/platform"
-	"github.com/egoist/mygo/internal/raster"
-	"github.com/egoist/mygo/transfer"
+	"github.com/caelyreth/evil-mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/raster"
+	"github.com/caelyreth/evil-mygo/transfer"
 )
 
 type dataSource struct {

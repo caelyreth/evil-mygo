@@ -3,7 +3,7 @@ package richtext
 import (
 	"strings"
 
-	"github.com/egoist/mygo/ui/markdown/parser"
+	"github.com/caelyreth/evil-mygo/ui/markdown/parser"
 )
 
 // ParseMarkdown returns the attributed text of Markdown, CommonMark with

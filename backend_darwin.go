@@ -3,8 +3,8 @@
 package mygo
 
 import (
-	"github.com/egoist/mygo/internal/darwin"
-	"github.com/egoist/mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/darwin"
+	"github.com/caelyreth/evil-mygo/internal/platform"
 )
 
 func newBackend() platform.Backend { return darwin.New() }

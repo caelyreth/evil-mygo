@@ -3,7 +3,7 @@ package mygo
 import "os"
 
 // production is set to "1" by `mygo build` through
-// -ldflags "-X github.com/egoist/mygo.production=1".
+// -ldflags "-X github.com/caelyreth/evil-mygo.production=1".
 var production string
 
 // IsDev reports whether the app runs in development: true unless it was

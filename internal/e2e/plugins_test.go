@@ -17,29 +17,29 @@ import (
 	"testing"
 	"time"
 
-	"github.com/egoist/mygo"
-	"github.com/egoist/mygo/internal/wait"
-	"github.com/egoist/mygo/plugins/fetch"
-	"github.com/egoist/mygo/plugins/sqlite"
-	"github.com/egoist/mygo/plugins/watch"
-	"github.com/egoist/mygo/plugins/websocket"
+	"github.com/caelyreth/evil-mygo"
+	"github.com/caelyreth/evil-mygo/internal/wait"
+	"github.com/caelyreth/evil-mygo/plugins/fetch"
+	"github.com/caelyreth/evil-mygo/plugins/sqlite"
+	"github.com/caelyreth/evil-mygo/plugins/watch"
+	"github.com/caelyreth/evil-mygo/plugins/websocket"
 )
 
 // pluginsPage loads the plugins' JavaScript packages, as built, with an
 // import map in place of a bundler.
 const pluginsPage = `<!doctype html><html><head>
 <script type="importmap">{"imports": {
-  "mygo-runtime": "/js/runtime.js",
-  "@mygo-plugins/fetch": "/js/fetch.js",
-  "@mygo-plugins/sqlite": "/js/sqlite.js",
-  "@mygo-plugins/websocket": "/js/websocket.js",
-  "@mygo-plugins/watch": "/js/watch.js"
+  "@caelyreth/evil-mygo-runtime": "/js/runtime.js",
+  "@caelyreth/evil-mygo-fetch": "/js/fetch.js",
+  "@caelyreth/evil-mygo-sqlite": "/js/sqlite.js",
+  "@caelyreth/evil-mygo-websocket": "/js/websocket.js",
+  "@caelyreth/evil-mygo-watch": "/js/watch.js"
 }}</script>
 <script type="module">
-import { fetch } from "@mygo-plugins/fetch";
-import { open } from "@mygo-plugins/sqlite";
-import { WebSocket } from "@mygo-plugins/websocket";
-import { watch } from "@mygo-plugins/watch";
+import { fetch } from "@caelyreth/evil-mygo-fetch";
+import { open } from "@caelyreth/evil-mygo-sqlite";
+import { WebSocket } from "@caelyreth/evil-mygo-websocket";
+import { watch } from "@caelyreth/evil-mygo-watch";
 window.plugins = { fetch, WebSocket, open, watch };
 </script></head><body>plugins</body></html>`
 

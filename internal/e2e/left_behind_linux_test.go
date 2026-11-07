@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/egoist/mygo"
-	"github.com/egoist/mygo/internal/linux"
+	"github.com/caelyreth/evil-mygo"
+	"github.com/caelyreth/evil-mygo/internal/linux"
 )
 
 func keyboardState() (state string, restore func()) {

@@ -132,7 +132,7 @@ func webIcon(c *Config) ([]byte, error) {
 func compileWeb(ctx context.Context, c *Config, t *task, out string, debug bool, overlay string) error {
 	ldflags := "-s -w"
 	if !debug {
-		ldflags += " -X github.com/egoist/mygo.production=1"
+		ldflags += " -X github.com/caelyreth/evil-mygo.production=1"
 	}
 	ldflags += extraLDFlags()
 	flags := []string{"-trimpath", "-ldflags", ldflags}

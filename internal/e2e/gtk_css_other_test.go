@@ -2,7 +2,7 @@
 
 package e2e
 
-import "github.com/egoist/mygo"
+import "github.com/caelyreth/evil-mygo"
 
 // gtkCSSBeforeRun gives Theme.SetGTKCSS a sheet that does not even parse,
 // which it ignores where GTK draws nothing for the app.

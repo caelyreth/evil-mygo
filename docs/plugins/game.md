@@ -27,7 +27,7 @@ the player's input, and `Draw` draws it. `game.View` runs it in an
 element:
 
 ```go
-import "github.com/egoist/mygo/plugins/game"
+import "github.com/caelyreth/evil-mygo/plugins/game"
 
 type farm struct {
 	x, y   float32 // the player, in the world
@@ -153,7 +153,7 @@ SDL's game controller database, whatever pad it is: buttons by place, two
 sticks, analog triggers and a d-pad.
 
 ```go
-import "github.com/egoist/mygo/plugins/game/gamepad"
+import "github.com/caelyreth/evil-mygo/plugins/game/gamepad"
 
 var last gamepad.State
 

@@ -5,7 +5,7 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // Font is the font of a terminal's text, with what Ghostty's font options

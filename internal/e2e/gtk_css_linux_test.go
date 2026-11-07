@@ -8,10 +8,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/egoist/mygo"
-	"github.com/egoist/mygo/internal/linux"
-	"github.com/egoist/mygo/internal/wait"
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo"
+	"github.com/caelyreth/evil-mygo/internal/linux"
+	"github.com/caelyreth/evil-mygo/internal/wait"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // gtk4Frame is the sheet of #1121, which gives GTK 3's frame the look of

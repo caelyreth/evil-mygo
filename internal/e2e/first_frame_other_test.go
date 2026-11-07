@@ -2,7 +2,7 @@
 
 package e2e
 
-import "github.com/egoist/mygo"
+import "github.com/caelyreth/evil-mygo"
 
 // firstFrameRevealed reports whether w shows its first frame once shown:
 // only Windows keeps a window out of sight after it showed (cloaked).

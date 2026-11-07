@@ -65,14 +65,14 @@ func Go(c *Catalog, pkg string) ([]byte, error) {
 	if c.Own {
 		w("\t\"io/fs\"\n")
 	}
-	w("\n\t\"github.com/egoist/mygo/i18n\"\n")
+	w("\n\t\"github.com/caelyreth/evil-mygo/i18n\"\n")
 	if c.Own {
-		w("\t\"github.com/egoist/mygo/internal/i18nlink\"\n")
+		w("\t\"github.com/caelyreth/evil-mygo/internal/i18nlink\"\n")
 	}
 	if len(c.Translations) > 0 {
 		w("\n\t// MyGo's own strings in the app's languages.\n")
 		for _, tag := range c.Translations {
-			w("\t_ \"github.com/egoist/mygo/locales/%s\"\n", tag)
+			w("\t_ \"github.com/caelyreth/evil-mygo/locales/%s\"\n", tag)
 		}
 	}
 	w(")\n\n")

@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/egoist/mygo/ui"
-	"github.com/egoist/mygo/ui/editor"
+	"github.com/caelyreth/evil-mygo/ui"
+	"github.com/caelyreth/evil-mygo/ui/editor"
 )
 
 const demoGreeter = `package greeter

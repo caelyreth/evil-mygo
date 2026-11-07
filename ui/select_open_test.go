@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/egoist/mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/platform"
 )
 
 // TestSelectBaseSetOpen opens a select from its closed trigger as the

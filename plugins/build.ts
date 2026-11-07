@@ -1,6 +1,6 @@
 // Builds dist/ of the plugin package in the working directory: an ES
-// module, which imports mygo-runtime, and its type declarations. dist/ is
-// not committed, like mygo-runtime's.
+// module, which imports @caelyreth/evil-mygo-runtime, and its type declarations. dist/ is
+// not committed, like @caelyreth/evil-mygo-runtime's.
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -11,7 +11,7 @@ const result = await Bun.build({
   outdir: join(dir, "dist"),
   format: "esm",
   target: "browser",
-  external: ["mygo-runtime"],
+  external: ["@caelyreth/evil-mygo-runtime"],
 });
 if (!result.success) {
   for (const log of result.logs) console.error(log);

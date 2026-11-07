@@ -8,7 +8,7 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/egoist/mygo/transfer"
+	"github.com/caelyreth/evil-mygo/transfer"
 )
 
 // Format is the clipboard's format of attributed text copied from an

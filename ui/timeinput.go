@@ -7,7 +7,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/egoist/mygo/i18n"
+	"github.com/caelyreth/evil-mygo/i18n"
 )
 
 // TimeInput creates a field of the time of day of *tm, in the hour cycle

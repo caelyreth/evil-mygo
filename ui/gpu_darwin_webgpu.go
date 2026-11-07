@@ -5,8 +5,8 @@ package ui
 import (
 	"errors"
 
-	"github.com/egoist/mygo/internal/gpu/webgpu"
-	"github.com/egoist/mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/gpu/webgpu"
+	"github.com/caelyreth/evil-mygo/internal/platform"
 )
 
 func newGPURenderer(n platform.SurfaceNative) (gpuRenderer, error) {

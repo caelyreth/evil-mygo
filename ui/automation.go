@@ -3,8 +3,8 @@
 package ui
 
 import (
-	"github.com/egoist/mygo/internal/platform"
-	"github.com/egoist/mygo/internal/surface"
+	"github.com/caelyreth/evil-mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/surface"
 )
 
 // automate hands the window's content to plugins/automation, when the app

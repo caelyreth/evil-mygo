@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/egoist/mygo/internal/scene"
-	"github.com/egoist/mygo/internal/text"
+	"github.com/caelyreth/evil-mygo/internal/scene"
+	"github.com/caelyreth/evil-mygo/internal/text"
 )
 
 // Painter draws an element's own content in Element.Draw and DrawOver

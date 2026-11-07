@@ -4,7 +4,7 @@ import (
 	"math"
 	"time"
 
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // The indicators follow loading.dev's, drawn in their SVG's viewBox or in

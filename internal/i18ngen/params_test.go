@@ -34,7 +34,7 @@ func TestParameterNamesCompile(t *testing.T) {
 	}
 	write("catalog_gen.go", src)
 	write("en.json", []byte(catalog))
-	write("go.mod", []byte(fmt.Sprintf("module example\n\ngo 1.27\nrequire github.com/egoist/mygo v0.0.0\nreplace github.com/egoist/mygo => %q\n", filepath.ToSlash(root))))
+	write("go.mod", []byte(fmt.Sprintf("module example\n\ngo 1.27\nrequire github.com/caelyreth/evil-mygo v0.0.0\nreplace github.com/caelyreth/evil-mygo => %q\n", filepath.ToSlash(root))))
 	write("catalog_test.go", []byte(`package example
 import "testing"
 func TestMessage(t *testing.T) {
@@ -58,7 +58,7 @@ func TestMessage(t *testing.T) {
 			t.Fatal(err)
 		}
 		write("catalog.ts", src)
-		write("runtime.d.ts", []byte(`declare module "mygo-runtime/i18n" {
+		write("runtime.d.ts", []byte(`declare module "@caelyreth/evil-mygo-runtime/i18n" {
 export function createCatalog<T>(data: unknown): { messages(): T; messagesIn(locale: string): T; languages: string[] };
 }`))
 		cmd := exec.Command(tsc, "--noEmit", "--strict", "catalog.ts", "runtime.d.ts")

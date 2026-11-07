@@ -8,7 +8,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 const sample = "# Title\n\nSome **bold** and a [link](https://go.dev), `code`.\n\n" +

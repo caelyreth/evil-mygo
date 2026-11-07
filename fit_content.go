@@ -3,8 +3,8 @@ package mygo
 import (
 	"math"
 
-	"github.com/egoist/mygo/internal/platform"
-	"github.com/egoist/mygo/internal/surface"
+	"github.com/caelyreth/evil-mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/surface"
 )
 
 // fitContent is what a window that takes the size of its page's content

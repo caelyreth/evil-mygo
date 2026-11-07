@@ -4,7 +4,7 @@ import (
 	"slices"
 	"time"
 
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // State is a code editor's state, kept by the app across

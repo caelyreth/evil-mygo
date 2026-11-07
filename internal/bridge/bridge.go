@@ -8,7 +8,7 @@ import (
 	_ "embed"
 	"encoding/json"
 
-	"github.com/egoist/mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/platform"
 )
 
 //go:embed bridge.js
@@ -110,7 +110,7 @@ func TitleBarScript(tb platform.TitleBar, zoom float64) string {
 }
 
 // WindowActiveEvent tells a page whether its window is drawn as active,
-// true or false: the bridge keeps it for mygo-runtime's windowActive(),
+// true or false: the bridge keeps it for @caelyreth/evil-mygo-runtime's windowActive(),
 // and sets the attribute data-mygo-window-inactive of <html> while it is
 // not. Pages start active; a page that loads in an inactive window hears
 // it as its DOM is ready.
@@ -118,7 +118,7 @@ const WindowActiveEvent = "mygo:window-active"
 
 // PreferencesEvent tells a page the accent color and the accessibility
 // settings of the desktop, as mygo.ThemePreferences encodes them. The
-// bridge keeps the latest for mygo-runtime's preferences(), the accent in
+// bridge keeps the latest for @caelyreth/evil-mygo-runtime's preferences(), the accent in
 // the --mygo-accent CSS variable and the text scale in --mygo-text-scale.
 const PreferencesEvent = "mygo:preferences"
 

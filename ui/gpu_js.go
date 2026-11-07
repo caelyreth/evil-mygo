@@ -3,8 +3,8 @@
 package ui
 
 import (
-	"github.com/egoist/mygo/internal/gpu/gl"
-	"github.com/egoist/mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/gpu/gl"
+	"github.com/caelyreth/evil-mygo/internal/platform"
 )
 
 // newGPURenderer returns a WebGL 2 renderer, package gl's, for a canvas

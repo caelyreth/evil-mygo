@@ -1,7 +1,7 @@
 package editor
 
 import (
-	"github.com/egoist/mygo/internal/l10n"
+	"github.com/caelyreth/evil-mygo/internal/l10n"
 	"regexp"
 	"slices"
 	"sort"

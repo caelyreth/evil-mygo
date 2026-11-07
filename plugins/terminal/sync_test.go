@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // A program that starts a synchronized update and writes nothing more, its

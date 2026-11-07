@@ -1,8 +1,8 @@
 package mygo
 
 import (
-	"github.com/egoist/mygo/internal/l10n"
-	"github.com/egoist/mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/l10n"
+	"github.com/caelyreth/evil-mygo/internal/platform"
 )
 
 // The labels menu items take from their role (MenuItem.Role) are MyGo's

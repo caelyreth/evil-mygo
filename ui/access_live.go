@@ -3,7 +3,7 @@ package ui
 import (
 	"strings"
 
-	"github.com/egoist/mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/platform"
 )
 
 // liveState is what the live regions of the last tree held, which the

@@ -14,9 +14,9 @@ import (
 	"log"
 	"strings"
 
-	"github.com/egoist/mygo"
-	"github.com/egoist/mygo/plugins/sfsymbols"
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo"
+	"github.com/caelyreth/evil-mygo/plugins/sfsymbols"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // fewNames are what the window shows where the system lists no symbols,

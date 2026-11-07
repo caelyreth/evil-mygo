@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/egoist/mygo"
+	"github.com/caelyreth/evil-mygo"
 )
 
 type fakeWatcher struct {

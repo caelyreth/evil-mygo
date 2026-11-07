@@ -5,7 +5,7 @@ package main
 import (
 	"math"
 
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 const flipControlWidth = float32(96)

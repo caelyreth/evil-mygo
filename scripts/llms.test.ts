@@ -4,6 +4,7 @@ import os from "node:os"
 import path from "node:path"
 import { docsAssets } from "../website/llms"
 import { rewriteHref } from "../website/src/lib/markdown-source"
+import { site } from "../website/src/lib/site"
 
 const temporary: string[] = []
 afterEach(async () => {
@@ -53,15 +54,15 @@ This is a code example.
   const assets = await docsAssets(repo)
   expect([...assets.keys()]).toEqual(["/docs.md", "/docs/plugins/fetch.md", "/docs/ui.md", "/llms.txt", "/llms-full.txt"])
   const index = assets.get("/llms.txt")!
-  expect(index).toStartWith("# MyGo\n\n> ")
+  expect(index).toStartWith(`# ${site.name}\n\n> `)
   for (const file of ["/docs.md", "/docs/plugins/fetch.md", "/docs/ui.md"]) {
-    expect(index).toContain(`https://mygo.egoist.dev${file}`)
+    expect(index).toContain(`${site.url}${file}`)
     expect(assets.get("/llms-full.txt")).toContain(assets.get(file)!.trimEnd())
   }
   const fetch = assets.get("/docs/plugins/fetch.md")!
-  expect(fetch).toContain("https://mygo.egoist.dev/docs/ui.md#input")
-  expect(fetch).toContain("https://mygo.egoist.dev/docs/ui.md?view=all#input")
-  expect(fetch).toContain("https://github.com/egoist/mygo/blob/main/app.go")
+  expect(fetch).toContain(`${site.url}/docs/ui.md#input`)
+  expect(fetch).toContain(`${site.url}/docs/ui.md?view=all#input`)
+  expect(fetch).toContain("https://github.com/caelyreth/evil-mygo/blob/main/app.go")
   expect(fetch).toContain("[External](https://example.com)")
   expect(fetch).toContain("[Local](#options)")
   expect(fetch).toContain("| Method | GET")
@@ -70,20 +71,20 @@ This is a code example.
     expect(text).not.toContain("Private instructions")
     expect(text).not.toContain("Never publish this")
   }
-  expect(assets.get("/docs/ui.md")).toContain("https://mygo.egoist.dev/docs.md")
+  expect(assets.get("/docs/ui.md")).toContain(`${site.url}/docs.md`)
 
   // The dev server and subsequent builds read the current source each time.
   await fs.writeFile(path.join(repo, "docs/new.md"), "# New page\n\nNew content.\n")
-  expect((await docsAssets(repo)).get("/llms.txt")).toContain("[New page](https://mygo.egoist.dev/docs/new.md)")
+  expect((await docsAssets(repo)).get("/llms.txt")).toContain(`[New page](${site.url}/docs/new.md)`)
 })
 
 test("shared link rules keep HTML docs URLs and repository links intact", () => {
-  const links = { docsDir: "/repo/docs", repoDir: "/repo", repoUrl: "https://github.com/egoist/mygo" }
+  const links = { docsDir: "/repo/docs", repoDir: "/repo", repoUrl: "https://github.com/caelyreth/evil-mygo" }
   const file = "/repo/docs/ui/button.md"
   expect(rewriteHref("README.md#views", file, links)).toBe("/docs/ui#views")
   expect(rewriteHref("../README.md", file, links)).toBe("/docs")
-  expect(rewriteHref("../../ui/button.go", file, links)).toBe("https://github.com/egoist/mygo/blob/main/ui/button.go")
-  expect(rewriteHref("../../examples", file, links)).toBe("https://github.com/egoist/mygo/tree/main/examples")
+  expect(rewriteHref("../../ui/button.go", file, links)).toBe("https://github.com/caelyreth/evil-mygo/blob/main/ui/button.go")
+  expect(rewriteHref("../../examples", file, links)).toBe("https://github.com/caelyreth/evil-mygo/tree/main/examples")
   for (const href of ["#input", "/docs/ui", "https://example.com", "//example.com", "mailto:hello@example.com"]) {
     expect(rewriteHref(href, file, links)).toBe(href)
   }

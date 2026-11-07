@@ -7,8 +7,8 @@ import (
 	"slices"
 	"sync"
 
-	"github.com/egoist/mygo/internal/raster"
-	"github.com/egoist/mygo/internal/scene"
+	"github.com/caelyreth/evil-mygo/internal/raster"
+	"github.com/caelyreth/evil-mygo/internal/scene"
 )
 
 // Mask is a layer of an element's mask (Element.Masks), as one image of

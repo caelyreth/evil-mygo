@@ -15,7 +15,7 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/egoist/mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/platform"
 )
 
 // Backend is the Windows (Win32 + WebView2) implementation of

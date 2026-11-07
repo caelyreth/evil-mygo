@@ -1,6 +1,6 @@
 package main
 
-import "github.com/egoist/mygo/ui"
+import "github.com/caelyreth/evil-mygo/ui"
 
 // icon is a Lucide-style icon of 24×24 strokes in the text's color.
 func icon(shapes string) *ui.SVG {

@@ -3,7 +3,7 @@ package ui
 import (
 	"slices"
 
-	transfer "github.com/egoist/mygo/transfer"
+	transfer "github.com/caelyreth/evil-mygo/transfer"
 )
 
 // TextInput creates a single-line text input editing *value.

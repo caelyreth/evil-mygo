@@ -23,8 +23,8 @@ import (
 	"log"
 	"math/rand/v2"
 
-	"github.com/egoist/mygo"
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 const windowW, windowH = 1100, 720

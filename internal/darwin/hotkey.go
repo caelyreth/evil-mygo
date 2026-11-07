@@ -8,7 +8,7 @@ import (
 
 	"github.com/ebitengine/purego"
 
-	"github.com/egoist/mygo/internal/accelerator"
+	"github.com/caelyreth/evil-mygo/internal/accelerator"
 )
 
 // Global shortcuts use Carbon's RegisterEventHotKey, which needs no

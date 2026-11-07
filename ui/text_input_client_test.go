@@ -1,7 +1,7 @@
 package ui
 
 import (
-	"github.com/egoist/mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/platform"
 	"strings"
 	"testing"
 )

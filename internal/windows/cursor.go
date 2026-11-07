@@ -6,7 +6,7 @@ import (
 	"math"
 	"unsafe"
 
-	"github.com/egoist/mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/platform"
 )
 
 var procCreateCursor = user32.NewProc("CreateCursor")

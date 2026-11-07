@@ -11,9 +11,9 @@ import (
 	"log"
 	"time"
 
-	"github.com/egoist/mygo"
-	"github.com/egoist/mygo/audio"
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo"
+	"github.com/caelyreth/evil-mygo/audio"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // The keyboard spans three octaves, C3 to C6, in MIDI note numbers.

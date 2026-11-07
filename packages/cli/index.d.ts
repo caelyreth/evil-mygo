@@ -19,7 +19,7 @@ export declare function binaryPath(): string;
  * mygo.json:
  *
  * ```ts
- * import { defineConfig } from "mygo-cli";
+ * import { defineConfig } from "@caelyreth/evil-mygo-cli";
  *
  * export default defineConfig({
  *   name: "My App",
@@ -88,7 +88,7 @@ export interface Config {
   /**
    * Where `mygo generate` writes the TypeScript client (default:
    * `src/mygo.ts` when package.json at the project root depends on
-   * mygo-runtime; an app without a frontend gets no client).
+   * @caelyreth/evil-mygo-runtime; an app without a frontend gets no client).
    */
   bindings?: string;
 

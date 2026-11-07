@@ -535,7 +535,7 @@ func TestBuildResources(t *testing.T) {
 		t.Skip("compiles programs")
 	}
 	dir := testModule(t, map[string]string{
-		"main.go":                                "package main\n\nimport \"github.com/egoist/mygo\"\n\nfunc main() { mygo.App.Run() }\n",
+		"main.go":                                "package main\n\nimport \"github.com/caelyreth/evil-mygo\"\n\nfunc main() { mygo.App.Run() }\n",
 		"mygo.json":                              `{"name": "Res App", "resources": ["extra.txt"], "resourcesExclude": ["**/*.psd"]}`,
 		"resources/data/a.txt":                   "a",
 		"resources/data/a.psd":                   "layers",

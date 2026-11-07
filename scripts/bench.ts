@@ -21,7 +21,7 @@ import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 
-const module = "github.com/egoist/mygo";
+const module = "github.com/caelyreth/evil-mygo";
 
 /** Values by unit, such as "ns/op", "B/op", "allocs/op" or "bytes". */
 export type Metrics = Record<string, number>;
@@ -252,7 +252,7 @@ async function measureApps(
     for (const app of apps) {
       if (!existsSync(join("examples", app))) continue;
       const bin = join(dir, goos === "windows" ? app + ".exe" : app);
-      const ldflags = "-s -w -X github.com/egoist/mygo.production=1" + (goos === "windows" ? " -H=windowsgui" : "");
+      const ldflags = "-s -w -X github.com/caelyreth/evil-mygo.production=1" + (goos === "windows" ? " -H=windowsgui" : "");
       output(["go", "build", "-trimpath", "-tags", "mygo_noinspector", "-ldflags", ldflags, "-o", bin, "./examples/" + app]);
       size[app] = { bytes: (await stat(bin)).size };
       bins.push(bin);
@@ -367,11 +367,11 @@ export function latest(commits: Commit[]): Latest {
   return data;
 }
 
-const readme = `# MyGo's benchmarks
+const readme = `# evil-mygo benchmarks
 
 The results of MyGo's benchmarks, which .github/workflows/bench.yml of the
-main branch measures on every push, written by scripts/bench.ts and shown at
-https://mygo.egoist.dev/measures.
+main branch measures on every push, written by scripts/bench.ts and shown by
+the website's /measures page. Source: https://github.com/caelyreth/evil-mygo.
 
 - history/<yyyy-mm-dd>.json: every commit measured that day (UTC), with each OS's runner and results.
 - latest.json: the last ${latestCommits} commits, by series, which the website fetches.

@@ -10,9 +10,9 @@ import (
 	"slices"
 	"unsafe"
 
+	"github.com/caelyreth/evil-mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/transfer"
 	"github.com/ebitengine/purego"
-	"github.com/egoist/mygo/internal/platform"
-	"github.com/egoist/mygo/transfer"
 )
 
 // Selection data arrives asynchronously. Only accepted formats are read

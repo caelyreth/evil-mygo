@@ -2,7 +2,7 @@
 
 package mygo
 
-import "github.com/egoist/mygo/internal/platform"
+import "github.com/caelyreth/evil-mygo/internal/platform"
 
 // ProtocolModule registers custom URL schemes served by Go, for web pages,
 // which browsers do not show. Builds for them leave out net/http, and with

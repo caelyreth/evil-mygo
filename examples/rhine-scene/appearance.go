@@ -2,7 +2,7 @@
 
 package main
 
-import "github.com/egoist/mygo/ui"
+import "github.com/caelyreth/evil-mygo/ui"
 
 func applyArchiveAppearance(t *ui.Theme, night float32) {
 	t.Dark = night >= .5

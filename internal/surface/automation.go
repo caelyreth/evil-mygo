@@ -1,6 +1,6 @@
 package surface
 
-import "github.com/egoist/mygo/internal/platform"
+import "github.com/caelyreth/evil-mygo/internal/platform"
 
 // Automated is what the content of a window tells plugins/automation,
 // which drives apps from another process. Package ui implements it. Its

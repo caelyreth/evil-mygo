@@ -10,7 +10,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/egoist/mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/platform"
 )
 
 // Set by `mygo build` and `mygo dev` with -ldflags -X: what mygo.config.ts says

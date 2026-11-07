@@ -5,7 +5,7 @@ package web
 import (
 	"syscall/js"
 
-	"github.com/egoist/mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/platform"
 )
 
 // window is a window of the page: an element filling the page's element

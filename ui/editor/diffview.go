@@ -5,8 +5,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/egoist/mygo/internal/l10n"
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/internal/l10n"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // DiffState is a diff viewer's state, kept by the app across

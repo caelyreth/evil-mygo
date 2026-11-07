@@ -1,8 +1,8 @@
 package terminal
 
 import (
-	"github.com/egoist/mygo/plugins/terminal/internal/vt"
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/plugins/terminal/internal/vt"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // Theme is the colors of a terminal, which programs may change (OSC 4,

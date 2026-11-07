@@ -4,7 +4,7 @@ import (
 	"image"
 	"sync"
 
-	"github.com/egoist/mygo/internal/scene"
+	"github.com/caelyreth/evil-mygo/internal/scene"
 )
 
 // Opacity fades an element and what is inside it as one group, as CSS's

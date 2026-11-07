@@ -5,7 +5,7 @@ import (
 	"math"
 	"time"
 
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // Past Max, the slider goes Galaxy: the brain turns blue violet in a burst

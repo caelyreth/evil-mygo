@@ -7,10 +7,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/egoist/mygo"
-	win "github.com/egoist/mygo/internal/windows"
-	"github.com/egoist/mygo/transfer"
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo"
+	win "github.com/caelyreth/evil-mygo/internal/windows"
+	"github.com/caelyreth/evil-mygo/transfer"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // The shortcuts of the app's menu items work in a window of native UI, as

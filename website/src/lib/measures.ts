@@ -31,7 +31,7 @@ export interface Runner {
 }
 
 /** Where the page reads the results: the browser fetches them, as the workflow pushes them after the site is built. */
-export const dataUrl: string = import.meta.env.VITE_BENCHMARKS_URL || "https://raw.githubusercontent.com/egoist/mygo/benchmarks/latest.json"
+export const dataUrl: string = import.meta.env.VITE_BENCHMARKS_URL || "https://raw.githubusercontent.com/caelyreth/evil-mygo/benchmarks/latest.json"
 
 export const workflowUrl = `${site.repo}/actions/workflows/bench.yml`
 

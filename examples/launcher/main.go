@@ -22,8 +22,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/egoist/mygo"
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // shortcuts are tried in turn: the first one free is the app's. Not

@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/egoist/mygo/plugins/terminal/internal/vt"
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/plugins/terminal/internal/vt"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // mirrored is a terminal and another showing its Mirror's frames.

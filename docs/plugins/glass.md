@@ -13,7 +13,7 @@ is all Go: no JavaScript package, and nothing to `mygo.Use`. The
 button beside a web page under the system's glass.
 
 ```go
-import "github.com/egoist/mygo/plugins/glass"
+import "github.com/caelyreth/evil-mygo/plugins/glass"
 
 ui.Row(c).Padding(8, 16).Gap(8).Radius(22).Material(glass.Glass{}).Children(func() {
 	ui.Text(c, "On glass")

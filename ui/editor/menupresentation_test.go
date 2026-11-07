@@ -4,7 +4,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // The editor's context menu draws in the window while the window draws its

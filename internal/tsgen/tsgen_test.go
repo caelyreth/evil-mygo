@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/egoist/mygo/internal/tsgen/internal/fixture"
+	"github.com/caelyreth/evil-mygo/internal/tsgen/internal/fixture"
 )
 
 func modelOf(name string, svc any) Service {
@@ -62,7 +62,7 @@ func generate(t *testing.T) string {
 func TestGenerate(t *testing.T) {
 	src := generate(t)
 	for _, want := range []string{
-		`import { call, event, type Channel } from "mygo-runtime";`,
+		`import { call, event, type Channel } from "@caelyreth/evil-mygo-runtime";`,
 		`export type Status = "todo" | "done";`,
 		`export type Priority = 0 | 1 | 2;`,
 		"export interface FixtureChannel {\n  name: string;\n}",
@@ -113,7 +113,7 @@ func TestGenerate(t *testing.T) {
 }
 
 // TestGeneratedCodeTypeChecks runs tsc on the output, against the
-// mygo-runtime package of the workspace, when the repository's dev
+// @caelyreth/evil-mygo-runtime package of the workspace, when the repository's dev
 // dependencies are installed (bun install).
 func TestGeneratedCodeTypeChecks(t *testing.T) {
 	tsc, err := filepath.Abs("../../node_modules/.bin/tsc")
@@ -128,19 +128,19 @@ func TestGeneratedCodeTypeChecks(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(filepath.Join(runtimePkg, "dist", "index.d.ts")); err != nil {
-		t.Skip("mygo-runtime not built; run bun run build")
+		t.Skip("@caelyreth/evil-mygo-runtime not built; run bun run build")
 	}
 	dir := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(dir, "node_modules"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(dir, "node_modules", "@caelyreth"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink(runtimePkg, filepath.Join(dir, "node_modules", "mygo-runtime")); err != nil {
+	if err := os.Symlink(runtimePkg, filepath.Join(dir, "node_modules", "@caelyreth/evil-mygo-runtime")); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(dir, "client.ts"), []byte(generate(t)), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	usage := `import { Channel, runtime } from "mygo-runtime";
+	usage := `import { Channel, runtime } from "@caelyreth/evil-mygo-runtime";
 import { Tasks, events, type Task, type Status, type FixtureChannel } from "./client";
 const s: Status = "todo";
 const page = await Tasks.list(s, 10);

@@ -3,7 +3,7 @@ package ui
 import (
 	"slices"
 
-	"github.com/egoist/mygo/internal/text"
+	"github.com/caelyreth/evil-mygo/internal/text"
 )
 
 // The layout cache lays out again only the elements whose layout may

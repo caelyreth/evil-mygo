@@ -14,7 +14,7 @@ import (
 	"testing"
 	"unicode/utf16"
 
-	"github.com/egoist/mygo"
+	"github.com/caelyreth/evil-mygo"
 )
 
 // The PDFs that WebKit prints on macOS name radicals for many Chinese

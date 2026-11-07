@@ -8,7 +8,7 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/egoist/mygo/internal/gpu/d3d11/device"
+	"github.com/caelyreth/evil-mygo/internal/gpu/d3d11/device"
 )
 
 // The swap chain's frame latency object keeps one frame waiting ahead of

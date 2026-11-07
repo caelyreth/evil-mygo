@@ -5,9 +5,9 @@ package e2e
 import (
 	"testing"
 
-	"github.com/egoist/mygo"
-	"github.com/egoist/mygo/internal/linux"
-	"github.com/egoist/mygo/internal/wait"
+	"github.com/caelyreth/evil-mygo"
+	"github.com/caelyreth/evil-mygo/internal/linux"
+	"github.com/caelyreth/evil-mygo/internal/wait"
 )
 
 func activateMenu(w *mygo.Window, path ...string) (err error) {

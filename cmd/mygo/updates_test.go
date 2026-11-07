@@ -18,7 +18,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/egoist/mygo/internal/update"
+	"github.com/caelyreth/evil-mygo/internal/update"
 )
 
 func TestUpdatesConfig(t *testing.T) {
@@ -129,7 +129,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/egoist/mygo"
+	"github.com/caelyreth/evil-mygo"
 )
 
 func main() {

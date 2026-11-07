@@ -9,9 +9,9 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/egoist/mygo/internal/rope"
-	"github.com/egoist/mygo/internal/text"
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/internal/rope"
+	"github.com/caelyreth/evil-mygo/internal/text"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // editorTest is an editor in a tester, focused, with the text given; | in

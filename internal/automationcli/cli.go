@@ -20,6 +20,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	buildversion "github.com/caelyreth/evil-mygo/internal/version"
 )
 
 // Options are what the command takes besides its arguments.
@@ -191,17 +193,19 @@ func parseTimeout(v string) (time.Duration, error) {
 	return d, nil
 }
 
-// Version is the version of MyGo the command was built from: the
-// module's version when go install got it, as v0.8.0, the version an
-// app's go.mod requires when installed from the app's module, or (devel).
+// Version reports the fork release, upstream baseline and installed module.
 func Version() string {
+	return buildversion.String() + "; module " + moduleVersion()
+}
+
+func moduleVersion() string {
 	bi, ok := debug.ReadBuildInfo()
 	if !ok {
 		return "(devel)"
 	}
 	mods := append([]*debug.Module{&bi.Main}, bi.Deps...)
 	for _, m := range mods {
-		if m.Path != "github.com/egoist/mygo" || m.Version == "" {
+		if m.Path != "github.com/caelyreth/evil-mygo" || m.Version == "" {
 			continue
 		}
 		if m.Replace != nil {

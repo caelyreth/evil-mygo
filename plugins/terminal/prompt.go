@@ -4,7 +4,7 @@ import (
 	"math"
 	"strings"
 
-	"github.com/egoist/mygo/plugins/terminal/internal/vt"
+	"github.com/caelyreth/evil-mygo/plugins/terminal/internal/vt"
 )
 
 // promptRow is a row of the shell's prompt and its input, as clickToMove

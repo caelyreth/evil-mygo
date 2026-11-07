@@ -6,11 +6,11 @@ import (
 	"time"
 	"weak"
 
-	"github.com/egoist/mygo/i18n"
-	"github.com/egoist/mygo/internal/platform"
-	"github.com/egoist/mygo/internal/scene"
-	"github.com/egoist/mygo/internal/text"
-	"github.com/egoist/mygo/transfer"
+	"github.com/caelyreth/evil-mygo/i18n"
+	"github.com/caelyreth/evil-mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/scene"
+	"github.com/caelyreth/evil-mygo/internal/text"
+	"github.com/caelyreth/evil-mygo/transfer"
 )
 
 // host is where a runtime's frames go: a window's surface, or memory for

@@ -1,7 +1,7 @@
 package raster
 
 import (
-	"github.com/egoist/mygo/internal/scene"
+	"github.com/caelyreth/evil-mygo/internal/scene"
 	"math"
 )
 

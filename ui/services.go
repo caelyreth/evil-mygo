@@ -4,7 +4,7 @@ import (
 	"strings"
 	"weak"
 
-	"github.com/egoist/mygo/transfer"
+	"github.com/caelyreth/evil-mygo/transfer"
 )
 
 // Services provides persistent window services for custom controls and

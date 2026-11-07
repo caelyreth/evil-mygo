@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/egoist/mygo/internal/l10n"
-	"github.com/egoist/mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/l10n"
+	"github.com/caelyreth/evil-mygo/internal/platform"
 )
 
 // ContextMenu gives the element a context menu, which build fills with

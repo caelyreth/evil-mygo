@@ -104,17 +104,19 @@ export default async ({ command }: Env) => ({
 	}
 	os.Remove(filepath.Join(dir, jsonConfig))
 
-	// defineConfig of mygo-cli, which projects depend on.
+	// defineConfig of @caelyreth/evil-mygo-cli, which projects depend on.
 	modules := filepath.Join(dir, "node_modules")
-	os.Mkdir(modules, 0o755)
+	if err := os.MkdirAll(filepath.Join(modules, "@caelyreth"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	cli, _ := filepath.Abs(filepath.Join("..", "..", "packages", "cli"))
-	if err := os.Symlink(cli, filepath.Join(modules, "mygo-cli")); err != nil {
+	if err := os.Symlink(cli, filepath.Join(modules, "@caelyreth/evil-mygo-cli")); err != nil {
 		if runtime.GOOS == "windows" {
 			t.Skipf("no symbolic links: %v", err)
 		}
 		t.Fatal(err)
 	}
-	write(tsConfig, `import { defineConfig } from "mygo-cli";
+	write(tsConfig, `import { defineConfig } from "@caelyreth/evil-mygo-cli";
 
 export default defineConfig({ name: "Defined", out: "build" });
 `)
@@ -123,7 +125,7 @@ export default defineConfig({ name: "Defined", out: "build" });
 	}
 }
 
-// TestConfigTypes checks that the TypeScript types of mygo-cli describe the
+// TestConfigTypes checks that the TypeScript types of @caelyreth/evil-mygo-cli describe the
 // fields of Config.
 func TestConfigTypes(t *testing.T) {
 	src, err := os.ReadFile(filepath.Join("..", "..", "packages", "cli", "index.d.ts"))

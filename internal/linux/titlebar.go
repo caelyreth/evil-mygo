@@ -6,8 +6,8 @@ import (
 	"strings"
 	"unsafe"
 
-	"github.com/egoist/mygo/internal/bridge"
-	"github.com/egoist/mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/bridge"
+	"github.com/caelyreth/evil-mygo/internal/platform"
 )
 
 // A window with a hidden title bar has no decorations, as a frameless one,

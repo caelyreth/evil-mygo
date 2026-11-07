@@ -4,7 +4,7 @@ import (
 	"image"
 	"math"
 
-	"github.com/egoist/mygo/internal/vec"
+	"github.com/caelyreth/evil-mygo/internal/vec"
 )
 
 // renderer draws nodes into layers of premultiplied RGBA pixels, w×h.

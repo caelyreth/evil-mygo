@@ -5,8 +5,8 @@ package glass
 import (
 	"testing"
 
-	"github.com/egoist/mygo/internal/gpu/gputest"
-	"github.com/egoist/mygo/internal/gpu/webgpu"
+	"github.com/caelyreth/evil-mygo/internal/gpu/gputest"
+	"github.com/caelyreth/evil-mygo/internal/gpu/webgpu"
 )
 
 func TestWebGPURendersGlass(t *testing.T) {

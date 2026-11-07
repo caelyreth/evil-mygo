@@ -6,7 +6,7 @@ description: Drive a running MyGo app from the shell. Read the elements of its n
 # mygo-automation
 
 `mygo-automation` drives a running MyGo app through the socket of its
-automation plugin (`github.com/egoist/mygo/plugins/automation`). It is
+automation plugin (`github.com/caelyreth/evil-mygo/plugins/automation`). It is
 the guide of the version you run, as `mygo-automation version` tells. If
 the app's MyGo is another version, install the matching one (see
 "Installing").
@@ -40,7 +40,7 @@ release by a build tag:
 
 package main
 
-import _ "github.com/egoist/mygo/plugins/automation"
+import _ "github.com/caelyreth/evil-mygo/plugins/automation"
 ```
 
 ```sh
@@ -289,14 +289,14 @@ wrong. Errors from the app start with its code:
 
 ```sh
 # In the app's module directory: the version of MyGo its go.mod requires.
-go install github.com/egoist/mygo/plugins/automation/cmd/mygo-automation
+go install github.com/caelyreth/evil-mygo/plugins/automation/cmd/mygo-automation
 # Anywhere else: name that version, which this prints in the app's module.
-go list -m github.com/egoist/mygo
-go install github.com/egoist/mygo/plugins/automation/cmd/mygo-automation@vX.Y.Z
+go list -m github.com/caelyreth/evil-mygo
+go install github.com/caelyreth/evil-mygo/plugins/automation/cmd/mygo-automation@vX.Y.Z
 ```
 
-`version` prints the version of MyGo the command was built from (as
-`v0.8.0`; `(devel)` or a pseudo-version for a build from a checkout), and
+`version` prints the evil-mygo release and upstream baseline, followed by the
+installed module version (`v0.1.0`, `(devel)` or a pseudo-version), and
 `skills` prints this guide. `go install` puts `mygo-automation` in
 `$(go env GOBIN)`, else
 `$(go env GOPATH)/bin`. Upgrading the app's MyGo does not upgrade the

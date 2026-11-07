@@ -5,7 +5,7 @@ import (
 	"hash/maphash"
 	"math"
 
-	"github.com/egoist/mygo/internal/scene"
+	"github.com/caelyreth/evil-mygo/internal/scene"
 )
 
 // clipping is how an element clips and masks what it paints, itself and

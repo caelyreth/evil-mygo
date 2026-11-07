@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 const archiveDisplayFont = "Helvetica Neue, Avenir Next"

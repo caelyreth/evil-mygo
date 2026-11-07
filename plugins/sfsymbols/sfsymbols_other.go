@@ -2,7 +2,7 @@
 
 package sfsymbols
 
-import "github.com/egoist/mygo/ui"
+import "github.com/caelyreth/evil-mygo/ui"
 
 // Image returns the SF Symbol named name, drawn px pixels square in col,
 // or false where the system has no such symbol: on another OS, or a macOS

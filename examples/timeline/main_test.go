@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // The intro is one timeline: the tweens the view arranges add up to a

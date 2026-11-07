@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/egoist/mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/platform"
 )
 
 // The URL schemes of a bundle are declared in its Info.plist

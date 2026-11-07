@@ -2,7 +2,7 @@
 
 package darwin
 
-import "github.com/egoist/mygo/internal/platform"
+import "github.com/caelyreth/evil-mygo/internal/platform"
 
 // The Dock tile shows progress (Window.SetProgressBar) under the app icon.
 // NSProgressIndicator does not draw in a Dock tile, which renders its

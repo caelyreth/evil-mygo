@@ -5,9 +5,9 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/egoist/mygo/internal/l10n"
-	"github.com/egoist/mygo/internal/platform"
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/internal/l10n"
+	"github.com/caelyreth/evil-mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // View creates a code editor of st's buffer, as Zed's: syntax

@@ -3,7 +3,7 @@ package ui
 import (
 	"slices"
 
-	"github.com/egoist/mygo/internal/text"
+	"github.com/caelyreth/evil-mygo/internal/text"
 )
 
 // formBuild is a Form being built: the boxes of its fields' labels, which

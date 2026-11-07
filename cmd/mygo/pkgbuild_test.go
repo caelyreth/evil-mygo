@@ -16,7 +16,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/egoist/mygo/internal/update"
+	"github.com/caelyreth/evil-mygo/internal/update"
 )
 
 func TestArchVersion(t *testing.T) {

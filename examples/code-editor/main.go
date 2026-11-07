@@ -17,9 +17,9 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/egoist/mygo"
-	"github.com/egoist/mygo/ui"
-	"github.com/egoist/mygo/ui/editor"
+	"github.com/caelyreth/evil-mygo"
+	"github.com/caelyreth/evil-mygo/ui"
+	"github.com/caelyreth/evil-mygo/ui/editor"
 )
 
 // file is a file of the example: its text as it was, and the buffer and

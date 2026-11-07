@@ -3,13 +3,13 @@ package ui
 import (
 	"testing"
 
-	"github.com/egoist/mygo/internal/l10n"
-	"github.com/egoist/mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/l10n"
+	"github.com/caelyreth/evil-mygo/internal/platform"
 
 	// MyGo's own strings in the languages the tests show.
-	_ "github.com/egoist/mygo/locales/ja"
-	_ "github.com/egoist/mygo/locales/zh-Hans"
-	_ "github.com/egoist/mygo/locales/zh-Hant"
+	_ "github.com/caelyreth/evil-mygo/locales/ja"
+	_ "github.com/caelyreth/evil-mygo/locales/zh-Hans"
+	_ "github.com/caelyreth/evil-mygo/locales/zh-Hant"
 )
 
 // TestControlsSayTheLanguage checks that the controls say MyGo's own

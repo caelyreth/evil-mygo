@@ -15,8 +15,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/egoist/mygo"
-	"github.com/egoist/mygo/internal/download"
+	"github.com/caelyreth/evil-mygo"
+	"github.com/caelyreth/evil-mygo/internal/download"
 )
 
 //go:generate go run ./internal/libbuild

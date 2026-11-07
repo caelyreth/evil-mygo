@@ -3,8 +3,8 @@ package ui
 import (
 	"time"
 
-	"github.com/egoist/mygo/i18n"
-	"github.com/egoist/mygo/internal/l10n"
+	"github.com/caelyreth/evil-mygo/i18n"
+	"github.com/caelyreth/evil-mygo/internal/l10n"
 )
 
 // Locale returns the language the app shows (mygo.App.Locale), a BCP 47

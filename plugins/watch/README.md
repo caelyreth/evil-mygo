@@ -1,6 +1,6 @@
-# @mygo-plugins/watch
+# @caelyreth/evil-mygo-watch
 
-Changes to files for [MyGo](https://github.com/egoist/mygo) apps' pages, in
+Changes to files for [MyGo](https://github.com/caelyreth/evil-mygo) apps' pages, in
 the directories and files the app lets them watch, such as a project open
 in an editor.
 
@@ -8,7 +8,7 @@ Use the plugin in Go with the directories pages may watch, each under a
 name:
 
 ```go
-import "github.com/egoist/mygo/plugins/watch"
+import "github.com/caelyreth/evil-mygo/plugins/watch"
 
 mygo.Use(watch.New(watch.Options{
 	Roots: map[string]watch.Root{
@@ -20,7 +20,7 @@ mygo.Use(watch.New(watch.Options{
 and watch one by its name in the frontend:
 
 ```ts
-import { watch } from "@mygo-plugins/watch";
+import { watch } from "@caelyreth/evil-mygo-watch";
 
 const watcher = await watch("project", { recursive: true });
 for await (const events of watcher) {
@@ -35,5 +35,5 @@ what is different, not every step: treat them as hints to read the files
 again. `watcher.close()`, breaking out of the loop, an
 `AbortSignal` (`signal`) or the page navigating stop the watch.
 
-[The documentation](https://github.com/egoist/mygo/blob/main/docs/plugins/watch.md)
+[The documentation](https://github.com/caelyreth/evil-mygo/blob/main/docs/plugins/watch.md)
 covers the options of the Go side, errors and how each platform watches.

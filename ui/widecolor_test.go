@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/egoist/mygo/internal/platform"
-	"github.com/egoist/mygo/internal/scene"
-	"github.com/egoist/mygo/internal/wait"
+	"github.com/caelyreth/evil-mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/scene"
+	"github.com/caelyreth/evil-mygo/internal/wait"
 )
 
 var wideGreen = Oklch(0.85, 0.3, 145)

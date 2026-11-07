@@ -5,7 +5,7 @@ import (
 	"math/rand/v2"
 	"sync"
 
-	"github.com/egoist/mygo/audio"
+	"github.com/caelyreth/evil-mygo/audio"
 )
 
 const synthRate = 32000

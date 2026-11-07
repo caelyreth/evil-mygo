@@ -14,7 +14,7 @@ options:
 <!-- app loading 480 -->
 
 ```go
-import "github.com/egoist/mygo/plugins/loading"
+import "github.com/caelyreth/evil-mygo/plugins/loading"
 
 ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 	loading.Arc(c).Label("Saving")

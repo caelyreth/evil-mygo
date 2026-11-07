@@ -2,7 +2,7 @@
 
 package mygo
 
-import "github.com/egoist/mygo/internal/platform"
+import "github.com/caelyreth/evil-mygo/internal/platform"
 
 // Browsers keep no window state (WindowOptions.StateKey): the page lays
 // the windows out, and there is no PathUserData to keep the state file

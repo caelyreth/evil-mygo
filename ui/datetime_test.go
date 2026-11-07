@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/egoist/mygo/i18n"
-	"github.com/egoist/mygo/internal/l10n"
-	"github.com/egoist/mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/i18n"
+	"github.com/caelyreth/evil-mygo/internal/l10n"
+	"github.com/caelyreth/evil-mygo/internal/platform"
 )
 
 func TestCalendar(t *testing.T) {

@@ -1,6 +1,6 @@
 package mygo
 
-import "github.com/egoist/mygo/internal/platform"
+import "github.com/caelyreth/evil-mygo/internal/platform"
 
 // PDFOptions configures Page.PrintToPDF. The zero value prints Letter
 // pages in portrait orientation with margins of 0.4 inch and without

@@ -14,8 +14,8 @@ import (
 
 	"github.com/go-webgpu/webgpu/wgpu"
 
-	"github.com/egoist/mygo"
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 const (

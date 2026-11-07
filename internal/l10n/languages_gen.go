@@ -4,5 +4,5 @@ package l10n
 
 // Languages are those MyGo's own strings are translated to besides
 // English, each in a package an app imports, as
-// github.com/egoist/mygo/locales/zh-Hans.
+// github.com/caelyreth/evil-mygo/locales/zh-Hans.
 var Languages = []string{"ja", "zh-Hans", "zh-Hant"}

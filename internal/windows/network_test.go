@@ -5,7 +5,7 @@ package windows
 import (
 	"testing"
 
-	"github.com/egoist/mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/platform"
 )
 
 // TestNetworkStatus checks the reading of the connectivity hint: online

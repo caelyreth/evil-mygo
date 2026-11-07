@@ -14,7 +14,7 @@ import (
 	"syscall"
 	"unsafe"
 
-	"github.com/egoist/mygo/internal/gpu"
+	"github.com/caelyreth/evil-mygo/internal/gpu"
 )
 
 // classSets are the classes that get shaders of their own, from those holding

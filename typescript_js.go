@@ -2,7 +2,7 @@
 
 package mygo
 
-import "github.com/egoist/mygo/internal/platform"
+import "github.com/caelyreth/evil-mygo/internal/platform"
 
 // Browsers show no web pages, for which `mygo generate` writes the client:
 // builds for them leave out the TypeScript generator, with go/parser.

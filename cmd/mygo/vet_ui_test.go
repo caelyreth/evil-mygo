@@ -35,7 +35,7 @@ func TestVetUICgo(t *testing.T) {
 		}},
 		{name: "stored element", files: map[string]string{
 			"main.go":   "package main\n\nimport \"fmt\"\n\nfunc main() { fmt.Println(answer(), saved) }\n",
-			"answer.go": strings.Replace(answer, "import \"C\"\n", "import \"C\"\n\nimport \"github.com/egoist/mygo/ui\"\n\nvar saved ui.Element\n", 1),
+			"answer.go": strings.Replace(answer, "import \"C\"\n", "import \"C\"\n\nimport \"github.com/caelyreth/evil-mygo/ui\"\n\nvar saved ui.Element\n", 1),
 		}, want: "1 native UI lifetime issue(s)"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {

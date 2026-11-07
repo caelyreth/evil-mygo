@@ -5,7 +5,7 @@ package darwin
 import (
 	"testing"
 
-	"github.com/egoist/mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/platform"
 )
 
 // TestCursors gives every cursor an NSCursor: AppKit's own, a private

@@ -6,8 +6,8 @@ import (
 	"image/draw"
 	"slices"
 
-	"github.com/egoist/mygo/internal/platform"
-	"github.com/egoist/mygo/transfer"
+	"github.com/caelyreth/evil-mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/transfer"
 )
 
 // DragOptions configures a native data source. See package transfer for

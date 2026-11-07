@@ -8,8 +8,8 @@ import (
 	"math"
 	"sync/atomic"
 
-	"github.com/egoist/mygo/internal/scene"
-	"github.com/egoist/mygo/internal/svg"
+	"github.com/caelyreth/evil-mygo/internal/scene"
+	"github.com/caelyreth/evil-mygo/internal/svg"
 )
 
 // SVG is a vector image: an icon, a logo, an illustration. It stays sharp

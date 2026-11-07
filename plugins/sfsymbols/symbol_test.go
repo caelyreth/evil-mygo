@@ -3,7 +3,7 @@ package sfsymbols
 import (
 	"testing"
 
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // box is an SVG square filling its view box, for a fallback that shows.

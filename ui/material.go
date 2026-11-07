@@ -4,12 +4,12 @@ import (
 	"math"
 	"slices"
 
-	"github.com/egoist/mygo/internal/scene"
+	"github.com/caelyreth/evil-mygo/internal/scene"
 )
 
 // Material is what Element.Material fills an element with in place of a
 // background: a look a package paints, as the glass plugin's Liquid Glass
-// (github.com/egoist/mygo/plugins/glass).
+// (github.com/caelyreth/evil-mygo/plugins/glass).
 type Material interface {
 	// PaintMaterial paints the material over box, rounded by radii, in
 	// DIPs, under the element's border and children.

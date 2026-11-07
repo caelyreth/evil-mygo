@@ -8,7 +8,7 @@ import (
 	"text/template"
 	"unicode/utf16"
 
-	"github.com/egoist/mygo/internal/update"
+	"github.com/caelyreth/evil-mygo/internal/update"
 )
 
 // The install script of Windows apps with updates: install.ps1 downloads

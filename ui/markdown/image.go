@@ -6,9 +6,9 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/egoist/mygo/internal/l10n"
-	"github.com/egoist/mygo/ui"
-	"github.com/egoist/mygo/ui/markdown/parser"
+	"github.com/caelyreth/evil-mygo/internal/l10n"
+	"github.com/caelyreth/evil-mygo/ui"
+	"github.com/caelyreth/evil-mygo/ui/markdown/parser"
 )
 
 // imageEntry is an image loading or loaded.

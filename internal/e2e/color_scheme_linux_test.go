@@ -17,7 +17,7 @@ import (
 
 	"github.com/ebitengine/purego"
 
-	"github.com/egoist/mygo"
+	"github.com/caelyreth/evil-mygo"
 )
 
 // On a desktop whose dark style is only in the settings portal, as

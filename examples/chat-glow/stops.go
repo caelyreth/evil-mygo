@@ -4,7 +4,7 @@ import (
 	"math"
 	"slices"
 
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // The edge glow's colors, and how its stops move: every shuffleEvery

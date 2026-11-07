@@ -26,7 +26,7 @@ package chart
 import (
 	"slices"
 
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // Side is a side of a plot, where an axis goes.

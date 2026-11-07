@@ -3,7 +3,7 @@ package gputest
 import (
 	"math/rand/v2"
 
-	"github.com/egoist/mygo/internal/scene"
+	"github.com/caelyreth/evil-mygo/internal/scene"
 )
 
 // Changing makes random scenes and changes them a little at a time, as the

@@ -6,9 +6,9 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/egoist/mygo/internal/scene"
-	"github.com/egoist/mygo/internal/shaderir"
-	"github.com/egoist/mygo/internal/shaderir/interp"
+	"github.com/caelyreth/evil-mygo/internal/scene"
+	"github.com/caelyreth/evil-mygo/internal/shaderir"
+	"github.com/caelyreth/evil-mygo/internal/shaderir/interp"
 )
 
 // noiseSource is a shader of what textures computed in shaders are made

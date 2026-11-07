@@ -3,7 +3,7 @@ package main
 import (
 	"testing"
 
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // The gallery shows the names it is given, and its options change them.

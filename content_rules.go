@@ -3,7 +3,7 @@ package mygo
 import (
 	"fmt"
 
-	"github.com/egoist/mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/platform"
 )
 
 // ContentRules are rules that block what pages load and hide parts of

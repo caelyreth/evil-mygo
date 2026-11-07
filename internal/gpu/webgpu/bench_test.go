@@ -7,9 +7,9 @@ import (
 
 	"github.com/go-webgpu/webgpu/wgpu"
 
-	"github.com/egoist/mygo/internal/gpu"
-	"github.com/egoist/mygo/internal/gpu/gputest"
-	"github.com/egoist/mygo/internal/scene"
+	"github.com/caelyreth/evil-mygo/internal/gpu"
+	"github.com/caelyreth/evil-mygo/internal/gpu/gputest"
+	"github.com/caelyreth/evil-mygo/internal/scene"
 )
 
 // BenchmarkRenderSprites draws gputest's sprite-heavy game frame into a

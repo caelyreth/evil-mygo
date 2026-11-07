@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // word is a text shaped letter by letter, as Chrome lays out the demo's

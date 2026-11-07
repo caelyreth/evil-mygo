@@ -4,20 +4,20 @@
 
 ## Install
 
-Projects with a web frontend depend on the CLI as the `mygo-cli` npm
+Projects with a web frontend depend on the CLI as the `@caelyreth/evil-mygo-cli` npm
 package, which holds a prebuilt binary for macOS, Linux and Windows on
 arm64 and x64, and run it from their scripts:
 
 ```sh
-bun add -d mygo-cli    # or: npm install -D mygo-cli
+bun add -d @caelyreth/evil-mygo-cli    # or: npm install -D @caelyreth/evil-mygo-cli
 bun run dev            # "dev": "mygo dev" in package.json
 bunx mygo doctor       # any command, in the project
 ```
 
-Outside a project, run `bunx mygo-cli` or `npx mygo-cli`, e.g.
-`bunx mygo-cli init my-app`: npm has an unrelated package named `mygo`, so
-`bunx mygo` would run it where mygo-cli is not installed. `npm install -g
-mygo-cli` puts `mygo` on your `PATH`. `MYGO_CLI_BINARY` makes the package
+Outside a project, run `bunx @caelyreth/evil-mygo-cli` or `npx @caelyreth/evil-mygo-cli`, e.g.
+`bunx @caelyreth/evil-mygo-cli init my-app`: npm has an unrelated package named `mygo`, so
+`bunx mygo` would run it where @caelyreth/evil-mygo-cli is not installed. `npm install -g
+@caelyreth/evil-mygo-cli` puts `mygo` on your `PATH`. `MYGO_CLI_BINARY` makes the package
 run another build of the CLI.
 
 Projects of [native UI](ui/README.md) have no npm packages: their `go.mod` has
@@ -27,13 +27,13 @@ which `go tool mygo` runs at the version it pins.
 The CLI is a Go program, which Go runs too, without installing it:
 
 ```sh
-go run github.com/egoist/mygo/cmd/mygo@latest init my-app
+go run github.com/caelyreth/evil-mygo/cmd/mygo@latest init my-app
 ```
 
 `go install` puts `mygo` on your `PATH`:
 
 ```sh
-go install github.com/egoist/mygo/cmd/mygo@latest
+go install github.com/caelyreth/evil-mygo/cmd/mygo@latest
 ```
 
 Either way, building apps needs Go, which compiles them.
@@ -232,7 +232,7 @@ Prints the version of the CLI.
 | `MYGO_INSPECTOR` | `1` keeps the [inspector of native UI](ui/inspector.md) in production builds of `mygo build`, which leave it out |
 | `MYGO_UPDATER_PRIVATE_KEY` | the secret key that signs updates, for `mygo build` |
 | `MYGO_WINDOWS_CERTIFICATE_PASSWORD` | the password of `windows.certificate`, for `mygo build` |
-| `MYGO_CLI_BINARY` | a build of the CLI for the `mygo-cli` package to run |
+| `MYGO_CLI_BINARY` | a build of the CLI for the `@caelyreth/evil-mygo-cli` package to run |
 | `MYGO_ENV` | `production` makes an app behave like a production build, e.g. without the web inspector |
 | `MYGO_LOCALE` | the language the app runs in, over the one it keeps, which `mygo dev -lang` sets |
 

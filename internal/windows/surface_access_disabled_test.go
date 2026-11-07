@@ -5,7 +5,7 @@ package windows
 import (
 	"testing"
 
-	"github.com/egoist/mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/platform"
 )
 
 // sentEvents records the events a surface sends its window's handler.

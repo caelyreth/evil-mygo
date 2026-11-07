@@ -46,9 +46,9 @@ JavaScript package whose functions call them. The app uses the Go half with
 
 ```go
 import (
-	"github.com/egoist/mygo"
-	"github.com/egoist/mygo/plugins/fetch"
-	"github.com/egoist/mygo/plugins/websocket"
+	"github.com/caelyreth/evil-mygo"
+	"github.com/caelyreth/evil-mygo/plugins/fetch"
+	"github.com/caelyreth/evil-mygo/plugins/websocket"
 )
 
 func main() {
@@ -60,12 +60,12 @@ func main() {
 and the frontend imports their packages:
 
 ```sh
-bun add @mygo-plugins/fetch @mygo-plugins/websocket
+bun add @caelyreth/evil-mygo-fetch @caelyreth/evil-mygo-websocket
 ```
 
 ```ts
-import { fetch } from "@mygo-plugins/fetch";
-import { WebSocket } from "@mygo-plugins/websocket";
+import { fetch } from "@caelyreth/evil-mygo-fetch";
+import { WebSocket } from "@caelyreth/evil-mygo-websocket";
 
 const res = await fetch("https://api.example.com/me", {
   headers: { authorization: `Bearer ${token}` },
@@ -102,11 +102,11 @@ func (service) Now() time.Time { return time.Now() }
 The service is bound like those of `mygo.Bind`, with the same rules for its
 methods (contexts, channels, errors), but as `plugin:<name>` and outside the
 generated TypeScript client. Its JavaScript package calls it with `call` of
-`mygo-runtime`, which it lists as a peer dependency, so that it uses the
+`@caelyreth/evil-mygo-runtime`, which it lists as a peer dependency, so that it uses the
 app's copy (and as a development dependency, for its own builds and tests):
 
 ```ts
-import { call } from "mygo-runtime";
+import { call } from "@caelyreth/evil-mygo-runtime";
 
 export const now = async () => new Date(await call<string>("plugin:clock.Now"));
 ```

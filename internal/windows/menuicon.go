@@ -5,8 +5,8 @@ package windows
 import (
 	"unsafe"
 
-	"github.com/egoist/mygo/internal/menuicon"
-	"github.com/egoist/mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/menuicon"
+	"github.com/caelyreth/evil-mygo/internal/platform"
 )
 
 // The icons of menu items. Windows 11's popup menus, which MyGo draws

@@ -4,7 +4,7 @@ package main
 
 // Link every translation of MyGo's strings for the Windows installer.
 import (
-	_ "github.com/egoist/mygo/locales/ja"
-	_ "github.com/egoist/mygo/locales/zh-Hans"
-	_ "github.com/egoist/mygo/locales/zh-Hant"
+	_ "github.com/caelyreth/evil-mygo/locales/ja"
+	_ "github.com/caelyreth/evil-mygo/locales/zh-Hans"
+	_ "github.com/caelyreth/evil-mygo/locales/zh-Hant"
 )

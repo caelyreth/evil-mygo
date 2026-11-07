@@ -9,7 +9,7 @@ JavaScript package, and nothing to `mygo.Use`.
 Show one as SwiftUI's `Image(systemName:)` does:
 
 ```go
-import "github.com/egoist/mygo/plugins/sfsymbols"
+import "github.com/caelyreth/evil-mygo/plugins/sfsymbols"
 
 sfsymbols.Symbol(c, "gearshape")
 sfsymbols.Symbol(c, "trash").Size(20).Color(t.Accent).Weight(sfsymbols.Semibold).Fill()

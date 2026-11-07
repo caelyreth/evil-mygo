@@ -1,6 +1,6 @@
 package gputest
 
-import "github.com/egoist/mygo/internal/scene"
+import "github.com/caelyreth/evil-mygo/internal/scene"
 
 // Effects for the renderers' tests, as plugins define theirs (see
 // scene.Effect). LensEffect shows its backdrop, sampled further right

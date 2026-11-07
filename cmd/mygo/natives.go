@@ -13,7 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	fetch "github.com/egoist/mygo/internal/download"
+	fetch "github.com/caelyreth/evil-mygo/internal/download"
 )
 
 // pluginFile is what a Go package that is a plugin of MyGo tells the CLI,

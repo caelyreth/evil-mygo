@@ -3,7 +3,7 @@ package gpu
 import (
 	"math"
 
-	"github.com/egoist/mygo/internal/scene"
+	"github.com/caelyreth/evil-mygo/internal/scene"
 )
 
 // Bands. A border-only fill (addFill) writes nothing where the coverages of

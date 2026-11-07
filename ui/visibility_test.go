@@ -3,7 +3,7 @@ package ui
 import (
 	"testing"
 
-	"github.com/egoist/mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/platform"
 )
 
 // TestWindowHidden hides and shows a Tester's window: the view reads it

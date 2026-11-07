@@ -24,7 +24,7 @@ const child = spawn(bin, args, { stdio: "inherit" });
 process.on("SIGINT", () => {});
 process.on("SIGTERM", () => child.kill("SIGTERM"));
 child.on("error", (err) => {
-  console.error(`mygo-cli: cannot run ${bin}: ${err.message}`);
+  console.error(`@caelyreth/evil-mygo-cli: cannot run ${bin}: ${err.message}`);
   process.exit(1);
 });
 child.on("exit", (code, signal) => {

@@ -313,7 +313,7 @@ mygo.json:
 
 The client is then `frontend/src/mygo.ts` (`bindings` changes where),
 which `mygo dev` rewrites as the Go code changes and `mygo build` before
-it builds the frontend; the frontend depends on `mygo-runtime`, which the
+it builds the frontend; the frontend depends on `@caelyreth/evil-mygo-runtime`, which the
 client imports. A web view loading `/` shows the frontend, from the dev
 server during `mygo dev` and embedded in builds (see [how pages
 load](../frontend.md#how-pages-load)), and its page calls the services

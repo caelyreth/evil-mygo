@@ -12,8 +12,8 @@ import (
 
 	"github.com/ebitengine/purego"
 
-	"github.com/egoist/mygo/internal/platform"
-	"github.com/egoist/mygo/internal/watchdriver"
+	"github.com/caelyreth/evil-mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/watchdriver"
 )
 
 // Watches use FSEvents: one stream per directory target, covering the whole

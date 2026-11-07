@@ -1,6 +1,6 @@
 package gputest
 
-import "github.com/egoist/mygo/internal/scene"
+import "github.com/caelyreth/evil-mygo/internal/scene"
 
 // CanvasScene returns a 120×80 scene showing canvases (scene.NewCanvas): a
 // 16×12 one drawn with fills, a rounded one, an image and a canvas of its

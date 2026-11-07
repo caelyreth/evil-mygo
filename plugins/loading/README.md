@@ -1,12 +1,12 @@
 # loading
 
 The 29 loading indicators of [loading.dev](https://loading.dev) for
-[MyGo](https://github.com/egoist/mygo) apps of native UI: arcs, rings,
+[MyGo](https://github.com/caelyreth/evil-mygo) apps of native UI: arcs, rings,
 dots, bars and blocks that MyGo draws itself, as loading.dev's look and
 move.
 
 ```go
-import "github.com/egoist/mygo/plugins/loading"
+import "github.com/caelyreth/evil-mygo/plugins/loading"
 
 loading.Arc(c).Label("Saving")
 loading.Ring(c, loading.Options{Size: 32, Color: t.Accent, Easing: loading.EaseInOut})

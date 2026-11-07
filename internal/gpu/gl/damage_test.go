@@ -6,8 +6,8 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/egoist/mygo/internal/gpu/gputest"
-	"github.com/egoist/mygo/internal/scene"
+	"github.com/caelyreth/evil-mygo/internal/gpu/gputest"
+	"github.com/caelyreth/evil-mygo/internal/scene"
 )
 
 // TestPartialFramesMatchWhole draws random scenes changing a little at a

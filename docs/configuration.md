@@ -2,11 +2,11 @@
 
 `mygo.config.ts`, at the root of a project, describes the app and how the
 CLI develops and builds it. Its default export is the configuration, typed
-by `defineConfig` from the `mygo-cli` package that projects depend on, so
+by `defineConfig` from the `@caelyreth/evil-mygo-cli` package that projects depend on, so
 editors complete and document every field:
 
 ```ts
-import { defineConfig } from "mygo-cli";
+import { defineConfig } from "@caelyreth/evil-mygo-cli";
 
 export default defineConfig({
   name: "My App",
@@ -61,7 +61,7 @@ the fields of [the frontend](#development-and-the-frontend).
 | `devCommand` | | runs in the project directory while `mygo dev` runs, e.g. a Vite dev server; the app starts once `devUrl` answers |
 | `buildCommand` | | builds the frontend before `mygo build` compiles the app |
 | `frontendDist` | | the directory of the built frontend, which `mygo build` embeds into the app; `mygo dev` serves it from disk when there is no `devUrl` |
-| `bindings` | `frontend/src/mygo.ts` when `frontend/package.json` depends on `mygo-runtime`, else `src/mygo.ts` when package.json at the root does, else `mygo.ts` when the configuration has a frontend (`devUrl`, `devCommand`, `buildCommand` or `frontendDist`); none for an app without one, such as one of [native UI](ui/README.md) | where `mygo generate` writes the TypeScript client |
+| `bindings` | `frontend/src/mygo.ts` when `frontend/package.json` depends on `@caelyreth/evil-mygo-runtime`, else `src/mygo.ts` when package.json at the root does, else `mygo.ts` when the configuration has a frontend (`devUrl`, `devCommand`, `buildCommand` or `frontendDist`); none for an app without one, such as one of [native UI](ui/README.md) | where `mygo generate` writes the TypeScript client |
 | `out` | `dist` | where `mygo build` writes the builds, one directory per platform |
 
 See [the frontend](frontend.md#how-pages-load) for how they fit together.
@@ -161,7 +161,7 @@ export may also be a function, which can be async, of the command running
 (`"dev"`, `"build"`, `"generate"` or `"init"`):
 
 ```ts
-import { defineConfig } from "mygo-cli";
+import { defineConfig } from "@caelyreth/evil-mygo-cli";
 import pkg from "./package.json" with { type: "json" };
 
 export default defineConfig(({ command }) => ({

@@ -6,9 +6,9 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/egoist/mygo"
-	"github.com/egoist/mygo/internal/linux"
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo"
+	"github.com/caelyreth/evil-mygo/internal/linux"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // TestShortcutRepeatedGTK holds a key down through XTEST, whose presses

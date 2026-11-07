@@ -1,6 +1,6 @@
 package richtext
 
-import "github.com/egoist/mygo/ui"
+import "github.com/caelyreth/evil-mygo/ui"
 
 // Theme is how the editor's text looks: its colors, the font of code, the
 // styles of headings, and the room of paragraphs, lists, quotations and

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/egoist/mygo/plugins/terminal/internal/library"
+	"github.com/caelyreth/evil-mygo/plugins/terminal/internal/library"
 )
 
 // loadLib loads the libghostty-vt of the terminal plugin, which it

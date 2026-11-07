@@ -13,8 +13,8 @@ import (
 
 	"github.com/ebitengine/purego"
 
-	"github.com/egoist/mygo/internal/accelerator"
-	"github.com/egoist/mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/accelerator"
+	"github.com/caelyreth/evil-mygo/internal/platform"
 )
 
 // Native menu items are tracked per owner (a window's menu bar, a popup, a

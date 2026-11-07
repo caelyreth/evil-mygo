@@ -9,14 +9,14 @@ import (
 // Plugin adds a feature to an app in two halves: Go services, and a
 // JavaScript package whose pages call them. The official plugins live in
 // the repository's plugins directory, such as fetch, whose npm package
-// @mygo-plugins/fetch gives pages a fetch that runs in Go:
+// @caelyreth/evil-mygo-fetch gives pages a fetch that runs in Go:
 //
 //	mygo.Use(fetch.Plugin, websocket.Plugin)
 //
 // A plugin's services are bound like those of Bind, with the same rules
 // for their methods, but under the name "plugin:<Name>" and outside the
 // generated TypeScript client: its JavaScript package calls them with call
-// of mygo-runtime, as in `call("plugin:fetch.Fetch", ...)`. Only trusted
+// of @caelyreth/evil-mygo-runtime, as in `call("plugin:fetch.Fetch", ...)`. Only trusted
 // pages may call them, like every bound method.
 type Plugin struct {
 	// Name identifies the plugin: lowercase letters, digits and hyphens,

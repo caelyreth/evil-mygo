@@ -23,7 +23,7 @@ func TestStoredValuesAndGoroutineCaptures(t *testing.T) {
 	ui.MarkComplete()
 	fs := token.NewFileSet()
 	f, err := parser.ParseFile(fs, "app.go", `package app
-import native "github.com/egoist/mygo/ui"
+import native "github.com/caelyreth/evil-mygo/ui"
 type E = native.Element
 type app struct { bad E; context *native.Context; safe native.Handle; services native.Services; view func(*native.Context) }
 var saved native.Element

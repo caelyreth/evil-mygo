@@ -5,7 +5,7 @@ import (
 	"image/color"
 	"math/rand/v2"
 
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // The sheet is 8×8 cells of 16 pixels, drawn here pixel by pixel so that

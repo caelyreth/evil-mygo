@@ -1,6 +1,6 @@
 package gputest
 
-import "github.com/egoist/mygo/internal/scene"
+import "github.com/caelyreth/evil-mygo/internal/scene"
 
 // SpriteScene returns a w×h frame of a 2D game: layers of tiles of 16
 // pixels drawn scale times as large, pixelated, from one sheet, covering

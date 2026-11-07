@@ -9,9 +9,9 @@ import (
 	"strings"
 	"unsafe"
 
+	"github.com/caelyreth/evil-mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/transfer"
 	"github.com/ebitengine/purego"
-	"github.com/egoist/mygo/internal/platform"
-	"github.com/egoist/mygo/transfer"
 )
 
 var (

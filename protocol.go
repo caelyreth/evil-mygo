@@ -18,8 +18,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/egoist/mygo/internal/platform"
-	"github.com/egoist/mygo/internal/schemehost"
+	"github.com/caelyreth/evil-mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/schemehost"
 )
 
 // ProtocolModule registers custom URL schemes served by Go.

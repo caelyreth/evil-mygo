@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/egoist/mygo/internal/gpu/d3d11"
-	"github.com/egoist/mygo/internal/scene"
+	"github.com/caelyreth/evil-mygo/internal/gpu/d3d11"
+	"github.com/caelyreth/evil-mygo/internal/scene"
 )
 
 // stressManyBoxes is stressBoxes with n boxes, which go over each other past

@@ -4,7 +4,7 @@ import (
 	"io"
 	"sync"
 
-	"github.com/egoist/mygo/internal/rope"
+	"github.com/caelyreth/evil-mygo/internal/rope"
 )
 
 // TextBuffer stores editable UTF-8 text in an indexed, persistent tree.

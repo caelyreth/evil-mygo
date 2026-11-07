@@ -8,7 +8,7 @@ import (
 	"sync"
 	"weak"
 
-	"github.com/egoist/mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/platform"
 )
 
 // MenuItemType is the kind of a menu item.

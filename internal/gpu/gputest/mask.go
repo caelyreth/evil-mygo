@@ -3,7 +3,7 @@ package gputest
 import (
 	"math"
 
-	"github.com/egoist/mygo/internal/scene"
+	"github.com/caelyreth/evil-mygo/internal/scene"
 )
 
 // MaskedClipScene has clips masked by gradients, linear of two colors and

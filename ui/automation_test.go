@@ -5,7 +5,7 @@ package ui
 import (
 	"testing"
 
-	"github.com/egoist/mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/platform"
 )
 
 // TestAutomationTreeKeys reads the keys of elements as plugins/automation

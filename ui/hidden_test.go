@@ -3,7 +3,7 @@ package ui
 import (
 	"testing"
 
-	"github.com/egoist/mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/platform"
 )
 
 // A Hidden element takes no room: its siblings close up, with one gap

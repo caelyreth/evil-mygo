@@ -4,7 +4,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // A drag orbits the camera and keeps it turning after a throw, slowing

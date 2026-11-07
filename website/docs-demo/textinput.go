@@ -5,7 +5,7 @@ import (
 	"math"
 	"strings"
 
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // textinputFruits are what the search field filters.

@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/egoist/mygo/internal/wait"
+	"github.com/caelyreth/evil-mygo/internal/wait"
 )
 
 // readAll reads the output of p until the process exits and the output

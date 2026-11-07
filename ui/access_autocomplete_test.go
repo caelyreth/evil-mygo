@@ -3,7 +3,7 @@ package ui_test
 import (
 	"testing"
 
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // TestAccessAutoComplete reads what the suggestions of fields complete

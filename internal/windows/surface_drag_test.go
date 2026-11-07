@@ -8,7 +8,7 @@ import (
 	"testing"
 	"unsafe"
 
-	"github.com/egoist/mygo/transfer"
+	"github.com/caelyreth/evil-mygo/transfer"
 )
 
 func TestTransferDataStreamPosition(t *testing.T) {

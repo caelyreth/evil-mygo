@@ -4,7 +4,7 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // TestAccessKeyShortcuts reads the keys that press elements

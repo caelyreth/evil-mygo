@@ -10,7 +10,7 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/egoist/mygo"
+	"github.com/caelyreth/evil-mygo"
 )
 
 // A page follows the appearance the app sets, as its prefers-color-scheme,

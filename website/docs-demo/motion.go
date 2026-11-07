@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // tileMatch is the identity a tile of the transitions' demo shares with

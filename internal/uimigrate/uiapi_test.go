@@ -18,7 +18,7 @@ import (
 
 var update = flag.Bool("update", false, "rewrite uiapi.go from package ui")
 
-const uiPath = "github.com/egoist/mygo/ui"
+const uiPath = "github.com/caelyreth/evil-mygo/ui"
 
 // TestUIAPI derives uiapi.go from the compiled signatures of package ui, so
 // the migrator's facts about its functions and methods cannot drift.

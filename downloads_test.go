@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/egoist/mygo/internal/wait"
+	"github.com/caelyreth/evil-mygo/internal/wait"
 )
 
 func TestDownloadEvents(t *testing.T) {

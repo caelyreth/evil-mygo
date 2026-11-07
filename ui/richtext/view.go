@@ -8,10 +8,10 @@ import (
 	"unsafe"
 	"weak"
 
-	"github.com/egoist/mygo/internal/l10n"
-	"github.com/egoist/mygo/internal/platform"
-	"github.com/egoist/mygo/internal/rope"
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/internal/l10n"
+	"github.com/caelyreth/evil-mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/rope"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // EditorOptions configure an Editor.

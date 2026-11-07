@@ -8,7 +8,7 @@ import (
 	"log"
 	"unsafe"
 
-	"github.com/egoist/mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/platform"
 )
 
 // The keys a web view's page leaves unhandled go to the native UI around

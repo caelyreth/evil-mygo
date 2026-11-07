@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/egoist/mygo/internal/automationcli"
-	"github.com/egoist/mygo/internal/wait"
+	"github.com/caelyreth/evil-mygo/internal/automationcli"
+	"github.com/caelyreth/evil-mygo/internal/wait"
 )
 
 // TestAutomationCLI drives automationApp with mygo-automation's commands,

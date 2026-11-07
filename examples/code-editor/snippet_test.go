@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/egoist/mygo/ui"
-	"github.com/egoist/mygo/ui/editor"
+	"github.com/caelyreth/evil-mygo/ui"
+	"github.com/caelyreth/evil-mygo/ui/editor"
 )
 
 func TestGoSnippetCompletion(t *testing.T) {

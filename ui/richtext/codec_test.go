@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/egoist/mygo/transfer"
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/transfer"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // sample is a text of every kind of paragraph and run.

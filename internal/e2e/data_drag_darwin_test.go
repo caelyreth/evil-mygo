@@ -3,9 +3,9 @@
 package e2e
 
 import (
-	"github.com/egoist/mygo"
-	"github.com/egoist/mygo/internal/darwin"
-	"github.com/egoist/mygo/transfer"
+	"github.com/caelyreth/evil-mygo"
+	"github.com/caelyreth/evil-mygo/internal/darwin"
+	"github.com/caelyreth/evil-mygo/transfer"
 )
 
 func dropNativeData(w *mygo.Window, x, y float64, d transfer.Data, ops transfer.Operation) (operation transfer.Operation, dropped, supported bool) {

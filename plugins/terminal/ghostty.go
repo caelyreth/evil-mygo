@@ -13,7 +13,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // GhosttyTheme returns a theme of Ghostty's by its name, as Ghostty's

@@ -3,7 +3,7 @@ package mygo
 import (
 	"sync"
 
-	"github.com/egoist/mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/platform"
 )
 
 // NetworkModule reports whether the computer is online. Use the Network

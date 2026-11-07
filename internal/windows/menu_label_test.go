@@ -5,7 +5,7 @@ package windows
 import (
 	"testing"
 
-	"github.com/egoist/mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/platform"
 )
 
 // TestMenuLabel keeps the mnemonic of the label, and shows the subtitle's

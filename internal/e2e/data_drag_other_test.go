@@ -3,8 +3,8 @@
 package e2e
 
 import (
-	"github.com/egoist/mygo"
-	"github.com/egoist/mygo/transfer"
+	"github.com/caelyreth/evil-mygo"
+	"github.com/caelyreth/evil-mygo/transfer"
 )
 
 func dropNativeData(*mygo.Window, float64, float64, transfer.Data, transfer.Operation) (transfer.Operation, bool, bool) {

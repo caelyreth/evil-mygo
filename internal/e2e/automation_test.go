@@ -16,10 +16,10 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/egoist/mygo"
-	"github.com/egoist/mygo/internal/wait"
-	_ "github.com/egoist/mygo/plugins/automation"
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo"
+	"github.com/caelyreth/evil-mygo/internal/wait"
+	_ "github.com/caelyreth/evil-mygo/plugins/automation"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // automationApp is the app TestAutomation and TestAutomationCLI drive

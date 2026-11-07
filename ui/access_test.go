@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/egoist/mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/platform"
 )
 
 // node returns the node of the tree with role and a label containing

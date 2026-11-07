@@ -3,7 +3,7 @@ package raster
 import (
 	"image"
 
-	"github.com/egoist/mygo/internal/scene"
+	"github.com/caelyreth/evil-mygo/internal/scene"
 )
 
 // drawCanvases draws into their pixels the canvases s draws anew or shows,

@@ -5,7 +5,7 @@ import (
 	"image/color"
 	"testing"
 
-	"github.com/egoist/mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/platform"
 )
 
 // A square in black, and a check mark in currentColor, as icon sets draw

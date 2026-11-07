@@ -1,6 +1,6 @@
 package ui
 
-import "github.com/egoist/mygo/internal/scene"
+import "github.com/caelyreth/evil-mygo/internal/scene"
 
 // Cache keeps what the element paints, with its children, in a bitmap of
 // the GPU that frames draw as one image, as Flutter's RepaintBoundary and

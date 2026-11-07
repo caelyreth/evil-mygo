@@ -4,7 +4,7 @@ import (
 	_ "embed"
 	"math"
 
-	"github.com/egoist/mygo/internal/scene"
+	"github.com/caelyreth/evil-mygo/internal/scene"
 )
 
 // The shaders of the glass and of the blur, one for each renderer, which
@@ -77,7 +77,7 @@ type material struct {
 // params returns the effect's parameters, as its shaders read them: p0
 // the bezel, the refraction, the rim and its width; p1 the tint; p2 the
 // low, high, curve and saturation; p3 the direction of the light; p4 the
-	// wide tint, which a wide-gamut shader reads.
+// wide tint, which a wide-gamut shader reads.
 func (m *material) params() [5][4]float32 {
 	return [5][4]float32{
 		{m.bezel, m.refraction, m.rim, m.rimWidth},

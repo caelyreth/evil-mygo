@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // rowsOf returns the rows of a prompt as a terminal of 10 columns shows

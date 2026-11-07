@@ -12,7 +12,7 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/egoist/mygo/internal/accelerator"
+	"github.com/caelyreth/evil-mygo/internal/accelerator"
 )
 
 // The functions in this file drive native UI the way a user would, for the

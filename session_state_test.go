@@ -7,8 +7,8 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/egoist/mygo/internal/fake"
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/internal/fake"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // restored returns what the fake engine put back of a page's session

@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/egoist/mygo"
+	"github.com/caelyreth/evil-mygo"
 )
 
 // TestContentRules loads a page whose script the rules block and one of

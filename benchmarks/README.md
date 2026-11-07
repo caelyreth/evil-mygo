@@ -5,7 +5,7 @@ The same small apps written with MyGo's native UI, [GPUI](https://www.gpui.rs),
 [egui](https://github.com/emilk/egui) (through eframe, with its default wgpu
 renderer), each through the usual way of its framework. GPUI Fast's list
 scrolls from outside its view, as a wheel does, for its cached rows to apply. The website's
-[/benchmarks](https://mygo.egoist.dev/benchmarks) page shows `results.json`.
+[/benchmarks](../website/src/routes/benchmarks.tsx) page shows `results.json`.
 
 ```sh
 go run ./benchmarks/run -out benchmarks/results.json   # opens windows for about 15 minutes

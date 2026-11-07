@@ -3,7 +3,7 @@ package gpu
 import (
 	"math"
 
-	"github.com/egoist/mygo/internal/scene"
+	"github.com/caelyreth/evil-mygo/internal/scene"
 )
 
 // Continuous corners (negative radii) cost WebGPU's shader far more than

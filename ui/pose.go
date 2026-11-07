@@ -1,6 +1,6 @@
 package ui
 
-import "github.com/egoist/mygo/internal/scene"
+import "github.com/caelyreth/evil-mygo/internal/scene"
 
 // Pose is where an element shows, from its place in the layout, which
 // AnimatePose moves it to: moved by X and Y DIPs, and by XPercent and

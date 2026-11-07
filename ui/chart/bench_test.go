@@ -5,7 +5,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // BenchmarkLine constructs three linear paths of 15,000 samples, without rendering.

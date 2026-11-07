@@ -7,8 +7,8 @@ import (
 	"runtime"
 	"sync"
 
-	"github.com/egoist/mygo"
-	"github.com/egoist/mygo/plugins/updater/internal/markdown"
+	"github.com/caelyreth/evil-mygo"
+	"github.com/caelyreth/evil-mygo/plugins/updater/internal/markdown"
 )
 
 // Session is a check for updates and what follows it, as its window sees

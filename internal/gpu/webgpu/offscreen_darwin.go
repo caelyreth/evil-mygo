@@ -9,7 +9,7 @@ import (
 
 	"github.com/go-webgpu/webgpu/wgpu"
 
-	"github.com/egoist/mygo/internal/scene"
+	"github.com/caelyreth/evil-mygo/internal/scene"
 )
 
 // RenderOffscreen draws s into a BGRA8 texture and returns its rows in

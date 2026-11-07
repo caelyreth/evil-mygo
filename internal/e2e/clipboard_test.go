@@ -20,10 +20,10 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/egoist/mygo"
-	"github.com/egoist/mygo/internal/wait"
-	"github.com/egoist/mygo/transfer"
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo"
+	"github.com/caelyreth/evil-mygo/internal/wait"
+	"github.com/caelyreth/evil-mygo/transfer"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 const clipboardCustom transfer.Format = "application/vnd.mygo.clipboard-e2e"

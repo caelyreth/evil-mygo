@@ -10,7 +10,7 @@ import (
 	"image/png"
 	"testing"
 
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // kittyImage returns the Kitty graphics sequence that transmits and

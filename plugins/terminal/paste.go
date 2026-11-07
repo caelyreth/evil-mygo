@@ -10,8 +10,8 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/egoist/mygo/plugins/terminal/internal/vt"
-	"github.com/egoist/mygo/transfer"
+	"github.com/caelyreth/evil-mygo/plugins/terminal/internal/vt"
+	"github.com/caelyreth/evil-mygo/transfer"
 )
 
 // notTakenAfter is how long after a paste's offer is written OnPasteStatus

@@ -14,7 +14,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/egoist/mygo/internal/gpu"
+	"github.com/caelyreth/evil-mygo/internal/gpu"
 )
 
 // shader is a shader to compile, and the variables holding its code and

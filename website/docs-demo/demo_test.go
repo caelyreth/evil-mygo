@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // directive is a page's preview: `<!-- preview button 120 -->`.

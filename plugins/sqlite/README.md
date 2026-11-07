@@ -1,17 +1,17 @@
 # SQLite
 
-SQLite for MyGo, with Go connections and the `@mygo-plugins/sqlite`
+SQLite for MyGo, with Go connections and the `@caelyreth/evil-mygo-sqlite`
 TypeScript client. The plugin ships prebuilt SQLite libraries and loads
 them through purego, so apps build without cgo or a C compiler.
 
 Register `mygo.Use(sqlite.Plugin)` only when the web frontend uses
-`@mygo-plugins/sqlite`. Go and native UI apps call `sqlite.Open` directly;
+`@caelyreth/evil-mygo-sqlite`. Go and native UI apps call `sqlite.Open` directly;
 they need no plugin registration and close their own connections.
 
 ```go
 import (
-    "github.com/egoist/mygo"
-    "github.com/egoist/mygo/plugins/sqlite"
+    "github.com/caelyreth/evil-mygo"
+    "github.com/caelyreth/evil-mygo/plugins/sqlite"
 )
 
 func main() {
@@ -21,7 +21,7 @@ func main() {
 ```
 
 ```ts
-import { open } from "@mygo-plugins/sqlite";
+import { open } from "@caelyreth/evil-mygo-sqlite";
 
 const db = await open("app.db");
 await db.execute("CREATE TABLE IF NOT EXISTS tasks (id INTEGER PRIMARY KEY, title TEXT, done INTEGER)");
@@ -34,7 +34,7 @@ await db.transaction([
 await db.close();
 ```
 
-Use `bun add @mygo-plugins/sqlite` once the npm package is published. In a
+Use `bun add @caelyreth/evil-mygo-sqlite` once the npm package is published. In a
 checkout, `bun install && bun run build` installs and builds the workspace
 package. See [the full guide](../../docs/plugins/sqlite.md) for the Go API,
 types, cancellation, options and packaging.

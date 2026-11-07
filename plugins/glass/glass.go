@@ -19,7 +19,7 @@ import (
 	"math"
 	"time"
 
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // Glass is Liquid Glass, a ui.Material: Element.Material fills an element

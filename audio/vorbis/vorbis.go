@@ -1,13 +1,13 @@
 // Package vorbis decodes Ogg Vorbis files for package audio, with
 // github.com/jfreymuth/oggvorbis. Import it for its side effect:
 //
-//	import _ "github.com/egoist/mygo/audio/vorbis"
+//	import _ "github.com/caelyreth/evil-mygo/audio/vorbis"
 package vorbis
 
 import (
 	"io"
 
-	"github.com/egoist/mygo/audio"
+	"github.com/caelyreth/evil-mygo/audio"
 	"github.com/jfreymuth/oggvorbis"
 )
 

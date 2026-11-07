@@ -1,6 +1,6 @@
 package mygo
 
-import "github.com/egoist/mygo/internal/platform"
+import "github.com/caelyreth/evil-mygo/internal/platform"
 
 // AuthRequest is passed to the auth handler of a window (SetAuthHandler):
 // a server, or a proxy, asks for a user name and a password before it

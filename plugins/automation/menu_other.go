@@ -2,7 +2,7 @@
 
 package automation
 
-import "github.com/egoist/mygo"
+import "github.com/caelyreth/evil-mygo"
 
 // chooseMenuItem has no menus to choose from on other platforms.
 func chooseMenuItem(*mygo.Window, []string) error {

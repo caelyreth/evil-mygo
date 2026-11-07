@@ -13,9 +13,9 @@ Make a terminal, which starts its program, and show it in a window:
 
 ```go
 import (
-	"github.com/egoist/mygo"
-	"github.com/egoist/mygo/plugins/terminal"
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo"
+	"github.com/caelyreth/evil-mygo/plugins/terminal"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 func main() {

@@ -1,5 +1,5 @@
-# @egoist/mygo-cli-darwin-x64
+# @caelyreth/evil-mygo-cli-darwin-x64
 
-The macOS x64 binary of mygo-cli, the command line tool of MyGo. Install
-[mygo-cli](https://www.npmjs.com/package/mygo-cli) instead: package managers
+The macOS x64 binary of @caelyreth/evil-mygo-cli, the command line tool of evil-mygo. Install
+[@caelyreth/evil-mygo-cli](https://www.npmjs.com/package/@caelyreth/evil-mygo-cli) instead: package managers
 install the package of the platform they run on.

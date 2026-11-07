@@ -13,8 +13,8 @@ import (
 	"log"
 	"runtime"
 
-	"github.com/egoist/mygo"
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // All state is read and changed on the main thread, by tray callbacks and

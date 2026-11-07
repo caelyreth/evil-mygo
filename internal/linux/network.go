@@ -3,7 +3,7 @@
 package linux
 
 import (
-	"github.com/egoist/mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/platform"
 )
 
 // GNetworkMonitor is a singleton GLib keeps up to date, so a status is a

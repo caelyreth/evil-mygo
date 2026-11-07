@@ -32,10 +32,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/egoist/mygo"
-	"github.com/egoist/mygo/internal/wait"
-	"github.com/egoist/mygo/plugins/glass"
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo"
+	"github.com/caelyreth/evil-mygo/internal/wait"
+	"github.com/caelyreth/evil-mygo/plugins/glass"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 type Greeter struct{}
@@ -711,7 +711,7 @@ func TestEvalForms(t *testing.T) {
 
 // TestThemePreferencesReachThePage checks the whole path from the desktop
 // to a real page: the accent color and the settings of accessibility as
-// mygo-runtime's preferences and the CSS variables of :root, which the
+// @caelyreth/evil-mygo-runtime's preferences and the CSS variables of :root, which the
 // page reads. Which accent a CI desktop has is unknown, so the page is
 // compared with Go, not fixed.
 func TestThemePreferencesReachThePage(t *testing.T) {

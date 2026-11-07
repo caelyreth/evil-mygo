@@ -3,8 +3,8 @@ package gpu
 import (
 	"testing"
 
-	"github.com/egoist/mygo/internal/gpu/gputest"
-	"github.com/egoist/mygo/internal/scene"
+	"github.com/caelyreth/evil-mygo/internal/gpu/gputest"
+	"github.com/caelyreth/evil-mygo/internal/scene"
 )
 
 // BenchmarkBuildSprites turns the scene of a 2D game's frame at 1920×1080

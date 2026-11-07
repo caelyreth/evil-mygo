@@ -5,7 +5,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/egoist/mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/platform"
 )
 
 // drag presses at from, moves in steps to to, and releases there.

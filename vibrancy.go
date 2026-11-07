@@ -13,7 +13,7 @@ package mygo
 //
 // The system draws the material with what is behind the window: other
 // apps' windows, the desktop. The glass plugin
-// (github.com/egoist/mygo/plugins/glass) draws Liquid Glass with what the
+// (github.com/caelyreth/evil-mygo/plugins/glass) draws Liquid Glass with what the
 // window itself draws, the same on every platform.
 type Vibrancy string
 

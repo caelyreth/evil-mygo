@@ -16,9 +16,9 @@ import (
 	"log"
 	"time"
 
-	"github.com/egoist/mygo"
-	"github.com/egoist/mygo/plugins/permissionflow"
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo"
+	"github.com/caelyreth/evil-mygo/plugins/permissionflow"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // row is a permission the system has, and what is known of it.

@@ -4,7 +4,7 @@ package windows
 // pixels and DIPs is plain arithmetic over the displays, tested on every
 // platform.
 
-import "github.com/egoist/mygo/internal/platform"
+import "github.com/caelyreth/evil-mygo/internal/platform"
 
 // screenDisplay is a display in the screen's pixels, in which displays
 // never overlap, with its DPI. handle is its HMONITOR.

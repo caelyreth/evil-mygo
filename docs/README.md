@@ -1,5 +1,10 @@
 # MyGo documentation
 
+This checkout documents [evil-mygo](../README.md), an independently versioned
+fork of [egoist/mygo](https://github.com/egoist/mygo). Go imports use
+`github.com/caelyreth/evil-mygo`; the API package and command remain `mygo`.
+See the root README for changes from upstream.
+
 MyGo builds desktop apps in Go. Each window shows one of two kinds of
 interface, and one app can have windows of both:
 
@@ -117,7 +122,7 @@ components, from buttons to tables.
 ## Web pages
 
 - [The frontend](frontend.md): how pages load during development and in
-  builds, the `mygo-runtime` package, custom protocols, custom title bars
+  builds, the `@caelyreth/evil-mygo-runtime` package, custom protocols, custom title bars
   and dropped files.
 - [Calling Go from the frontend](bindings.md): bound services, channels,
   typed events and the generated TypeScript client.
@@ -170,7 +175,7 @@ components, from buttons to tables.
 
 - [Configuration](configuration.md): `mygo.config.ts`, or `mygo.json`.
 - [The mygo CLI](cli.md): its commands and flags.
-- The Go API: `go doc -all github.com/egoist/mygo`, with the documentation
+- The Go API: `go doc -all github.com/caelyreth/evil-mygo`, with the documentation
   of every type and method.
 - [Architecture](architecture.md): how MyGo works inside, for contributors,
   with a table of the differences between platforms.

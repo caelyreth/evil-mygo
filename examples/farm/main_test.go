@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/egoist/mygo/plugins/game"
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/plugins/game"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // Tests play no sound: the game is made without its sounds.

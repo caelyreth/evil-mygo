@@ -3,7 +3,7 @@ package main
 import (
 	"os"
 
-	"github.com/egoist/mygo/internal/gpu/d3d11"
+	"github.com/caelyreth/evil-mygo/internal/gpu/d3d11"
 )
 
 // compile compiles the shader file within the Direct3D renderer's head

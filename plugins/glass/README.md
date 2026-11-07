@@ -1,11 +1,11 @@
 # glass
 
-Liquid Glass for [MyGo](https://github.com/egoist/mygo) apps of native UI,
+Liquid Glass for [MyGo](https://github.com/caelyreth/evil-mygo) apps of native UI,
 as macOS 26 and later draw it, on every platform: a material that what is
 under an element shows through, frosted and bent along its edges.
 
 ```go
-import "github.com/egoist/mygo/plugins/glass"
+import "github.com/caelyreth/evil-mygo/plugins/glass"
 
 ui.Row(c).Padding(8, 16).Radius(22).Material(glass.Glass{}).Children(func() {
 	ui.Text(c, "On glass")

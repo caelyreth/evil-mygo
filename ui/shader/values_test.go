@@ -4,9 +4,9 @@ import (
 	"math"
 	"testing"
 
-	"github.com/egoist/mygo/internal/gpu"
-	"github.com/egoist/mygo/internal/shader"
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/internal/gpu"
+	"github.com/caelyreth/evil-mygo/internal/shader"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // A color outside sRGB sets its uniform in extended sRGB for a wide

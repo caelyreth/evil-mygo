@@ -6,9 +6,9 @@ import (
 	"reflect"
 	"time"
 
-	"github.com/egoist/mygo/internal/scene"
-	"github.com/egoist/mygo/internal/text"
-	"github.com/egoist/mygo/transfer"
+	"github.com/caelyreth/evil-mygo/internal/scene"
+	"github.com/caelyreth/evil-mygo/internal/text"
+	"github.com/caelyreth/evil-mygo/transfer"
 )
 
 // Context builds a window's user interface for one frame. The window's

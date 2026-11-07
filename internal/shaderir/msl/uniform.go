@@ -1,8 +1,8 @@
 package msl
 
 import (
-	"github.com/egoist/mygo/internal/shaderir"
-	"github.com/egoist/mygo/internal/shaderir/packed"
+	"github.com/caelyreth/evil-mygo/internal/shaderir"
+	"github.com/caelyreth/evil-mygo/internal/shaderir/packed"
 )
 
 // UniformLayout returns where each of p's uniform variables lies in the

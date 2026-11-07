@@ -6,7 +6,7 @@ import (
 	"sync"
 	"unicode/utf16"
 
-	"github.com/egoist/mygo/internal/text"
+	"github.com/caelyreth/evil-mygo/internal/text"
 )
 
 // TextLayout is retained shaped text for a custom text control. It owns font

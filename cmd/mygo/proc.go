@@ -274,7 +274,7 @@ func waitForURL(ctx context.Context, url string, exited <-chan error) error {
 }
 
 func tempBinary(name string) string {
-	dir := filepath.Join(os.TempDir(), "mygo-dev")
+	dir := filepath.Join(os.TempDir(), "evil-mygo-dev")
 	_ = os.MkdirAll(dir, 0o755)
 	name = strings.ReplaceAll(name, " ", "-")
 	if runtime.GOOS == "windows" {

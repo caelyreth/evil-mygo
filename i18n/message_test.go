@@ -10,7 +10,7 @@ import (
 )
 
 // messageFixtures are the cases of testdata/messages.json, which
-// mygo-runtime's formatter checks too.
+// @caelyreth/evil-mygo-runtime's formatter checks too.
 type messageFixtures struct {
 	Format []messageCase
 	Errors []string

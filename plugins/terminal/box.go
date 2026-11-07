@@ -3,7 +3,7 @@ package terminal
 import (
 	"math"
 
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // Characters of box drawing, blocks, legacy-computing sextants and

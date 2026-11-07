@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 func init() {
@@ -50,7 +50,7 @@ func init() {
 		ui.Link(c, "Privacy policy", "https://example.com/privacy")
 		ui.RichText(c).Children(func() {
 			ui.Text(c, "Read ")
-			ui.Link(c, "the guide", "https://github.com/egoist/mygo/tree/main/docs/ui")
+			ui.Link(c, "the guide", "https://github.com/caelyreth/evil-mygo/tree/main/docs/ui")
 			ui.Text(c, " to get started.")
 		})
 		label := "Show details"

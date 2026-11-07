@@ -6,11 +6,11 @@
  * use the plugin:
  *
  * ```go
- * mygo.Use(websocket.Plugin) // github.com/egoist/mygo/plugins/websocket
+ * mygo.Use(websocket.Plugin) // github.com/caelyreth/evil-mygo/plugins/websocket
  * ```
  *
  * ```ts
- * import { WebSocket } from "@mygo-plugins/websocket";
+ * import { WebSocket } from "@caelyreth/evil-mygo-websocket";
  *
  * const ws = new WebSocket("wss://example.com/live", [], {
  *   headers: { authorization: `Bearer ${token}` },
@@ -20,7 +20,7 @@
  *
  * @module
  */
-import { Channel, call, isCallError } from "mygo-runtime";
+import { Channel, call, isCallError } from "@caelyreth/evil-mygo-runtime";
 
 /** Options of a {@link WebSocket}, beyond the browser's. */
 export interface WebSocketOptions {
@@ -313,7 +313,7 @@ function closeEvent(code: number, reason: string, wasClean: boolean): CloseEvent
 /** Why the connection failed. */
 function failure(err: unknown): string {
   if (isCallError(err) && err.message.includes("plugin is not used")) {
-    return "the Go side does not use @mygo-plugins/websocket: call mygo.Use(websocket.Plugin) before App.Run";
+    return "the Go side does not use @caelyreth/evil-mygo-websocket: call mygo.Use(websocket.Plugin) before App.Run";
   }
   return err instanceof Error ? err.message : String(err);
 }

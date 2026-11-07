@@ -13,9 +13,9 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/egoist/mygo"
-	"github.com/egoist/mygo/internal/wait"
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo"
+	"github.com/caelyreth/evil-mygo/internal/wait"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // TestCookieViewReleased makes cookie calls in an app showing native UI

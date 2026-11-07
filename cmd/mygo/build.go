@@ -252,7 +252,7 @@ func buildPlatform(c *Config, goos, goarch string, opts buildOptions) ([]string,
 	}
 	ldflags := "-s -w" + packageFlags(c) + updateFlags(c, target)
 	if !opts.debug {
-		ldflags += " -X github.com/egoist/mygo.production=1"
+		ldflags += " -X github.com/caelyreth/evil-mygo.production=1"
 	}
 	if goos == "windows" {
 		// A GUI app, not a console one.
@@ -513,7 +513,7 @@ func packageFlags(c *Config) string {
 		{"packageFileExtensions", strings.Join(c.fileExtensions(), ",")},
 	} {
 		if v[1] != "" {
-			b.WriteString(" -X " + ldflagsQuote("github.com/egoist/mygo."+v[0]+"="+v[1]))
+			b.WriteString(" -X " + ldflagsQuote("github.com/caelyreth/evil-mygo."+v[0]+"="+v[1]))
 		}
 	}
 	return b.String()

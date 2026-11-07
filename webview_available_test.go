@@ -5,7 +5,7 @@ package mygo
 import (
 	"testing"
 
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // TestWebViewAvailable: the call reports what the backend says, so an app

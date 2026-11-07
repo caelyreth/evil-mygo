@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // richTester builds a RichTextEditor of doc filling a window, focused at

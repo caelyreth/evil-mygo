@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/egoist/mygo/internal/scene"
+	"github.com/caelyreth/evil-mygo/internal/scene"
 )
 
 // Color is a color with straight (not premultiplied) alpha. R, G, B and A are

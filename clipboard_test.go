@@ -13,10 +13,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/egoist/mygo/internal/platform"
-	"github.com/egoist/mygo/internal/wait"
-	"github.com/egoist/mygo/transfer"
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/wait"
+	"github.com/caelyreth/evil-mygo/transfer"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 func clipboardRelease(t *testing.T, ch <-chan bool) {

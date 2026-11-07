@@ -1,4 +1,4 @@
-import { call } from "mygo-runtime";
+import { call } from "@caelyreth/evil-mygo-runtime";
 
 /** SQLite values: integers beyond Number's safe range are returned as bigint. */
 export type Value = null | number | bigint | string | Uint8Array;

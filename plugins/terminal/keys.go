@@ -3,8 +3,8 @@ package terminal
 import (
 	"unicode"
 
-	"github.com/egoist/mygo/plugins/terminal/internal/vt"
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/plugins/terminal/internal/vt"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // keys maps MyGo's keys to Ghostty's, and to the character they type

@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/egoist/mygo/ui"
-	"github.com/egoist/mygo/ui/shader"
+	"github.com/caelyreth/evil-mygo/ui"
+	"github.com/caelyreth/evil-mygo/ui/shader"
 )
 
 // Group is a row of elements on one pane of glass, whose corners merge

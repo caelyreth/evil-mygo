@@ -6,9 +6,9 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/egoist/mygo/internal/fake"
-	"github.com/egoist/mygo/internal/platform"
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/internal/fake"
+	"github.com/caelyreth/evil-mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // testFlyout creates a flyout and returns it with its fake native window.

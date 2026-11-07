@@ -9,7 +9,7 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/egoist/mygo/internal/scene"
+	"github.com/caelyreth/evil-mygo/internal/scene"
 )
 
 // RenderOffscreen draws s with a renderer of its own into a window that

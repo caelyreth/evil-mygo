@@ -204,7 +204,7 @@ func TestBuildLinuxSlug(t *testing.T) {
 	}
 	checkout, _ := filepath.Abs(filepath.Join("..", ".."))
 	sum, _ := os.ReadFile(filepath.Join(checkout, "go.sum"))
-	gomod := "module cloud-music\n\ngo " + goVersion() + "\n\nrequire github.com/egoist/mygo v0.0.0\n\nreplace github.com/egoist/mygo => " + checkout + "\n"
+	gomod := "module cloud-music\n\ngo " + goVersion() + "\n\nrequire github.com/caelyreth/evil-mygo v0.0.0\n\nreplace github.com/caelyreth/evil-mygo => " + checkout + "\n"
 	if os.WriteFile(filepath.Join(dir, "go.mod"), []byte(gomod), 0o644) != nil || os.WriteFile(filepath.Join(dir, "go.sum"), sum, 0o644) != nil {
 		t.Fatal("cannot write the module")
 	}

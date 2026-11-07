@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/egoist/mygo/internal/shaderir"
+	"github.com/caelyreth/evil-mygo/internal/shaderir"
 )
 
 func f32(b uint32) float32  { return math.Float32frombits(b) }

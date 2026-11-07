@@ -5,8 +5,8 @@ package e2e
 import (
 	"testing"
 
-	"github.com/egoist/mygo"
-	win "github.com/egoist/mygo/internal/windows"
+	"github.com/caelyreth/evil-mygo"
+	win "github.com/caelyreth/evil-mygo/internal/windows"
 )
 
 // WebView2's own keys, as F5 and Ctrl+R, which reload the page without

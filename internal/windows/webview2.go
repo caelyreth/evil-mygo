@@ -11,7 +11,7 @@ import (
 	"syscall"
 	"unsafe"
 
-	"github.com/egoist/mygo/internal/webview2"
+	"github.com/caelyreth/evil-mygo/internal/webview2"
 )
 
 // Vtable indices of the WebView2 interfaces used here, from WebView2.h

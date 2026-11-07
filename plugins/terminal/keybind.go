@@ -3,7 +3,7 @@ package terminal
 import (
 	"runtime"
 
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // Action is what a key bound to it does (Keybind), as an action of

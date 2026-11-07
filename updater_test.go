@@ -23,7 +23,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/egoist/mygo/internal/update"
+	"github.com/caelyreth/evil-mygo/internal/update"
 )
 
 // updateServer serves a signed update whose app holds main with content,

@@ -462,7 +462,7 @@ mygo.App.SetActivationPolicy(mygo.ActivationPolicyAccessory)
 ```
 
 For an icon that opens a window of native UI, see
-[the menu bar example](https://github.com/egoist/mygo/tree/main/examples/menubar-native).
+[the menu bar example](https://github.com/caelyreth/evil-mygo/tree/main/examples/menubar-native).
 It leaves the tray menu unset on macOS and Windows, uses `OnClick` to
 toggle a frameless window positioned with `Tray.Bounds`, and hides it on
 `OnBlur` or Escape. On Linux, an AppIndicator menu item opens the same

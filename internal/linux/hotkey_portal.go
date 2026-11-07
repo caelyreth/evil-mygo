@@ -9,8 +9,8 @@ import (
 	"strings"
 	"unsafe"
 
-	"github.com/egoist/mygo/internal/accelerator"
-	"github.com/egoist/mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/accelerator"
+	"github.com/caelyreth/evil-mygo/internal/platform"
 )
 
 // Wayland lets apps grab no keys: the desktop binds global shortcuts for

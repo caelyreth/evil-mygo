@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/egoist/mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/platform"
 )
 
 // CookieSameSite says whether a cookie goes along with requests from

@@ -21,7 +21,7 @@ It lays out and draws only the paragraphs in view, so a long document edits
 as a short one.
 
 ```go
-import "github.com/egoist/mygo/ui/richtext"
+import "github.com/caelyreth/evil-mygo/ui/richtext"
 
 // Kept by the app, as its other state.
 app.doc = richtext.NewDocument(richtext.NewText("Hello"))

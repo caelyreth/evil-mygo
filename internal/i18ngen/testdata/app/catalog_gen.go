@@ -6,10 +6,10 @@ import (
 	"embed"
 	"time"
 
-	"github.com/egoist/mygo/i18n"
+	"github.com/caelyreth/evil-mygo/i18n"
 
 	// MyGo's own strings in the app's languages.
-	_ "github.com/egoist/mygo/locales/zh-Hant"
+	_ "github.com/caelyreth/evil-mygo/locales/zh-Hant"
 )
 
 //go:embed *.json

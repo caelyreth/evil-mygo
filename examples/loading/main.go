@@ -8,9 +8,9 @@ package main
 import (
 	"log"
 
-	"github.com/egoist/mygo"
-	"github.com/egoist/mygo/plugins/loading"
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo"
+	"github.com/caelyreth/evil-mygo/plugins/loading"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // gallery is what the window shows: the options chosen.

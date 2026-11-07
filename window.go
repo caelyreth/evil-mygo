@@ -17,8 +17,8 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/egoist/mygo/internal/platform"
-	"github.com/egoist/mygo/internal/surface"
+	"github.com/caelyreth/evil-mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/surface"
 )
 
 // TitleBarStyle selects how the title bar of a framed window looks.
@@ -1868,7 +1868,7 @@ func (w *Window) OnResize(fn func()) (off func()) { return w.onResize.add(fn, fa
 
 // OnFileDrop is called when files, for example from Finder or Explorer, are
 // dropped on the page, with their paths. The app's own pages also get them,
-// through onFileDrop of mygo-runtime. In a window showing native UI, it
+// through onFileDrop of @caelyreth/evil-mygo-runtime. In a window showing native UI, it
 // gets the files no element takes (ui.Element.DroppedFiles), with X and Y
 // in DIPs.
 //

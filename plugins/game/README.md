@@ -1,6 +1,6 @@
 # game
 
-What games need beyond what apps do, for [MyGo](https://github.com/egoist/mygo),
+What games need beyond what apps do, for [MyGo](https://github.com/caelyreth/evil-mygo),
 opt-in: MyGo is an app framework.
 
 - `game.View` runs a game's loop in a native UI element, in fixed steps
@@ -11,7 +11,7 @@ opt-in: MyGo is an app framework.
   browsers (the Gamepad API).
 
 ```go
-import "github.com/egoist/mygo/plugins/game/gamepad"
+import "github.com/caelyreth/evil-mygo/plugins/game/gamepad"
 
 for _, pad := range gamepad.Pads() {
 	s := pad.State()

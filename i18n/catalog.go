@@ -11,7 +11,7 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/egoist/mygo/internal/i18nlink"
+	"github.com/caelyreth/evil-mygo/internal/i18nlink"
 )
 
 // A Catalog holds the messages of an app, or of a library, in the

@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/egoist/mygo/audio"
+	"github.com/caelyreth/evil-mygo/audio"
 )
 
 // tone.mp3 is 0.5 s of a 440 Hz sine at 44.1 kHz, in mono, which decodes

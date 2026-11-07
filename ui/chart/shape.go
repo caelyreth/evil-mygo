@@ -3,7 +3,7 @@ package chart
 import (
 	"math"
 
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // X returns the x of f, a fraction along a plot's width, in r, the plot's

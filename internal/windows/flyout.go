@@ -5,7 +5,7 @@ package windows
 import (
 	"unsafe"
 
-	"github.com/egoist/mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/platform"
 )
 
 // A flyout (WindowOptions.Flyout) is a WS_POPUP window owned by its

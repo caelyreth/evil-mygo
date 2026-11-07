@@ -18,8 +18,8 @@ import (
 	"unicode/utf8"
 	"unsafe"
 
+	"github.com/caelyreth/evil-mygo/internal/scene"
 	"github.com/ebitengine/purego"
-	"github.com/egoist/mygo/internal/scene"
 )
 
 // Pango lays out paragraphs: fontconfig finds the fonts and the fallbacks

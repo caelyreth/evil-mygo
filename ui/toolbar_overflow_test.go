@@ -4,7 +4,7 @@ import "testing"
 
 // The toolbar's overflow button is chrome: when every control fits, the
 // button is hidden and must not widen the toolbar. Regression test for
-// https://github.com/egoist/mygo/issues/491
+// https://github.com/caelyreth/evil-mygo/issues/491
 func TestToolbarEndsAtLastControl(t *testing.T) {
 	tt := NewTester(func(c *Context) {
 		Row(c).Width(400).Children(func() {

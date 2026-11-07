@@ -8,10 +8,10 @@ import (
 	"math"
 	"slices"
 
-	"github.com/egoist/mygo/i18n"
-	"github.com/egoist/mygo/internal/platform"
-	"github.com/egoist/mygo/internal/surface"
-	"github.com/egoist/mygo/transfer"
+	"github.com/caelyreth/evil-mygo/i18n"
+	"github.com/caelyreth/evil-mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/surface"
+	"github.com/caelyreth/evil-mygo/transfer"
 )
 
 // Content is what a window shows in place of a web page: a user interface

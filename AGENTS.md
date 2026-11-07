@@ -1,5 +1,11 @@
 # AGENTS.md
 
+evil-mygo is an independently versioned fork of egoist/mygo. Go imports use
+`github.com/caelyreth/evil-mygo`; the package and command stay `mygo`.
+`internal/version/version.go` is the source of truth for the fork version and
+the integrated upstream version/revision. Fork releases never advance the
+upstream baseline implicitly; see "Releasing" in the architecture guide.
+
 MyGo is a desktop application framework in Go. Windows show web pages in the
 system webview (WKWebView on macOS, WebKitGTK on Linux, WebView2 on Windows),
 with typed Go ↔ TypeScript IPC, or native UI that MyGo draws itself (package
@@ -20,7 +26,7 @@ wire protocol, TypeScript generation, and the checklist for adding features.
   (`packages/bridge`, `packages/runtime`, `packages/cli` with its platform
   packages, the plugins' packages in `plugins/`, and examples with a frontend, which keep it at their root like
   the project template, and `website`); Bun also installs and runs the template's scripts
-  (Vite, the mygo-cli package). Nothing in an app may need Bun at run time.
+  (Vite, the @caelyreth/evil-mygo-cli package). Nothing in an app may need Bun at run time.
 - **Scope:** system webview on macOS, Linux and Windows (WebView2), and
   native UI that MyGo draws itself (`WindowOptions.Content`, package `ui`;
   see "Native UI" in the architecture guide), which also runs in browsers
@@ -63,11 +69,11 @@ go vet ./... && GOOS=linux go vet ./... && GOOS=windows go vet ./...
 go vet -tags mygo_noinspector ./...        # production builds, without the inspector of native UI
 GOOS=js GOARCH=wasm go vet $(GOOS=js GOARCH=wasm go list ./... | grep -v /cmd/mygo)  # browsers, all but the CLI
 go test ./...                              # core (fake backend), tsgen, CLI, accelerator
-go build -trimpath -tags mygo_noinspector -ldflags "-s -w -X github.com/egoist/mygo.production=1" -o /tmp/counter-native ./examples/counter-native  # an app's release size, as the benchmarks build it
+go build -trimpath -tags mygo_noinspector -ldflags "-s -w -X github.com/caelyreth/evil-mygo.production=1" -o /tmp/counter-native ./examples/counter-native  # an app's release size, as the benchmarks build it
 MYGO_E2E=1 go test ./internal/e2e          # real GUI tests (macOS desktop session)
 bun install && bun run test && bun run typecheck   # the workspace, from the root
 bun run build                              # build internal/bridge/bridge.js and the npm packages' dist/
-bun run --cwd packages/cli binaries        # cross-compile the CLI into the mygo-cli platform packages
+bun run --cwd packages/cli binaries        # cross-compile the CLI into the @caelyreth/evil-mygo-cli platform packages
 go run ./cmd/mygo generate examples/todo   # regenerate an example's TypeScript client
 go run ./cmd/mygo dev examples/todo        # live reload (dev bundle in examples/todo/.mygo)
 go run ./cmd/mygo dev -web examples/counter-native   # native UI in the browser, with live reload
@@ -112,8 +118,8 @@ Windows GUI tests need Windows with the WebView2 Runtime (a GitHub Actions
 - Objective-C: `alloc`/`init` objects are owned and must be released; wrap
   temporary objects in `withPool`; copy blocks you call later.
 - Official plugins live in `plugins/<name>`: the Go package and its npm
-  package (`@mygo-plugins/<name>`) side by side, released with
-  mygo-runtime's version. The updater plugin is Go only; its `native`
+  package (`@caelyreth/evil-mygo-<name>`) side by side, released with
+  @caelyreth/evil-mygo-runtime's version. The updater plugin is Go only; its `native`
   package draws the update window in native UI. The terminal plugin is Go
   only too, for native UI, with libghostty-vt loaded through purego: its
   `mygo-plugin.json` pins the builds the CLI puts into apps, published as
@@ -145,7 +151,7 @@ Windows GUI tests need Windows with the WebView2 Runtime (a GitHub Actions
   whenever its sources change, and keep the generated clients of examples
   (`examples/*/src/mygo.ts`) up to date. Built frontends are not
   committed: `mygo build` embeds them.
-- `mygo-runtime` (`packages/runtime`) and `mygo-cli` (`packages/cli`, with
+- `@caelyreth/evil-mygo-runtime` (`packages/runtime`) and `@caelyreth/evil-mygo-cli` (`packages/cli`, with
   its per-platform packages in `packages/cli/npm`) are released to npm with
   the same version as the Go module (`mygo.Version`, also the CLI's
   `version`), which `bun scripts/version.ts <version>` sets everywhere; the

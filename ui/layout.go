@@ -3,7 +3,7 @@ package ui
 import (
 	"math"
 
-	"github.com/egoist/mygo/internal/text"
+	"github.com/caelyreth/evil-mygo/internal/text"
 )
 
 // The layout is CSS flexbox, or grid (grid.go), with box-sizing:

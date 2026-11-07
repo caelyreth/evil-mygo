@@ -5,7 +5,7 @@ package webgpu
 import (
 	"errors"
 
-	"github.com/egoist/mygo/internal/scene"
+	"github.com/caelyreth/evil-mygo/internal/scene"
 )
 
 // NativeRenderer is unavailable in the untagged cgo-free build. The

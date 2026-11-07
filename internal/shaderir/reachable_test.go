@@ -19,8 +19,8 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/egoist/mygo/internal/shader"
-	"github.com/egoist/mygo/internal/shaderir"
+	"github.com/caelyreth/evil-mygo/internal/shader"
+	"github.com/caelyreth/evil-mygo/internal/shaderir"
 )
 
 func compileToIR(src []byte) (*shaderir.Program, error) {

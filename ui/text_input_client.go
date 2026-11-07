@@ -3,7 +3,7 @@ package ui
 import (
 	"reflect"
 
-	"github.com/egoist/mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/platform"
 )
 
 // TextInputRange is a half-open range of UTF-16 code units. These are the

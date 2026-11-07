@@ -364,7 +364,7 @@ func TestFrontendOverlay(t *testing.T) {
 		t.Skip("compiles a program")
 	}
 	files := map[string]string{
-		"cmd/app/main.go":          "package main\n\nimport \"github.com/egoist/mygo\"\n\nfunc main() { mygo.App.Run() }\n",
+		"cmd/app/main.go":          "package main\n\nimport \"github.com/caelyreth/evil-mygo\"\n\nfunc main() { mygo.App.Run() }\n",
 		"web/dist/index.html":      "<p>embedded frontend</p>",
 		"web/dist/assets/app-1.js": "console.log('embedded asset')",
 		"web/dist/_routes/.hidden": "hidden file",
@@ -424,7 +424,7 @@ func testModule(t *testing.T, files map[string]string) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	gomod := "module example.com/app\n\nrequire github.com/egoist/mygo v0.0.0\n\nreplace github.com/egoist/mygo => " + repo + "\n"
+	gomod := "module example.com/app\n\nrequire github.com/caelyreth/evil-mygo v0.0.0\n\nreplace github.com/caelyreth/evil-mygo => " + repo + "\n"
 	for _, line := range strings.Split(string(mod), "\n") {
 		if strings.HasPrefix(line, "go ") {
 			gomod += line + "\n" // the go version MyGo needs

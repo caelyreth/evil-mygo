@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // longText returns n paragraphs of formatted text: a heading every

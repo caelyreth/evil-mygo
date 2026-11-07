@@ -11,10 +11,10 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "mygo-runtime": "workspace:*"
+    "@caelyreth/evil-mygo-runtime": "workspace:*"
   },
   "devDependencies": {
-    "mygo-cli": "workspace:*",
+    "@caelyreth/evil-mygo-cli": "workspace:*",
     "typescript": "^7",
     "vite": "^8"
   }

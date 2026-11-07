@@ -1,5 +1,5 @@
 {
-  "//": "Messages of ICU MessageFormat and what they format to, which package i18n (TestMessageFixtures) and mygo-runtime's formatter (i18n.test.ts) both check, so that Go and pages say the same. Numbers and dates are formatted with CLDR's data in Go and Intl in pages; dates, whose output depends on the time zone, are tested apart.",
+  "//": "Messages of ICU MessageFormat and what they format to, which package i18n (TestMessageFixtures) and @caelyreth/evil-mygo-runtime's formatter (i18n.test.ts) both check, so that Go and pages say the same. Numbers and dates are formatted with CLDR's data in Go and Intl in pages; dates, whose output depends on the time zone, are tested apart.",
   "format": [
     { "message": "Hello", "want": "Hello" },
     { "message": "", "want": "" },

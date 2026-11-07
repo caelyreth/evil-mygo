@@ -12,8 +12,8 @@ under a name:
 
 ```go
 import (
-	"github.com/egoist/mygo"
-	"github.com/egoist/mygo/plugins/watch"
+	"github.com/caelyreth/evil-mygo"
+	"github.com/caelyreth/evil-mygo/plugins/watch"
 )
 
 func main() {
@@ -30,7 +30,7 @@ func main() {
 and add its package to the frontend:
 
 ```sh
-bun add @mygo-plugins/watch
+bun add @caelyreth/evil-mygo-watch
 ```
 
 Pages name a root by its name, never by a path, so they can't watch
@@ -98,7 +98,7 @@ Each page can watch 8 directories and files at a time
 for the changes, a batch of events each time they stop:
 
 ```ts
-import { watch } from "@mygo-plugins/watch";
+import { watch } from "@caelyreth/evil-mygo-watch";
 
 const watcher = await watch("project", { recursive: true });
 for await (const events of watcher) {

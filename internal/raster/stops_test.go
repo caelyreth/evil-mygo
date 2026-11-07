@@ -4,7 +4,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/egoist/mygo/internal/scene"
+	"github.com/caelyreth/evil-mygo/internal/scene"
 )
 
 var (

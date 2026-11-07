@@ -3,9 +3,9 @@ package markdown
 import (
 	"time"
 
-	"github.com/egoist/mygo/internal/l10n"
-	"github.com/egoist/mygo/ui"
-	"github.com/egoist/mygo/ui/editor"
+	"github.com/caelyreth/evil-mygo/internal/l10n"
+	"github.com/caelyreth/evil-mygo/ui"
+	"github.com/caelyreth/evil-mygo/ui/editor"
 )
 
 // CodeBlockView is a code block as Options.CodeBlock and Options.Code build

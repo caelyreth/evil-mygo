@@ -3,8 +3,8 @@
 package e2e
 
 import (
-	"github.com/egoist/mygo"
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo"
+	"github.com/caelyreth/evil-mygo/ui"
 	"runtime"
 	"sync/atomic"
 	"testing"

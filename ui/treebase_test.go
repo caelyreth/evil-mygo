@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/egoist/mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/platform"
 )
 
 // testNode is an item of a tree a TreeBase test lays out itself.

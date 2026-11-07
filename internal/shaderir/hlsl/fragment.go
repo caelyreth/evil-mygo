@@ -5,7 +5,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/egoist/mygo/internal/shaderir"
+	"github.com/caelyreth/evil-mygo/internal/shaderir"
 )
 
 // Fragment returns p's fragment entry point as an HLSL (shader model 5)

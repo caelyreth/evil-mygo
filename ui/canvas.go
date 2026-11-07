@@ -3,7 +3,7 @@ package ui
 import (
 	"image"
 
-	"github.com/egoist/mygo/internal/scene"
+	"github.com/caelyreth/evil-mygo/internal/scene"
 )
 
 // A Canvas is a bitmap that a painter draws, on the GPU where the window

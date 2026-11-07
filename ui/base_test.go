@@ -4,7 +4,7 @@ import (
 	"image/color"
 	"testing"
 
-	"github.com/egoist/mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/platform"
 )
 
 // TestBasesHaveNoLook builds every base on a white window: they draw

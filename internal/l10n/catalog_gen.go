@@ -6,8 +6,8 @@ import (
 	"embed"
 	"io/fs"
 
-	"github.com/egoist/mygo/i18n"
-	"github.com/egoist/mygo/internal/i18nlink"
+	"github.com/caelyreth/evil-mygo/i18n"
+	"github.com/caelyreth/evil-mygo/internal/i18nlink"
 )
 
 // messages holds messages/en.json, the messages of en without their

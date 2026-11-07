@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/egoist/mygo/internal/wait"
-	"github.com/egoist/mygo/plugins/updater/internal/markdown"
+	"github.com/caelyreth/evil-mygo/internal/wait"
+	"github.com/caelyreth/evil-mygo/plugins/updater/internal/markdown"
 )
 
 // harness runs the updater without windows: its open function records the sessions

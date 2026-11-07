@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/egoist/mygo/internal/fake"
-	"github.com/egoist/mygo/internal/platform"
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/internal/fake"
+	"github.com/caelyreth/evil-mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 const blockAds = `[{"trigger":{"url-filter":"ads"},"action":{"type":"block"}}]`

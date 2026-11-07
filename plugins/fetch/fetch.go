@@ -1,5 +1,5 @@
 // Package fetch is the fetch plugin of MyGo: pages make HTTP requests from
-// Go with the fetch of its JavaScript package, @mygo-plugins/fetch, which
+// Go with the fetch of its JavaScript package, @caelyreth/evil-mygo-fetch, which
 // takes and returns the standard Request options and Response. Requests
 // made this way are not subject to CORS, may set any header (Origin,
 // Cookie, User-Agent, ...) and read every response header but Set-Cookie
@@ -9,7 +9,7 @@
 //
 // and in the frontend:
 //
-//	import { fetch } from "@mygo-plugins/fetch";
+//	import { fetch } from "@caelyreth/evil-mygo-fetch";
 //
 //	const res = await fetch("https://api.example.com/items", {
 //	  headers: { authorization: `Bearer ${token}` },
@@ -30,8 +30,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/egoist/mygo"
-	"github.com/egoist/mygo/netproxy"
+	"github.com/caelyreth/evil-mygo"
+	"github.com/caelyreth/evil-mygo/netproxy"
 )
 
 // Options configure the plugin.

@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/egoist/mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/platform"
 )
 
 // parseColor parses a CSS color: #rgb, #rgba, #rrggbb, #rrggbbaa,

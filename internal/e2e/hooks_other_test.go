@@ -6,7 +6,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/egoist/mygo"
+	"github.com/caelyreth/evil-mygo"
 )
 
 // Platforms without a backend run no GUI tests.

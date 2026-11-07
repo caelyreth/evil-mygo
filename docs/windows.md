@@ -288,7 +288,7 @@ so that users tell at a glance which window has it, and MyGo's do too:
   `SetActiveAppearance(true)` keeps active.
 - Pages get the `data-mygo-window-inactive` attribute on `<html>` while
   their window is inactive, for CSS, and `windowActive()` of
-  `mygo-runtime` (see [inactive windows](frontend.md#inactive-windows)).
+  `@caelyreth/evil-mygo-runtime` (see [inactive windows](frontend.md#inactive-windows)).
 - Native UI reads `c.WindowActive()`, and its built-in widgets fade their
   accent to gray (see [native UI](ui/windows.md#active-and-inactive-windows)).
 

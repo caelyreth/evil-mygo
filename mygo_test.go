@@ -25,12 +25,12 @@ import (
 	"testing/fstest"
 	"time"
 
-	"github.com/egoist/mygo/internal/fake"
-	"github.com/egoist/mygo/internal/platform"
-	"github.com/egoist/mygo/internal/tsgen"
-	"github.com/egoist/mygo/internal/wait"
-	"github.com/egoist/mygo/transfer"
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/internal/fake"
+	"github.com/caelyreth/evil-mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/tsgen"
+	"github.com/caelyreth/evil-mygo/internal/wait"
+	"github.com/caelyreth/evil-mygo/transfer"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 var fb *fake.Backend
@@ -1894,7 +1894,7 @@ func TestThemePreferences(t *testing.T) {
 }
 
 // TestThemePreferencesJSON checks the JSON of the preferences, which is
-// mygo-runtime's ThemePreferences: the accent a CSS color or null.
+// @caelyreth/evil-mygo-runtime's ThemePreferences: the accent a CSS color or null.
 // Theme.SetGTKCSS gives the backend the sheet, from any goroutine, each
 // in place of the one before, and returns why one did not load (#1121).
 func TestThemeGTKCSS(t *testing.T) {
@@ -1970,14 +1970,14 @@ func TestThemePreferencesJSON(t *testing.T) {
 }
 
 // TestThemePreferencesTypeScript checks that the generated client takes
-// the type of mygo-runtime for the preferences, whose JSON it is.
+// the type of @caelyreth/evil-mygo-runtime for the preferences, whose JSON it is.
 func TestThemePreferencesTypeScript(t *testing.T) {
 	m := tsgen.Model{Events: []tsgen.Event{{Name: "prefs", Type: reflect.TypeFor[ThemePreferences]()}}}
 	out, err := tsgen.Generate(m)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{`import { event, type ThemePreferences } from "mygo-runtime";`, `prefs: event<ThemePreferences>("prefs")`} {
+	for _, want := range []string{`import { event, type ThemePreferences } from "@caelyreth/evil-mygo-runtime";`, `prefs: event<ThemePreferences>("prefs")`} {
 		if !strings.Contains(string(out), want) {
 			t.Errorf("client does not contain %q:\n%s", want, out)
 		}

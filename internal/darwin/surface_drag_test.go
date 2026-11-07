@@ -6,8 +6,8 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/egoist/mygo/internal/platform"
-	"github.com/egoist/mygo/transfer"
+	"github.com/caelyreth/evil-mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/transfer"
 )
 
 // Format translation needs Foundation/AppKit, but no application or window.

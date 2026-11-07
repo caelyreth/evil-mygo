@@ -9,7 +9,7 @@ import (
 	"sort"
 )
 
-const uiPath = "github.com/egoist/mygo/ui"
+const uiPath = "github.com/caelyreth/evil-mygo/ui"
 
 type Diagnostic struct {
 	Position token.Position

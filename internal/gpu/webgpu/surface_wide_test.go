@@ -9,7 +9,7 @@ import (
 	"github.com/ebitengine/purego/objc"
 	"github.com/go-webgpu/webgpu/wgpu"
 
-	"github.com/egoist/mygo/internal/scene"
+	"github.com/caelyreth/evil-mygo/internal/scene"
 )
 
 func TestSurfaceWideFormat(t *testing.T) {

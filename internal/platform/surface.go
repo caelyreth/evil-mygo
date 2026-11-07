@@ -1,7 +1,7 @@
 package platform
 
 import (
-	"github.com/egoist/mygo/transfer"
+	"github.com/caelyreth/evil-mygo/transfer"
 	"image"
 )
 

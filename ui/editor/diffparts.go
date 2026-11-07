@@ -3,8 +3,8 @@ package editor
 import (
 	"fmt"
 
-	"github.com/egoist/mygo/internal/l10n"
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/internal/l10n"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // The parts of a diff viewer around its lines, as Pierre's diffs render

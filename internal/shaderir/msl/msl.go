@@ -25,7 +25,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/egoist/mygo/internal/shaderir"
+	"github.com/caelyreth/evil-mygo/internal/shaderir"
 )
 
 const (

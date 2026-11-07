@@ -6,7 +6,7 @@ import (
 	"math"
 	"slices"
 
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // The file is planar: use MyGo's projective UV map, with the archive's

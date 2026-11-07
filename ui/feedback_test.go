@@ -4,7 +4,7 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/egoist/mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/platform"
 )
 
 func TestToastAction(t *testing.T) {

@@ -12,7 +12,7 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/egoist/mygo/internal/wait"
+	"github.com/caelyreth/evil-mygo/internal/wait"
 )
 
 // TestKillSparesWebView2 has kill end a build and the processes it started

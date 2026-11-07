@@ -3,15 +3,15 @@ package main
 import (
 	"strings"
 
-	"github.com/egoist/mygo"
-	"github.com/egoist/mygo/i18n"
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo"
+	"github.com/caelyreth/evil-mygo/i18n"
+	"github.com/caelyreth/evil-mygo/ui"
 
 	// MyGo's own strings in the languages of the gallery that MyGo is
 	// translated to; its others show them in English.
-	_ "github.com/egoist/mygo/locales/ja"
-	_ "github.com/egoist/mygo/locales/zh-Hans"
-	_ "github.com/egoist/mygo/locales/zh-Hant"
+	_ "github.com/caelyreth/evil-mygo/locales/ja"
+	_ "github.com/caelyreth/evil-mygo/locales/zh-Hans"
+	_ "github.com/caelyreth/evil-mygo/locales/zh-Hant"
 )
 
 // galleryLanguages are the languages the gallery declares, its own first:

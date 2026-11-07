@@ -1,8 +1,8 @@
 package ui
 
 import (
-	"github.com/egoist/mygo/internal/platform"
-	"github.com/egoist/mygo/internal/scene"
+	"github.com/caelyreth/evil-mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/scene"
 )
 
 // NativeGlassSpec is how a NativeGlassMaterial asks for the system's glass:

@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/egoist/mygo/internal/scene"
-	"github.com/egoist/mygo/internal/text"
+	"github.com/caelyreth/evil-mygo/internal/scene"
+	"github.com/caelyreth/evil-mygo/internal/text"
 )
 
 // matchTile is the identity of the tiles of these tests.

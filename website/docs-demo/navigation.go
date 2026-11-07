@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // Icons of the navigation demos.

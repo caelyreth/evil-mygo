@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/egoist/mygo"
-	win "github.com/egoist/mygo/internal/windows"
+	"github.com/caelyreth/evil-mygo"
+	win "github.com/caelyreth/evil-mygo/internal/windows"
 )
 
 func activateMenu(w *mygo.Window, path ...string) (err error) {

@@ -18,7 +18,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/egoist/mygo/internal/i18ngen"
+	"github.com/caelyreth/evil-mygo/internal/i18ngen"
 )
 
 // buildInputs is what building the app reads, which is what mygo dev

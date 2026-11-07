@@ -19,7 +19,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/egoist/mygo/internal/update"
+	"github.com/caelyreth/evil-mygo/internal/update"
 )
 
 // Signed updates (mygo.Updater): `mygo keygen` creates the key pair,
@@ -134,8 +134,8 @@ func updateFlags(c *Config, target string) string {
 	if c.Updates == nil {
 		return ""
 	}
-	return " -X " + ldflagsQuote("github.com/egoist/mygo.packageUpdateFeed="+c.updateFeed(target)) +
-		" -X github.com/egoist/mygo.packageUpdateKey=" + c.Updates.PublicKey
+	return " -X " + ldflagsQuote("github.com/caelyreth/evil-mygo.packageUpdateFeed="+c.updateFeed(target)) +
+		" -X github.com/caelyreth/evil-mygo.packageUpdateKey=" + c.Updates.PublicKey
 }
 
 // signingKey returns the private key that signs updates, or nil when none

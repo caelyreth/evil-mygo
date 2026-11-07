@@ -5,7 +5,7 @@ package linux
 import (
 	"sync"
 
-	"github.com/egoist/mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/platform"
 )
 
 // notificationImageHint is imageHint once LinkNotificationImages links

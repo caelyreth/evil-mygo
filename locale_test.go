@@ -11,16 +11,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/egoist/mygo/i18n"
-	"github.com/egoist/mygo/internal/bridge"
-	"github.com/egoist/mygo/internal/l10n"
-	"github.com/egoist/mygo/internal/platform"
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/i18n"
+	"github.com/caelyreth/evil-mygo/internal/bridge"
+	"github.com/caelyreth/evil-mygo/internal/l10n"
+	"github.com/caelyreth/evil-mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/ui"
 
 	// MyGo's own strings in the languages the tests show.
-	_ "github.com/egoist/mygo/locales/ja"
-	_ "github.com/egoist/mygo/locales/zh-Hans"
-	_ "github.com/egoist/mygo/locales/zh-Hant"
+	_ "github.com/caelyreth/evil-mygo/locales/ja"
+	_ "github.com/caelyreth/evil-mygo/locales/zh-Hans"
+	_ "github.com/caelyreth/evil-mygo/locales/zh-Hant"
 )
 
 // localeTest gives a test the app written in langs, the user reading

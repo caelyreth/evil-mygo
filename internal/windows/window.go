@@ -7,7 +7,7 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/egoist/mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/platform"
 )
 
 var errDestroyed = errors.New("mygo: window has been destroyed")

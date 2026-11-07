@@ -3,7 +3,7 @@ package editor
 import (
 	"slices"
 
-	"github.com/egoist/mygo/internal/diff"
+	"github.com/caelyreth/evil-mygo/internal/diff"
 )
 
 // gitDiff marks an editor's changes against its DiffBase in the

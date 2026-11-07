@@ -1,6 +1,6 @@
-# @mygo-plugins/fetch
+# @caelyreth/evil-mygo-fetch
 
-A `fetch` for [MyGo](https://github.com/egoist/mygo) apps that makes HTTP
+A `fetch` for [MyGo](https://github.com/caelyreth/evil-mygo) apps that makes HTTP
 requests from Go: not subject to CORS, free to set any header (Origin,
 Cookie, User-Agent, ...), with the standard options and a standard
 `Response` whose body streams as Go reads it.
@@ -8,7 +8,7 @@ Cookie, User-Agent, ...), with the standard options and a standard
 Use the plugin in Go:
 
 ```go
-import "github.com/egoist/mygo/plugins/fetch"
+import "github.com/caelyreth/evil-mygo/plugins/fetch"
 
 mygo.Use(fetch.Plugin) // or fetch.New(fetch.Options{Client: ..., Allow: ...})
 ```
@@ -16,7 +16,7 @@ mygo.Use(fetch.Plugin) // or fetch.New(fetch.Options{Client: ..., Allow: ...})
 and fetch in the frontend:
 
 ```ts
-import { fetch } from "@mygo-plugins/fetch";
+import { fetch } from "@caelyreth/evil-mygo-fetch";
 
 const ctrl = new AbortController();
 const res = await fetch("https://api.example.com/items", {
@@ -37,5 +37,5 @@ const items = await res.json();
 - URLs that are not http or https (the app's own pages, `data:`, `blob:`) go
   to the webview's `fetch`.
 
-[The documentation](https://github.com/egoist/mygo/blob/main/docs/plugins/fetch.md)
+[The documentation](https://github.com/caelyreth/evil-mygo/blob/main/docs/plugins/fetch.md)
 covers streaming, errors and the options of the Go side.

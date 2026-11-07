@@ -1,6 +1,6 @@
 package fake
 
-import "github.com/egoist/mygo/internal/platform"
+import "github.com/caelyreth/evil-mygo/internal/platform"
 
 // WebView is a web view under a fake Surface (Surface.NewWebView): a
 // Window of its own for its page, which its handler hears of, without the

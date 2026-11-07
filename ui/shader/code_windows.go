@@ -1,10 +1,10 @@
 package shader
 
 import (
-	"github.com/egoist/mygo/internal/gpu/d3d11"
-	"github.com/egoist/mygo/internal/scene"
-	"github.com/egoist/mygo/internal/shaderir"
-	"github.com/egoist/mygo/internal/shaderir/hlsl"
+	"github.com/caelyreth/evil-mygo/internal/gpu/d3d11"
+	"github.com/caelyreth/evil-mygo/internal/scene"
+	"github.com/caelyreth/evil-mygo/internal/shaderir"
+	"github.com/caelyreth/evil-mygo/internal/shaderir/hlsl"
 )
 
 // code gives fx p's code for the Direct3D renderer, as an effect's, with

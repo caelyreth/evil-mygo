@@ -9,7 +9,7 @@ import (
 	"log"
 	"runtime"
 
-	"github.com/egoist/mygo"
+	"github.com/caelyreth/evil-mygo"
 )
 
 const page = `<!doctype html>

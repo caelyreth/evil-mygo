@@ -13,8 +13,8 @@ import (
 
 	"github.com/ebitengine/purego/objc"
 
-	"github.com/egoist/mygo/internal/bridge"
-	"github.com/egoist/mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/bridge"
+	"github.com/caelyreth/evil-mygo/internal/platform"
 )
 
 const (

@@ -17,10 +17,10 @@ import (
 	"time"
 	"weak"
 
-	"github.com/egoist/mygo/internal/fake"
-	"github.com/egoist/mygo/internal/platform"
-	"github.com/egoist/mygo/internal/wait"
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/internal/fake"
+	"github.com/caelyreth/evil-mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/wait"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // contentWindow creates a window showing view and draws its first frame.

@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/egoist/mygo/plugins/updater/internal/frontend"
+	"github.com/caelyreth/evil-mygo/plugins/updater/internal/frontend"
 )
 
 // Strings are the texts of the update window in one language. The plugin

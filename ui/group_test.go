@@ -4,7 +4,7 @@ import (
 	"image"
 	"testing"
 
-	"github.com/egoist/mygo/internal/scene"
+	"github.com/caelyreth/evil-mygo/internal/scene"
 )
 
 // near reports whether the pixel of img at x, y is c, within a unit or two

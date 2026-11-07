@@ -1,10 +1,10 @@
 {
-  "name": "@egoist/mygo-cli-linux-x64",
-  "version": "0.8.0",
-  "description": "The Linux x64 binary of mygo-cli",
+  "name": "@caelyreth/evil-mygo-cli-linux-x64",
+  "version": "0.1.0",
+  "description": "The Linux x64 binary of @caelyreth/evil-mygo-cli",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/egoist/mygo.git",
+    "url": "git+https://github.com/caelyreth/evil-mygo.git",
     "directory": "packages/cli/npm/linux-x64"
   },
   "license": "MIT",

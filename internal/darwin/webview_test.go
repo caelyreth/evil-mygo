@@ -5,9 +5,9 @@ package darwin
 import (
 	"testing"
 
+	"github.com/caelyreth/evil-mygo/internal/platform"
 	"github.com/ebitengine/purego"
 	"github.com/ebitengine/purego/objc"
-	"github.com/egoist/mygo/internal/platform"
 )
 
 type webViewScrollHandler struct {

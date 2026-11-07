@@ -21,7 +21,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/egoist/mygo/internal/update"
+	"github.com/caelyreth/evil-mygo/internal/update"
 )
 
 func TestInstallScript(t *testing.T) {

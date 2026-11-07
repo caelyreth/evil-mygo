@@ -5,7 +5,7 @@ package windows
 import (
 	"testing"
 
-	"github.com/egoist/mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/platform"
 )
 
 // What the suggestions of a field complete (aria-autocomplete) is in its

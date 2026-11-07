@@ -16,7 +16,7 @@ import (
 	"math"
 	"sync"
 
-	"github.com/egoist/mygo/internal/shaderir"
+	"github.com/caelyreth/evil-mygo/internal/shaderir"
 )
 
 // Image is an image a shader reads: its size in pixels, and its pixels,

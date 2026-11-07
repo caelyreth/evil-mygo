@@ -4,7 +4,7 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/egoist/mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/platform"
 )
 
 // DataStore is a website data store NewDataStore made, with cookies of

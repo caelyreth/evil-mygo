@@ -8,8 +8,8 @@ import (
 	"github.com/go-webgpu/webgpu/wgpu"
 	"github.com/gogpu/gputypes"
 
-	"github.com/egoist/mygo/internal/gpu"
-	"github.com/egoist/mygo/internal/scene"
+	"github.com/caelyreth/evil-mygo/internal/gpu"
+	"github.com/caelyreth/evil-mygo/internal/scene"
 )
 
 const (

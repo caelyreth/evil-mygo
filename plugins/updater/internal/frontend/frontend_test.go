@@ -3,7 +3,7 @@ package frontend
 import (
 	"testing"
 
-	"github.com/egoist/mygo"
+	"github.com/caelyreth/evil-mygo"
 )
 
 type fakeWindow struct {

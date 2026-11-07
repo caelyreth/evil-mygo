@@ -16,8 +16,8 @@ import (
 
 	"github.com/go-webgpu/webgpu/wgpu"
 
-	"github.com/egoist/mygo/internal/gpu/webgpu"
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/internal/gpu/webgpu"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 func TestAnimatedSceneGPU(t *testing.T) {

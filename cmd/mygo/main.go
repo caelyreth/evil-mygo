@@ -11,9 +11,11 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+
+	buildversion "github.com/caelyreth/evil-mygo/internal/version"
 )
 
-const usage = `mygo is the tool for MyGo desktop applications.
+const usage = `mygo is the tool for evil-mygo desktop applications.
 
 Usage:
 
@@ -32,12 +34,12 @@ Commands:
 	build                build production apps (a .app and a .dmg on macOS)
 	keygen               create the key pair that signs updates
 	doctor               check that the development environment is ready
-	version              print the MyGo version
+	version              print the fork version and upstream baseline
 
 Run "mygo <command> -h" for the flags of a command.
 `
 
-const version = "0.8.0"
+const version = buildversion.Version
 
 func main() {
 	if len(os.Args) < 2 {
@@ -85,7 +87,7 @@ func main() {
 	case "sign-uninstaller": // run by makensis, see uninstallerSigning
 		err = runSignUninstaller(args)
 	case "version", "-v", "--version":
-		fmt.Println("mygo", version)
+		fmt.Println(buildversion.String())
 	case "help", "-h", "--help":
 		fmt.Print(usage)
 	default:

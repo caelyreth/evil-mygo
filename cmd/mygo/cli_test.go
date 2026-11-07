@@ -21,7 +21,7 @@ func TestConfigDefaults(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(dir, "frontend"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "frontend", "package.json"), []byte(`{"dependencies": {"mygo-runtime": "^1"}}`), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "frontend", "package.json"), []byte(`{"dependencies": {"@caelyreth/evil-mygo-runtime": "^1"}}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	c, err := loadConfig(dir)
@@ -58,11 +58,11 @@ func TestConfigDefaults(t *testing.T) {
 	}
 
 	// A frontend at the project root, and a package.json that is not one:
-	// it does not depend on mygo-runtime, which the client imports.
+	// it does not depend on @caelyreth/evil-mygo-runtime, which the client imports.
 	for _, tc := range []struct{ pkg, want string }{
-		{`{"dependencies": {"mygo-runtime": "^1"}}`, filepath.Join("src", "mygo.ts")},
-		{`{"devDependencies": {"mygo-runtime": "workspace:*"}}`, filepath.Join("src", "mygo.ts")},
-		{`{"devDependencies": {"mygo-cli": "^1"}}`, ""},
+		{`{"dependencies": {"@caelyreth/evil-mygo-runtime": "^1"}}`, filepath.Join("src", "mygo.ts")},
+		{`{"devDependencies": {"@caelyreth/evil-mygo-runtime": "workspace:*"}}`, filepath.Join("src", "mygo.ts")},
+		{`{"devDependencies": {"@caelyreth/evil-mygo-cli": "^1"}}`, ""},
 		{`{}`, ""},
 	} {
 		root := t.TempDir()
@@ -165,7 +165,7 @@ func TestWriteUniversal(t *testing.T) {
 func TestTemplate(t *testing.T) {
 	dir := t.TempDir()
 	data := templateData{Name: `The "Demo" App`, Slug: "demo-app", Module: "demo-app", Identifier: "com.example.demoapp",
-		Runtime: "^0.1.0", CLI: "^0.1.0", Mygo: "mygo", ConfigImport: "mygo-cli"}
+		Runtime: "^0.1.0", CLI: "^0.1.0", Mygo: "mygo", ConfigImport: "@caelyreth/evil-mygo-cli"}
 	if err := writeTemplate(dir, webTemplate, data); err != nil {
 		t.Fatal(err)
 	}
@@ -194,7 +194,7 @@ func TestTemplate(t *testing.T) {
 	if err := json.Unmarshal(raw, &pkg); err != nil {
 		t.Fatalf("package.json: %v\n%s", err, raw)
 	}
-	if pkg.Name != "demo-app" || pkg.Scripts["dev"] != "mygo dev" || pkg.Dependencies["mygo-runtime"] != "^0.1.0" || pkg.DevDependencies["mygo-cli"] != "^0.1.0" {
+	if pkg.Name != "demo-app" || pkg.Scripts["dev"] != "mygo dev" || pkg.Dependencies["@caelyreth/evil-mygo-runtime"] != "^0.1.0" || pkg.DevDependencies["@caelyreth/evil-mygo-cli"] != "^0.1.0" {
 		t.Errorf("package.json: %s", raw)
 	}
 
@@ -203,22 +203,24 @@ func TestTemplate(t *testing.T) {
 	local := t.TempDir()
 	cli, _ := filepath.Abs(filepath.Join("..", "..", "packages", "cli", "index.js"))
 	local2 := data
-	local2.CLI, local2.Mygo, local2.ConfigImport = "", "go run github.com/egoist/mygo/cmd/mygo", moduleSpecifier(local, cli)
+	local2.CLI, local2.Mygo, local2.ConfigImport = "", "go run github.com/caelyreth/evil-mygo/cmd/mygo", moduleSpecifier(local, cli)
 	if err := writeTemplate(local, webTemplate, local2); err != nil {
 		t.Fatal(err)
 	}
 	raw, _ = os.ReadFile(filepath.Join(local, "package.json"))
 	pkg.DevDependencies = nil
-	if err := json.Unmarshal(raw, &pkg); err != nil || pkg.DevDependencies["mygo-cli"] != "" || pkg.Scripts["build"] != local2.Mygo+" build" {
+	if err := json.Unmarshal(raw, &pkg); err != nil || pkg.DevDependencies["@caelyreth/evil-mygo-cli"] != "" || pkg.Scripts["build"] != local2.Mygo+" build" {
 		t.Errorf("package.json of a local checkout (%v): %s", err, raw)
 	}
 
 	if _, err := configRuntime(); err != nil {
 		t.Skipf("reading mygo.config.ts: %v", err)
 	}
-	// In a project, mygo-cli is installed.
-	os.Mkdir(filepath.Join(dir, "node_modules"), 0o755)
-	if err := os.Symlink(filepath.Dir(cli), filepath.Join(dir, "node_modules", "mygo-cli")); err != nil {
+	// In a project, @caelyreth/evil-mygo-cli is installed.
+	if err := os.MkdirAll(filepath.Join(dir, "node_modules", "@caelyreth"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Dir(cli), filepath.Join(dir, "node_modules", "@caelyreth/evil-mygo-cli")); err != nil {
 		t.Logf("not reading the project's configuration: %v", err)
 		dir = ""
 	}
@@ -306,7 +308,7 @@ func TestNativeTemplate(t *testing.T) {
 	}
 	checkout, _ := filepath.Abs(filepath.Join("..", ".."))
 	sum, _ := os.ReadFile(filepath.Join(checkout, "go.sum"))
-	gomod := "module demo-app\n\ngo " + goVersion() + "\n\nrequire github.com/egoist/mygo v0.0.0\n\nreplace github.com/egoist/mygo => " + checkout + "\n"
+	gomod := "module demo-app\n\ngo " + goVersion() + "\n\nrequire github.com/caelyreth/evil-mygo v0.0.0\n\nreplace github.com/caelyreth/evil-mygo => " + checkout + "\n"
 	if os.WriteFile(filepath.Join(dir, "go.mod"), []byte(gomod), 0o644) != nil || os.WriteFile(filepath.Join(dir, "go.sum"), sum, 0o644) != nil {
 		t.Fatal("cannot write the module")
 	}
@@ -347,8 +349,8 @@ func TestExtraLDFlags(t *testing.T) {
 func TestPackageFlags(t *testing.T) {
 	c := &Config{Name: "Bob's App", Version: "1.0.0", Identifier: "com.example.bob", URLSchemes: []string{"bob", "bob-dev"}}
 	got := packageFlags(c)
-	want := ` -X "github.com/egoist/mygo.packageName=Bob's App" -X github.com/egoist/mygo.packageVersion=1.0.0` +
-		` -X github.com/egoist/mygo.packageIdentifier=com.example.bob -X github.com/egoist/mygo.packageURLSchemes=bob,bob-dev`
+	want := ` -X "github.com/caelyreth/evil-mygo.packageName=Bob's App" -X github.com/caelyreth/evil-mygo.packageVersion=1.0.0` +
+		` -X github.com/caelyreth/evil-mygo.packageIdentifier=com.example.bob -X github.com/caelyreth/evil-mygo.packageURLSchemes=bob,bob-dev`
 	if got != want {
 		t.Errorf("packageFlags =\n%s\nwant\n%s", got, want)
 	}

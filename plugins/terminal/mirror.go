@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/egoist/mygo/plugins/terminal/internal/vt"
+	"github.com/caelyreth/evil-mygo/plugins/terminal/internal/vt"
 )
 
 // Mirror frames what a terminal shows for another terminal to show, as a

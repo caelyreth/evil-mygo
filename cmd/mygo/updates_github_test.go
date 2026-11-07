@@ -16,7 +16,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/egoist/mygo/internal/update"
+	"github.com/caelyreth/evil-mygo/internal/update"
 )
 
 type updateTestTransport func(*http.Request) (*http.Response, error)

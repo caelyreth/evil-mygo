@@ -11,7 +11,7 @@ import (
 	"github.com/go-webgpu/webgpu/wgpu"
 	"github.com/gogpu/gputypes"
 
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 //go:embed scene.wgsl

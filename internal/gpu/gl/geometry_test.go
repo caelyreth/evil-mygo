@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/egoist/mygo/internal/gpu/gputest"
-	"github.com/egoist/mygo/internal/scene"
+	"github.com/caelyreth/evil-mygo/internal/gpu/gputest"
+	"github.com/caelyreth/evil-mygo/internal/scene"
 )
 
 // The shared builder's culling and scissors must preserve every pixel with

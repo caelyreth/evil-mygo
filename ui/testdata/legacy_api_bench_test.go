@@ -5,7 +5,7 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 func BenchmarkValueFrame(b *testing.B) {

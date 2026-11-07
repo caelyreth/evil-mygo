@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/egoist/mygo/internal/scene"
-	internalshader "github.com/egoist/mygo/internal/shader"
-	"github.com/egoist/mygo/internal/shaderir"
-	"github.com/egoist/mygo/internal/shaderir/packed"
-	"github.com/egoist/mygo/internal/shaderir/wgsl"
+	"github.com/caelyreth/evil-mygo/internal/scene"
+	internalshader "github.com/caelyreth/evil-mygo/internal/shader"
+	"github.com/caelyreth/evil-mygo/internal/shaderir"
+	"github.com/caelyreth/evil-mygo/internal/shaderir/packed"
+	"github.com/caelyreth/evil-mygo/internal/shaderir/wgsl"
 )
 
 // code gives fx p's WGSL code for the WebGPU renderer, and returns where

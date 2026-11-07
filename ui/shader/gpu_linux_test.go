@@ -6,8 +6,8 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/egoist/mygo/internal/gpu/gl"
-	"github.com/egoist/mygo/internal/gpu/gputest"
+	"github.com/caelyreth/evil-mygo/internal/gpu/gl"
+	"github.com/caelyreth/evil-mygo/internal/gpu/gputest"
 )
 
 // TestOpenGL checks that OpenGL 3.3 and OpenGL ES 3.0 draw a shader, its

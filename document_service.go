@@ -16,7 +16,7 @@ import (
 //
 //	const text = await Note.content();
 //	await Note.setContent(text + "!");
-//	onDocumentState((state) => { title.textContent = state.name }); // mygo-runtime
+//	onDocumentState((state) => { title.textContent = state.name }); // @caelyreth/evil-mygo-runtime
 //
 // Its methods fail for windows that show no document of its kind.
 type DocumentService[T any] struct{ ds *Documents[T] }
@@ -53,7 +53,7 @@ func (s *DocumentService[T]) SetContent(ctx context.Context, content T) error {
 	return err
 }
 
-// State describes the window's document; onDocumentState of mygo-runtime
+// State describes the window's document; onDocumentState of @caelyreth/evil-mygo-runtime
 // tells its changes.
 func (s *DocumentService[T]) State(ctx context.Context) (DocumentState, error) {
 	d, err := s.doc(ctx)

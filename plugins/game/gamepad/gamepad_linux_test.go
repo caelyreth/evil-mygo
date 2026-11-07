@@ -10,7 +10,7 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/egoist/mygo/internal/wait"
+	"github.com/caelyreth/evil-mygo/internal/wait"
 )
 
 // uinput makes virtual input devices.

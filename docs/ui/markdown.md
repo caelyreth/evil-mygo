@@ -9,7 +9,7 @@ token: text appended is parsed alone, half-written syntax shows as what
 it will become, and text comes in smoothly, fading in.
 
 ```go
-import "github.com/egoist/mygo/ui/markdown"
+import "github.com/caelyreth/evil-mygo/ui/markdown"
 
 // Kept in the app's state, shared by every view.
 app.md = markdown.Options{}

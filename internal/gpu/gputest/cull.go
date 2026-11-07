@@ -3,7 +3,7 @@ package gputest
 import (
 	"math"
 
-	"github.com/egoist/mygo/internal/scene"
+	"github.com/caelyreth/evil-mygo/internal/scene"
 )
 
 // CullCases are scenes of overlapping fills and what they hide: text,

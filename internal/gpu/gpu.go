@@ -32,7 +32,7 @@ import (
 	"strings"
 	"unsafe"
 
-	"github.com/egoist/mygo/internal/scene"
+	"github.com/caelyreth/evil-mygo/internal/scene"
 )
 
 // GoBytes returns the Go declaration of a variable name holding b, as
@@ -156,7 +156,7 @@ type Batch struct {
 }
 
 // Class says which paths of the fragment shader a batch's instances take.
-	// Renderers specialize their shader for it (WebGPU's pipeline variants, a
+// Renderers specialize their shader for it (WebGPU's pipeline variants, a
 // #define of GLSL, a macro of HLSL): the general shader holds the code of
 // every path, and registers for the heaviest, so the plain fills most of a
 // window is made of ran at a fraction of the speed it has without the rest.

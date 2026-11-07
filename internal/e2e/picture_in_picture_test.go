@@ -7,8 +7,8 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/egoist/mygo"
-	"github.com/egoist/mygo/internal/wait"
+	"github.com/caelyreth/evil-mygo"
+	"github.com/caelyreth/evil-mygo/internal/wait"
 )
 
 // pipPage plays a video with sound, which it records from a canvas and a

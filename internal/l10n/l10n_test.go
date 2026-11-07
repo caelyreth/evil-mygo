@@ -9,13 +9,13 @@ import (
 	"testing"
 	"testing/fstest"
 
-	"github.com/egoist/mygo/internal/i18ngen"
-	. "github.com/egoist/mygo/internal/l10n"
+	"github.com/caelyreth/evil-mygo/internal/i18ngen"
+	. "github.com/caelyreth/evil-mygo/internal/l10n"
 
 	// The translations, which apps import for the languages they ship.
-	_ "github.com/egoist/mygo/locales/ja"
-	_ "github.com/egoist/mygo/locales/zh-Hans"
-	_ "github.com/egoist/mygo/locales/zh-Hant"
+	_ "github.com/caelyreth/evil-mygo/locales/ja"
+	_ "github.com/caelyreth/evil-mygo/locales/zh-Hans"
+	_ "github.com/caelyreth/evil-mygo/locales/zh-Hant"
 )
 
 // TestCatalogs checks the catalogs as `mygo generate` checks an app's: no

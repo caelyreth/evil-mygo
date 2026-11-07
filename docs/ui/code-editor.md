@@ -11,7 +11,7 @@ lines in view, so a file of a million lines scrolls and edits as one of
 ten.
 
 ```go
-import "github.com/egoist/mygo/ui/editor"
+import "github.com/caelyreth/evil-mygo/ui/editor"
 
 // Kept by the app, as its other state.
 buf := editor.NewBuffer(source)

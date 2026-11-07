@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/egoist/mygo"
-	"github.com/egoist/mygo/internal/wait"
-	win "github.com/egoist/mygo/internal/windows"
+	"github.com/caelyreth/evil-mygo"
+	"github.com/caelyreth/evil-mygo/internal/wait"
+	win "github.com/caelyreth/evil-mygo/internal/windows"
 )
 
 // Alt alone, or held with Control or Shift, keeps a popup menu MyGo shows

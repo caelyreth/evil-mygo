@@ -5,7 +5,7 @@ import (
 	"slices"
 	"time"
 
-	"github.com/egoist/mygo/internal/scene"
+	"github.com/caelyreth/evil-mygo/internal/scene"
 )
 
 // Shared elements: a Transition's Match moves an element appearing from

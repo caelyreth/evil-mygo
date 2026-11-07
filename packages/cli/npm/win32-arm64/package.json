@@ -1,10 +1,10 @@
 {
-  "name": "@egoist/mygo-cli-win32-arm64",
-  "version": "0.8.0",
-  "description": "The Windows arm64 binary of mygo-cli",
+  "name": "@caelyreth/evil-mygo-cli-win32-arm64",
+  "version": "0.1.0",
+  "description": "The Windows arm64 binary of @caelyreth/evil-mygo-cli",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/egoist/mygo.git",
+    "url": "git+https://github.com/caelyreth/evil-mygo.git",
     "directory": "packages/cli/npm/win32-arm64"
   },
   "license": "MIT",

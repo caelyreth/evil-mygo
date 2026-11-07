@@ -38,7 +38,7 @@ framework safely. Read it before changing anything under `internal/`.
   with, names the backend's architectures in its build constraint.
 - **Bun is dev tooling only.** It builds and tests the TypeScript bridge, and
   installs and runs the web template's tools (Vite, TypeScript, the
-  mygo-cli package); projects of native UI need none. Nothing Bun-related
+  @caelyreth/evil-mygo-cli package); projects of native UI need none. Nothing Bun-related
   ships in an app.
 - **Great DX over API parity.** The API has the feel of Electron (app
   lifecycle, windows, menus, dialogs) but is Go-first: typed IPC with a
@@ -112,11 +112,11 @@ framework safely. Read it before changing anything under `internal/`.
 │   └── e2e/            GUI tests and benchmarks against the real backend (MYGO_E2E=1)
 ├── packages/           Bun workspace (with the examples' frontends):
 │   ├── bridge/         the runtime injected into pages (→ internal/bridge/bridge.js)
-│   ├── runtime/        mygo-runtime, the npm package apps and generated clients import
-│   └── cli/            mygo-cli, the npm package of the CLI, and in npm/ its
+│   ├── runtime/        @caelyreth/evil-mygo-runtime, the npm package apps and generated clients import
+│   └── cli/            @caelyreth/evil-mygo-cli, the npm package of the CLI, and in npm/ its
 │                       per-platform binary packages
 ├── plugins/            official plugins, each a Go package and its npm
-│                       package (@mygo-plugins/<name>) side by side: fetch,
+│                       package (@caelyreth/evil-mygo-<name>) side by side: fetch,
 │                       websocket, sqlite, watch; and Go only: updater, the
 │                       update window, a web page or native UI (updater/native),
 │                       terminal, a view of native UI running programs with
@@ -921,7 +921,7 @@ document start into the main frame. It installs:
   the event at document start, in a script after the bridge, so the first
   page lays out around the controls before it paints; the core sends it
   again when the room changes and once the DOM of any later page is ready.
-- File drops (`Window.OnFileDrop`, `onFileDrop` in mygo-runtime). Unlike
+- File drops (`Window.OnFileDrop`, `onFileDrop` in @caelyreth/evil-mygo-runtime). Unlike
   Tauri, whose native drop handler takes drops away from the page (on
   Windows, HTML5 drag and drop needs it turned off), MyGo leaves the page's
   drag and drop alone and reads the paths next to it. A capture listener on
@@ -1011,9 +1011,9 @@ document start into the main frame. It installs:
 The transport is `window.webkit.messageHandlers.mygo.postMessage` on both
 WebKit platforms and `window.chrome.webview.postMessage` on WebView2.
 
-### The `mygo-runtime` package (`packages/runtime`)
+### The `@caelyreth/evil-mygo-runtime` package (`packages/runtime`)
 
-Apps reach the injected runtime through the `mygo-runtime` npm package:
+Apps reach the injected runtime through the `@caelyreth/evil-mygo-runtime` npm package:
 `call`, `on`/`once`, typed `event<T>(name)`, `currentWindow` controls,
 `isMyGo`, `isCallError`, `runtime()` (which throws a helpful error outside a
 MyGo window) and the public types (`Runtime`, `WindowControls`, `Platform`),
@@ -1030,13 +1030,13 @@ build the package too.
 
 <!-- repository-only:end -->
 
-### The `mygo-cli` package (`packages/cli`)
+### The `@caelyreth/evil-mygo-cli` package (`packages/cli`)
 
 The CLI is also published to npm, so that projects pin it in package.json
 and run it from their scripts. Like esbuild, each platform's binary is a
-package of its own, `@egoist/mygo-cli-<os>-<cpu>` in `packages/cli/npm` (npm
-takes unscoped names such as `mygo-cli-win32-x64` for spam), with `os`
-and `cpu` fields; `mygo-cli` lists them all as optional dependencies, so
+package of its own, `@caelyreth/evil-mygo-cli-<os>-<cpu>` in `packages/cli/npm` (npm
+takes unscoped names such as `@caelyreth/evil-mygo-cli-win32-x64` for spam), with `os`
+and `cpu` fields; `@caelyreth/evil-mygo-cli` lists them all as optional dependencies, so
 package managers install only the matching one, and its `bin/mygo.js`
 resolves that package and replaces itself with the binary
 (`process.execve` in Node.js 23.11 and later and in Bun; elsewhere it spawns
@@ -1052,7 +1052,7 @@ workspace examples build `cmd/mygo` from source.
 binaries (ignored by git) and writes the manifests with the version of
 `mygo.Version`; `bun scripts/publish.ts` publishes the packages (see
 [Releasing](#releasing)). The binary is named `mygo`, like an unrelated npm
-package: docs say `bunx mygo-cli`, never `bunx mygo`, outside a project.
+package: docs say `bunx @caelyreth/evil-mygo-cli`, never `bunx mygo`, outside a project.
 
 <!-- repository-only:end -->
 
@@ -1205,7 +1205,7 @@ contexts, channels), but `GenerateTypeScript` skips it, since the plugin's
 own npm package is its client. A call to a plugin that is not used fails
 with an error naming `mygo.Use`. The official plugins in `plugins/` keep
 each Go package next to its npm package, built into `dist/` by `bun run
-build` like mygo-runtime and released with the same version.
+build` like @caelyreth/evil-mygo-runtime and released with the same version.
 
 - **fetch** streams a response through a `Channel`: the head first (status,
   headers, final URL), then base64 chunks of the body as Go reads them. The
@@ -1496,7 +1496,7 @@ The generator combines:
   located with `go list`. Without sources (e.g. `-trimpath` binaries) the
   client is still correct, just with `arg0` names and no docs.
 
-The output imports `call` and `event` from `mygo-runtime` and declares the
+The output imports `call` and `event` from `@caelyreth/evil-mygo-runtime` and declares the
 interfaces, one object per service with camelCased methods, and an `events`
 object. `WriteTypeScript` only rewrites the file when its
 content changes, so dev servers don't reload needlessly.
@@ -1603,7 +1603,7 @@ Package `i18n` is a leaf (it imports golang.org/x/text/language only):
   `NewLibraryCatalog` and `ParseMessage` set (`linkTimes`): MyGo's own
   catalog, which every app formats and which has no dates (its test
   checks), is made through `internal/i18nlink`, which does not, so an app
-  that formats no date links no date formatting. `mygo-runtime/i18n` is its TypeScript twin over `Intl` (skeletons
+  that formats no date links no date formatting. `@caelyreth/evil-mygo-runtime/i18n` is its TypeScript twin over `Intl` (skeletons
   turned into `Intl`'s options, as V8 turns them back);
   `i18n/testdata/messages.json` holds the cases both test.
 - **Catalogs** read a language's file once, on its first message
@@ -1901,7 +1901,7 @@ as in Tauri:
   `surface.Conn.Active` and `ActiveChanged`, and pages, and those of the
   window's web views, as the `mygo:window-active` event (true or
   false); pages start active, and one whose DOM is ready in an inactive
-  window is told so. The bridge keeps it for mygo-runtime's
+  window is told so. The bridge keeps it for @caelyreth/evil-mygo-runtime's
   `windowActive()`, telling listeners of changes only, and sets the
   `data-mygo-window-inactive` attribute of `<html>` while it is false.
   The system draws the materials itself: macOS's `NSVisualEffectView` of
@@ -3421,7 +3421,7 @@ either.
   transparency too, which package `ui` does not follow, and without the
   pointing devices, which pages' own media queries answer. Pages get them as
   `ThemePreferences`' JSON (its `MarshalJSON`, the accent a CSS color or
-  `null`), which is mygo-runtime's `ThemePreferences`: `tsgen` imports that
+  `null`), which is @caelyreth/evil-mygo-runtime's `ThemePreferences`: `tsgen` imports that
   type for it rather than declaring one (`runtimeTypes`). A user script
   after the bridge delivers the `mygo:preferences` event at document start;
   the bridge keeps the latest for `preferences()` and sets the
@@ -5050,10 +5050,10 @@ Metal renderer and its public composition names are gone.
   built with Vite, side by side at the project root like the examples, draws
   a default icon at `resources/icon.png`, fetches modules, installs the
   JavaScript dependencies with Bun and generates the client. package.json
-  runs the CLI from mygo-cli (`bun run dev`, `bun run build`), or with
-  `go run github.com/egoist/mygo/cmd/mygo` for `-mygo <checkout>`, whose
+  runs the CLI from @caelyreth/evil-mygo-cli (`bun run dev`, `bun run build`), or with
+  `go run github.com/caelyreth/evil-mygo/cmd/mygo` for `-mygo <checkout>`, whose
   go.mod replaces the module with the checkout. mygo.config.ts imports
-  `defineConfig` from mygo-cli, or from the checkout's `packages/cli` by a
+  `defineConfig` from @caelyreth/evil-mygo-cli, or from the checkout's `packages/cli` by a
   relative path between real locations, and sets `devUrl`, `devCommand` and
   `buildCommand` (the `dev:web` and `build:web` scripts, which run Vite and
   never mygo), `frontendDist` (Vite's `dist`) and `out` (`build`, so the two
@@ -5249,12 +5249,12 @@ Metal renderer and its public composition names are gone.
   against its SHA-256 and unpacks into `<user cache>/mygo`, as Tauri
   does. It tries the copies of
   the zip in `Release.URLs` in order, until one answers with the right
-  SHA-256: the asset of this repository's `nsis-<version>` release, then
+  SHA-256: the pinned upstream `nsis-<version>` release asset, then
   SourceForge, where NSIS publishes it. SourceForge's download host has
   been down for hours at a time, and its mirrors then redirect to it, so
   it is not the only source; a host that sends no response headers within
   30 s gives way to the next. Updating NSIS means publishing the copy (see
-  [Releasing](https://github.com/egoist/mygo/blob/main/docs/architecture.md#releasing)). Other systems skip the
+  [Releasing](https://github.com/caelyreth/evil-mygo/blob/main/docs/architecture.md#releasing)). Other systems skip the
   installer without NSIS: its zip holds Windows programs only. A signed
   app gets a signed uninstaller too, as with Tauri: `!uninstfinalize`
   (NSIS 3.08 and later) makes makensis run `mygo sign-uninstaller` on the
@@ -5345,7 +5345,7 @@ Native library and shader generation commands are listed in [AGENTS.md](../AGENT
 | core | `go test .` | lifecycle, quit, documents, IPC, channels, events, Eval, protocol, frontend URLs and serving, menus, trust, single instance, dev ready signal (fake backend); `go test -run '^$' -bench .` measures the Go side of IPC and custom schemes |
 | generator | `go test ./internal/tsgen` | TS output, json/v2 rules, source lookup; type-checks the output with `tsc` when `bun install` was run |
 | CLI | `go test ./cmd/mygo` | config, Info.plist, icons, universal binaries, template, dev launch/ready/stop (the test binary plays the app), watcher and `go list` inputs, the console's output (replayed as a terminal shows it), resources (platform directories, universal pairs, exclusions, staging, conflicts, dev placement; builds for every OS), frontend embedding (compiles an app with the overlay), `.DS_Store` against a dmgbuild golden file, a real DMG (`hdiutil`); builds and tools are skipped with `-short` |
-| runtime | `bun run test` | the injected runtime, `mygo-runtime` and the plugins' packages (against a fake Go side on the real runtime, `plugins/fake-go.ts`) |
+| runtime | `bun run test` | the injected runtime, `@caelyreth/evil-mygo-runtime` and the plugins' packages (against a fake Go side on the real runtime, `plugins/fake-go.ts`) |
 | plugins | `go test ./plugins/...` | the fetch plugin against `httptest` servers, the WebSocket client against a test server (ordering, fragments, pings, closing handshakes); the terminal's binding of libghostty-vt (layouts, rendering, encoders, selections), its pseudo-terminals, and its view through `Tester` with real shells: typing, keys as programs ask, input methods, mouse reports, selecting and copying, pasting, scrollback, exits (the library is downloaded, or named by `MYGO_GHOSTTY_VT`; `-short` skips them); the automation plugin's protocol (requests, errors, elements as JSON, input events) against a fake app, and its socket (mode, stale and taken paths); `mygo-automation` (`go test ./internal/automationcli ./plugins/automation/cmd/...`): lines, refs and their staleness, diffs, sessions, and its commands against a fake socket; `skills` printing `SKILL.md` as it is |
 | native UI | `go test ./ui ./internal/text ./internal/scene ./internal/raster ./internal/svg ./internal/gpu/...` | the GPU renderers against the CPU renderer (Direct3D on Windows, WebGPU on cgo-enabled macOS, OpenGL on Linux); views through `Tester`: input, focus, editing, lists, overlays, frames that fill the glyph atlas; text layout and caret geometry; atlas zones and repacking; the CPU renderer against its formulas; SVG parsing and drawing, with `FuzzParse`; `go test -run '^$' -bench . ./ui` times a frame |
 | GUI | `MYGO_E2E=1 go test ./internal/e2e` | the real backend: an app driven from another process through `plugins/automation`, and with `mygo-automation`'s commands, IPC, channels, protocol, Eval, geometry, capture, menus, window.open, native UI (frames, clicks, input methods replacing typed text, file drops, assistive technology reading and acting; on macOS typing, skipped while an input method is selected, and composing; on Linux with `MYGO_GPU=1`, what OpenGL drew in the GtkGLArea, from the first frame and once a window drawing in memory asks for the GPU); on Windows too (a GitHub Actions `windows-latest` runner has WebView2) |
@@ -5430,7 +5430,7 @@ after it are not affected. A test that changes them undoes it in a cleanup.
 
 `.github/workflows/bench.yml` measures every push to main on GitHub's
 macOS, Linux and Windows runners, and the website shows the results at
-[/measures](https://mygo.egoist.dev/measures). `scripts/bench.ts`
+[/measures](../website/src/routes/measures.tsx). `scripts/bench.ts`
 runs them:
 
 ```sh
@@ -5588,7 +5588,7 @@ the containers have no display that refreshes.
 GPUI Fast and egui, and `go run ./benchmarks/run`, which measures them from outside the
 process: see `benchmarks/README.md`. It runs by hand on a real Mac, and
 `benchmarks/results.json`, which it writes, is what the website's
-[/benchmarks](https://mygo.egoist.dev/benchmarks) page shows.
+[/benchmarks](../website/src/routes/benchmarks.tsx) page shows.
 `.github/workflows/comparison.yml` only checks that the apps build and run.
 An app of a scene does what the others do, each the usual way of its
 framework: a scene changes in all of them, or in none.
@@ -5634,8 +5634,8 @@ To check a change, build both apps as the benchmarks do, before and
 after, on each platform it touches:
 
 ```sh
-go build -trimpath -tags mygo_noinspector -ldflags "-s -w -X github.com/egoist/mygo.production=1" -o /tmp/counter-native ./examples/counter-native
-GOOS=windows go build -trimpath -tags mygo_noinspector -ldflags "-s -w -H=windowsgui -X github.com/egoist/mygo.production=1" -o /tmp/hello.exe ./examples/hello
+go build -trimpath -tags mygo_noinspector -ldflags "-s -w -X github.com/caelyreth/evil-mygo.production=1" -o /tmp/counter-native ./examples/counter-native
+GOOS=windows go build -trimpath -tags mygo_noinspector -ldflags "-s -w -H=windowsgui -X github.com/caelyreth/evil-mygo.production=1" -o /tmp/hello.exe ./examples/hello
 ```
 
 When an app grows, `go tool nm -size -sort size` on a build without `-s
@@ -5647,24 +5647,48 @@ every method.
 
 ## Releasing
 
-The Go module, the CLI and the npm packages share one version:
+evil-mygo has its own release sequence, beginning at `0.1.0`. The Go module,
+CLI, runtime, plugins and platform npm packages share that fork SemVer.
+`internal/version/version.go` is the source of truth: the public `mygo.Version`
+and the CLI use its `Version` constant. `UpstreamVersion`, `UpstreamRevision`
+and `UpstreamRepository` separately record the integrated upstream baseline,
+currently MyGo `0.8.0` at `442d09c293e9586809175fe55beff0be905459c7`.
+The CLI prints both; dependency versions and `v<version>` tags use only the
+fork version.
 
 ```sh
 bun scripts/version.ts 0.2.0   # mygo.Version, the CLI, every package.json and bun.lock
-git commit -am "Release 0.2.0" && git tag v0.2.0 && git push origin main v0.2.0
+bun scripts/version.ts --check v0.2.0
+# Commit the release, then create and push its v<version> tag from a fork checkout.
 ```
+
+Fork version bumps leave upstream provenance untouched. After integrating a
+new upstream baseline, record its version and full commit separately:
+
+```sh
+git fetch --no-tags upstream main
+# Integrate the desired upstream changes before updating the recorded baseline.
+bun scripts/version.ts --upstream 0.8.0 442d09c293e9586809175fe55beff0be905459c7
+```
+
+The baseline command records metadata; it does not fetch or merge code. Keep
+upstream tags out of the fork's release namespace: fetch upstream with
+`--no-tags` and push only the explicit fork release tag, never `--tags`.
+Older checkouts may already contain inherited `v*` tags, including `v0.1.0`;
+use a fresh fork checkout for releasing instead of moving or force-pushing
+those tags. CI checks the canonical fork version before publishing.
 
 The tag starts `.github/workflows/release.yml`, which checks that the tag
 matches the versions (`bun scripts/version.ts --check`) and runs
-`bun scripts/publish.ts --provenance`: it publishes mygo-runtime and the
+`bun scripts/publish.ts --provenance`: it publishes @caelyreth/evil-mygo-runtime and the
 plugins' packages while it builds the CLI's binaries, each platform package
-once its binary is built, then mygo-cli once npm serves them to package
+once its binary is built, then @caelyreth/evil-mygo-cli once npm serves them to package
 managers, skipping versions already on npm, prereleases under the `next`
 dist-tag. npm serves a package minutes after accepting it ("Your package
-is being processed"), and a package manager installs mygo-cli without a platform
+is being processed"), and a package manager installs @caelyreth/evil-mygo-cli without a platform
 package it cannot fetch; bun then keeps that package out while its lockfile
 lacks it, even with `--force`. The workflow then asks the Go module proxy
-for the tag and creates the GitHub release.
+for the tag and creates the GitHub release with the upstream baseline in its notes.
 
 It does not run the tests again: `ci.yml` runs them on every push to main,
 for every platform, GUI tests included, so tag a commit whose CI passed.
@@ -5675,9 +5699,14 @@ the Actions cache, under a key of the files that pin them (the plugins'
 `mygo-plugin.json` and `internal/nsis/nsis.go`), so that the tests do
 not depend on the network.
 
+The currently pinned terminal, SQLite and NSIS binaries remain hash-checked
+downloads from upstream's existing releases. Changing the module identity does
+not relocate those assets. Future generated terminal/SQLite manifests default
+to this fork's release URLs; publish their matching binaries before committing
+a manifest that uses those URLs.
+
 The NSIS that `mygo build` downloads (`Release` in `internal/nsis/nsis.go`)
-has a copy on a release of this repository, which a new version of NSIS
-needs before a MyGo release that pins it. Download the official zip,
+has a copy on an upstream release. To host a new version in this fork, download the official zip,
 check that its SHA-256 is the one `Release` pins, and publish it,
 without making the release the latest:
 
@@ -5689,6 +5718,7 @@ gh release create nsis-3.13 nsis-3.13.zip --latest=false --title "NSIS 3.13" \
 ```
 
 The tag starts no workflow, and the Go module proxy ignores it.
+Update `Release.URLs` to the fork-hosted asset when changing that pin.
 
 npm authenticates the workflow as a trusted publisher of each package
 (`release.yml` of this repository, set in the package's settings on npm),

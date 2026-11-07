@@ -158,7 +158,7 @@ func loadCF() *cfAPI {
 		}
 		*c.v = **(**uintptr)(unsafe.Pointer(&p)) // a CFStringRef constant
 	}
-	if a.mode = a.stringCreate(0, "github.com/egoist/mygo/netproxy", cfStringEncodingUTF8); a.mode == 0 {
+	if a.mode = a.stringCreate(0, "github.com/caelyreth/evil-mygo/netproxy", cfStringEncodingUTF8); a.mode == 0 {
 		return nil
 	}
 	a.callback = purego.NewCallback(pacDone)

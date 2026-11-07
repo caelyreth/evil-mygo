@@ -17,8 +17,8 @@ Use the plugin in Go:
 
 ```go
 import (
-	"github.com/egoist/mygo"
-	"github.com/egoist/mygo/plugins/fetch"
+	"github.com/caelyreth/evil-mygo"
+	"github.com/caelyreth/evil-mygo/plugins/fetch"
 )
 
 func main() {
@@ -30,7 +30,7 @@ func main() {
 and add its package to the frontend:
 
 ```sh
-bun add @mygo-plugins/fetch
+bun add @caelyreth/evil-mygo-fetch
 ```
 
 Calling its `fetch` in an app that does not use the Go half rejects with an
@@ -41,7 +41,7 @@ error that says to call `mygo.Use`.
 Import `fetch` from the package and call it as you would the webview's:
 
 ```ts
-import { fetch } from "@mygo-plugins/fetch";
+import { fetch } from "@caelyreth/evil-mygo-fetch";
 
 const res = await fetch("https://api.example.com/items", {
   method: "POST",

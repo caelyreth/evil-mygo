@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/egoist/mygo/internal/raster"
-	"github.com/egoist/mygo/internal/scene"
+	"github.com/caelyreth/evil-mygo/internal/raster"
+	"github.com/caelyreth/evil-mygo/internal/scene"
 )
 
 // BorderedCardScene returns the 756×640 frame of #531, a window of 378×320

@@ -24,9 +24,9 @@ import (
 	"unsafe"
 	"weak"
 
-	"github.com/egoist/mygo/internal/gpu"
-	"github.com/egoist/mygo/internal/gpu/d3d11/device"
-	"github.com/egoist/mygo/internal/scene"
+	"github.com/caelyreth/evil-mygo/internal/gpu"
+	"github.com/caelyreth/evil-mygo/internal/gpu/d3d11/device"
+	"github.com/caelyreth/evil-mygo/internal/scene"
 )
 
 var (

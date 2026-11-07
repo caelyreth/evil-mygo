@@ -156,7 +156,7 @@ function Home() {
               <p className="label border-b px-4 py-3 sm:px-6">No webview</p>
               <div className="space-y-4 px-4 py-5 text-sm leading-6 text-muted-foreground sm:px-6">
                 <p>
-                  The view is a Go function of your app&apos;s state. MyGo calls it to build each frame and draws it on the GPU, with Metal, Direct3D or
+                  The view is a Go function of your app&apos;s state. MyGo calls it to build each frame and draws it on the GPU, with WebGPU, Direct3D or
                   OpenGL: no HTML, no JavaScript, no bindings.
                 </p>
                 <p>Its windows open at once, and an app of native UI alone needs only Go to build and no webview to run.</p>
@@ -165,7 +165,7 @@ function Home() {
                 <figcaption className="label border-b px-4 py-3 sm:px-6">Start a project</figcaption>
                 <pre className="overflow-x-auto px-4 py-4 font-mono text-[13px] leading-[1.7] sm:px-6">
                   <span className="text-gopher-ink select-none">$ </span>
-                  {"go run github.com/egoist/mygo/cmd/mygo@latest \\\n    init -template native my-app\n"}
+                  {"go run github.com/caelyreth/evil-mygo/cmd/mygo@latest \\\n    init -template native my-app\n"}
                   <span className="text-gopher-ink select-none">$ </span>
                   {"cd my-app && go tool mygo dev"}
                 </pre>

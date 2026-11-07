@@ -5,8 +5,8 @@ package e2e
 import (
 	"testing"
 
-	"github.com/egoist/mygo"
-	"github.com/egoist/mygo/internal/linux"
+	"github.com/caelyreth/evil-mygo"
+	"github.com/caelyreth/evil-mygo/internal/linux"
 )
 
 // TestGLProbeWindow checks that the probe of OpenGL leaves its window to

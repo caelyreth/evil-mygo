@@ -5,7 +5,7 @@ package linux
 import (
 	"image"
 
-	"github.com/egoist/mygo/internal/gpu/gl"
+	"github.com/caelyreth/evil-mygo/internal/gpu/gl"
 )
 
 // TestSurfaceGL tells how the native UI of a window draws: "opengl" when

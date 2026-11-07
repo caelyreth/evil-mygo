@@ -3,8 +3,8 @@ package main
 import (
 	_ "embed"
 
-	"github.com/egoist/mygo/ui"
-	"github.com/egoist/mygo/ui/shader"
+	"github.com/caelyreth/evil-mygo/ui"
+	"github.com/caelyreth/evil-mygo/ui/shader"
 )
 
 var (

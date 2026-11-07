@@ -11,7 +11,7 @@ import (
 
 	"github.com/ebitengine/purego"
 
-	"github.com/egoist/mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/platform"
 )
 
 // secrets keeps secrets in the Secret Service (GNOME Keyring, KWallet,

@@ -6,13 +6,13 @@
 // imports it for the app's languages; an app without catalogs imports it
 // itself:
 //
-//	import _ "github.com/egoist/mygo/locales/zh-Hant"
+//	import _ "github.com/caelyreth/evil-mygo/locales/zh-Hant"
 package zhhant
 
 import (
 	"embed"
 
-	"github.com/egoist/mygo/internal/l10n"
+	"github.com/caelyreth/evil-mygo/internal/l10n"
 )
 
 //go:embed zh-Hant.json

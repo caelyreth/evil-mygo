@@ -6,7 +6,10 @@ export function SiteFooter() {
   return (
     <footer className="frame label flex flex-wrap items-center justify-between gap-4 border-t px-4 py-6 sm:px-6">
       <span>
-        MyGo {__MYGO_VERSION__} ·{" "}
+        evil-mygo {__MYGO_VERSION__} ·{" "}
+        <a href={`https://github.com/egoist/mygo/commit/${__MYGO_UPSTREAM_REVISION__}`} className="hover:text-foreground">
+          MyGo {__MYGO_UPSTREAM_VERSION__}
+        </a> ·{" "}
         <a href={`${site.repo}/blob/main/LICENSE`} className="hover:text-foreground">
           MIT License
         </a>

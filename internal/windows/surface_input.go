@@ -6,7 +6,7 @@ import (
 	"unicode/utf16"
 	"unsafe"
 
-	"github.com/egoist/mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/platform"
 )
 
 // Input methods ask for the text around the caret with WM_IME_REQUEST:

@@ -5,7 +5,7 @@ package windows
 import (
 	"syscall"
 
-	"github.com/egoist/mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/platform"
 )
 
 // Tables, grids and tree grids have UI Automation's Grid and Table

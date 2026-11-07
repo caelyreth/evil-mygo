@@ -4,13 +4,13 @@ import (
 	"math"
 	"time"
 
-	"github.com/egoist/mygo/ui"
-	"github.com/egoist/mygo/ui/markdown"
+	"github.com/caelyreth/evil-mygo/ui"
+	"github.com/caelyreth/evil-mygo/ui/markdown"
 )
 
 const demoMarkdown = "### A reply, streamed\n\n" +
 	"The parser reads **CommonMark** and *GitHub's* extensions as text comes. Only the block being written is parsed again, so `**bol` is already **bold**.\n\n" +
-	"- [x] tables, task lists and ~~strikethrough~~\n- [ ] [links](https://github.com/egoist/mygo) and footnotes\n\n" +
+	"- [x] tables, task lists and ~~strikethrough~~\n- [ ] [links](https://github.com/caelyreth/evil-mygo) and footnotes\n\n" +
 	"```go\nmarkdown.Stream(c, reply, &app.md)\n```\n\n" +
 	"| Strategy | Per token |\n|---|--:|\n| Re-parse all | O(n) |\n| **MyGo** | O(open block) |\n\n" +
 	"Text comes in at an even pace and fades in. Pick how much shows at a time above, and stream it again.\n"

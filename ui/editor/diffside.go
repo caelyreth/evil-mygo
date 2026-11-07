@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strconv"
 
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // diffSide shows a side of a diff in an editor.

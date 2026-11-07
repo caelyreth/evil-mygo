@@ -18,8 +18,8 @@ Use the plugin in Go:
 
 ```go
 import (
-	"github.com/egoist/mygo"
-	"github.com/egoist/mygo/plugins/updater"
+	"github.com/caelyreth/evil-mygo"
+	"github.com/caelyreth/evil-mygo/plugins/updater"
 )
 
 func main() {
@@ -148,7 +148,7 @@ does an item that `MenuItem` returns then: an app that rebuilds its menu in
 Some texts are formats, such as `AvailableMessage`, whose arguments are the
 app's name, the new version and the running one: indexed verbs (`%[2]s`)
 let a language order them. `mygo.Use` fails when a format does not fit its
-arguments. `go doc github.com/egoist/mygo/plugins/updater.Strings` lists
+arguments. `go doc github.com/caelyreth/evil-mygo/plugins/updater.Strings` lists
 the texts and the arguments of the formats.
 
 Languages written from right to left, such as Arabic and Hebrew, get a
@@ -164,9 +164,9 @@ window in native UI instead, and needs no webview:
 
 ```go
 import (
-	"github.com/egoist/mygo"
-	"github.com/egoist/mygo/plugins/updater"
-	"github.com/egoist/mygo/plugins/updater/native"
+	"github.com/caelyreth/evil-mygo"
+	"github.com/caelyreth/evil-mygo/plugins/updater"
+	"github.com/caelyreth/evil-mygo/plugins/updater/native"
 )
 
 func main() {

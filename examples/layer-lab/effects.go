@@ -4,8 +4,8 @@ import (
 	_ "embed"
 	"time"
 
-	"github.com/egoist/mygo/ui"
-	"github.com/egoist/mygo/ui/shader"
+	"github.com/caelyreth/evil-mygo/ui"
+	"github.com/caelyreth/evil-mygo/ui/shader"
 )
 
 //go:embed optics.kage

@@ -7,7 +7,7 @@ import (
 
 	"github.com/go-webgpu/webgpu/wgpu"
 
-	"github.com/egoist/mygo/internal/scene"
+	"github.com/caelyreth/evil-mygo/internal/scene"
 )
 
 // WebGPUFrame is the command encoder and render target of a WebGPUCanvas.

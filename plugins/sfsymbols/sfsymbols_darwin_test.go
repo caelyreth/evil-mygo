@@ -6,7 +6,7 @@ import (
 	"image"
 	"testing"
 
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // TestImage checks that a symbol the app names draws, at the

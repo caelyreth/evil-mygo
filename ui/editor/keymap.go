@@ -1,6 +1,6 @@
 package editor
 
-import "github.com/egoist/mygo/ui"
+import "github.com/caelyreth/evil-mygo/ui"
 
 // Command is something a code editor does, which a key binding runs:
 // st.Run(ui.ToggleComment).

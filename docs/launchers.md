@@ -7,7 +7,7 @@ parts: a [panel](windows.md#panels) to show it in, a
 [global shortcut](native.md#global-shortcuts) to summon it, the
 [installed apps](native.md#the-shell) and their icons to search, and an app
 without a Dock icon that lives in the [tray](menus.md#tray-icons).
-[`examples/launcher`](https://github.com/egoist/mygo/tree/main/examples/launcher)
+[`examples/launcher`](https://github.com/caelyreth/evil-mygo/tree/main/examples/launcher)
 puts them together in native UI:
 
 ```sh

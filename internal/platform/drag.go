@@ -1,6 +1,6 @@
 package platform
 
-import "github.com/egoist/mygo/transfer"
+import "github.com/caelyreth/evil-mygo/transfer"
 
 // DragSessionFormat carries an unguessable, process-local registry key.
 // It never contains a pointer. Only the core resolves it while a drag lives.

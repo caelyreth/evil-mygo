@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"testing/fstest"
 
-	"github.com/egoist/mygo/i18n"
-	locales "github.com/egoist/mygo/internal/i18ngen/testdata/app"
+	"github.com/caelyreth/evil-mygo/i18n"
+	locales "github.com/caelyreth/evil-mygo/internal/i18ngen/testdata/app"
 )
 
 func main() {

@@ -11,8 +11,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/egoist/mygo"
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // recorder times frames and says on standard output how the run goes.

@@ -7,7 +7,7 @@ import (
 	"image/png"
 	"testing"
 
-	"github.com/egoist/mygo"
+	"github.com/caelyreth/evil-mygo"
 )
 
 // menuIcon makes a menu icon of w by h pixels in one color.

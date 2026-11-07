@@ -23,8 +23,8 @@ import (
 	"syscall/js"
 	"time"
 
-	"github.com/egoist/mygo/internal/platform"
-	"github.com/egoist/mygo/transfer"
+	"github.com/caelyreth/evil-mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/transfer"
 )
 
 var errUnsupported = errors.New("mygo: browsers do not support this")

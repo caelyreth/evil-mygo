@@ -12,7 +12,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/egoist/mygo/i18n"
+	"github.com/caelyreth/evil-mygo/i18n"
 )
 
 // The configuration of a project is in one of these files at its root.
@@ -57,7 +57,7 @@ type Config struct {
 	Out string `json:"out"`
 	// Bindings is the path of the generated TypeScript client (default:
 	// frontend/src/mygo.ts when frontend/package.json depends on
-	// mygo-runtime, src/mygo.ts when package.json at the root does, else
+	// @caelyreth/evil-mygo-runtime, src/mygo.ts when package.json at the root does, else
 	// mygo.ts when the configuration has a frontend, and no client for an
 	// app without one, such as an app of native UI).
 	Bindings string `json:"bindings"`
@@ -415,7 +415,7 @@ func (c *Config) applyDefaults() {
 		}
 	}
 	frontendOptions := c.DevURL != "" || c.DevCommand != "" || c.BuildCommand != "" || c.FrontendDist != ""
-	// The client imports mygo-runtime: a package.json without it is not
+	// The client imports @caelyreth/evil-mygo-runtime: a package.json without it is not
 	// the app's frontend, as that of an app of native UI that runs the
 	// CLI from npm, or a workspace root that holds the app's website.
 	switch {
@@ -430,7 +430,7 @@ func (c *Config) applyDefaults() {
 }
 
 // usesRuntime reports whether the package.json in dir depends on
-// mygo-runtime.
+// @caelyreth/evil-mygo-runtime.
 func usesRuntime(dir string) bool {
 	data, err := os.ReadFile(filepath.Join(dir, "package.json"))
 	if err != nil {
@@ -443,8 +443,8 @@ func usesRuntime(dir string) bool {
 	if json.Unmarshal(data, &pkg) != nil {
 		return false
 	}
-	_, dep := pkg.Dependencies["mygo-runtime"]
-	_, dev := pkg.DevDependencies["mygo-runtime"]
+	_, dep := pkg.Dependencies["@caelyreth/evil-mygo-runtime"]
+	_, dev := pkg.DevDependencies["@caelyreth/evil-mygo-runtime"]
 	return dep || dev
 }
 

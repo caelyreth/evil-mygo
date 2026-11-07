@@ -6,8 +6,8 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/egoist/mygo/internal/gpu/gputest"
-	"github.com/egoist/mygo/internal/scene"
+	"github.com/caelyreth/evil-mygo/internal/gpu/gputest"
+	"github.com/caelyreth/evil-mygo/internal/scene"
 )
 
 // Canvases draw into textures as the CPU renderer draws them into pixels,

@@ -2,7 +2,7 @@ package raster
 
 import (
 	"bytes"
-	"github.com/egoist/mygo/internal/scene"
+	"github.com/caelyreth/evil-mygo/internal/scene"
 	"testing"
 )
 

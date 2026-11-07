@@ -3,7 +3,7 @@ package main
 import (
 	"testing"
 
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // The view runs without a window in tests, which click and press keys as a

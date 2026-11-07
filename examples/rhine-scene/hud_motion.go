@@ -5,7 +5,7 @@ package main
 import (
 	"time"
 
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 var (

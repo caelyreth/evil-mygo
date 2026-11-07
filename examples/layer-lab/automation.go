@@ -2,4 +2,4 @@
 
 package main
 
-import _ "github.com/egoist/mygo/plugins/automation"
+import _ "github.com/caelyreth/evil-mygo/plugins/automation"

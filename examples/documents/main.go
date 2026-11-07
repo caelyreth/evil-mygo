@@ -12,8 +12,8 @@ import (
 	"log"
 	"strings"
 
-	"github.com/egoist/mygo"
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // note is the window of a document: the text its editor shows.

@@ -217,9 +217,9 @@ func TestGoProgress(t *testing.T) {
 	c := &console{w: &buf, sym: unicodeSymbols}
 	step := c.start("Compiling")
 	p := &goProgress{t: step}
-	_, _ = p.Write([]byte("go: downloading github.com/ebitengine/purego v0.11.1\ninternal/goarch\r\nruntime\n# demo\n.\\main.go:42:2: undefined: thing\ngithub.com/egoist/mygo/ui"))
+	_, _ = p.Write([]byte("go: downloading github.com/ebitengine/purego v0.11.1\ninternal/goarch\r\nruntime\n# demo\n.\\main.go:42:2: undefined: thing\ngithub.com/caelyreth/evil-mygo/ui"))
 	p.flush()
-	if p.packages != 3 || step.detail != "3 packages · github.com/egoist/mygo/ui" {
+	if p.packages != 3 || step.detail != "3 packages · github.com/caelyreth/evil-mygo/ui" {
 		t.Errorf("progress: %d packages, detail %q", p.packages, step.detail)
 	}
 	if want := "# demo\n.\\main.go:42:2: undefined: thing\n"; p.diag.String() != want {
@@ -275,7 +275,7 @@ func TestFormatDuration(t *testing.T) {
 func TestIsImportPath(t *testing.T) {
 	for s, want := range map[string]bool{
 		"runtime":                           true,
-		"github.com/egoist/mygo/ui":         true,
+		"github.com/caelyreth/evil-mygo/ui": true,
 		"command-line-arguments":            true,
 		"# demo":                            false,
 		".\\main.go:42:2: undefined: thing": false,

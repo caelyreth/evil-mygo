@@ -5,7 +5,7 @@ import (
 	"image/color"
 	"testing"
 
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // TestNoShadow checks that NoShadow takes off the outer and inner shadows

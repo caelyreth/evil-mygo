@@ -6,7 +6,7 @@ package packed
 import (
 	"fmt"
 
-	"github.com/egoist/mygo/internal/shaderir"
+	"github.com/caelyreth/evil-mygo/internal/shaderir"
 )
 
 // UniformLayout returns where each of p's uniform variables lies in the

@@ -20,9 +20,9 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/egoist/mygo"
-	"github.com/egoist/mygo/ui"
-	"github.com/egoist/mygo/ui/richtext"
+	"github.com/caelyreth/evil-mygo"
+	"github.com/caelyreth/evil-mygo/ui"
+	"github.com/caelyreth/evil-mygo/ui/richtext"
 )
 
 // note is a note: its text, saved, and the document the editor edits.
@@ -232,7 +232,7 @@ func welcome() richtext.Text {
 		richtext.Paragraph{Style: richtext.ParagraphStyle{Heading: 1}, Runs: []richtext.Run{{Text: "Welcome to Notes"}}},
 		richtext.Paragraph{Runs: []richtext.Run{{Text: "Write with "}, {Text: "bold", Attributes: richtext.Attributes{Weight: 700}},
 			{Text: ", "}, {Text: "italic", Attributes: richtext.Attributes{Italic: true}}, {Text: ", "},
-			{Text: "links", Attributes: richtext.Attributes{Link: "https://github.com/egoist/mygo"}}, {Text: " and lists, from the toolbar, the Format menu or the keyboard."}}},
+			{Text: "links", Attributes: richtext.Attributes{Link: "https://github.com/caelyreth/evil-mygo"}}, {Text: " and lists, from the toolbar, the Format menu or the keyboard."}}},
 		richtext.Paragraph{Style: richtext.ParagraphStyle{Heading: 2}, Runs: []richtext.Run{{Text: "Try"}}},
 		richtext.Paragraph{Style: richtext.ParagraphStyle{List: richtext.Tasks, Checked: true}, Runs: []richtext.Run{{Text: "Open this note"}}},
 		richtext.Paragraph{Style: richtext.ParagraphStyle{List: richtext.Tasks}, Runs: []richtext.Run{{Text: "Type "}, {Text: "- ", Attributes: code}, {Text: " to start a list, "}, {Text: "# ", Attributes: code}, {Text: " for a heading"}}},

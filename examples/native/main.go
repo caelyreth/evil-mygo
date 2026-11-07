@@ -16,7 +16,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/egoist/mygo"
+	"github.com/caelyreth/evil-mygo"
 )
 
 // Native is called from the page.

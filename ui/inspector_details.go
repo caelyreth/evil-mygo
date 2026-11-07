@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/egoist/mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/platform"
 )
 
 // inspDetails describes the element chosen in the inspector, for the

@@ -5,7 +5,7 @@ package main
 import (
 	_ "embed"
 
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 //go:embed assets/rhine-lab.svg

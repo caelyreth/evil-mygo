@@ -3,7 +3,7 @@ package glass
 import (
 	"math"
 
-	"github.com/egoist/mygo/internal/scene"
+	"github.com/caelyreth/evil-mygo/internal/scene"
 )
 
 // pixels draws the glass on the CPU, as its shaders do on the GPU.

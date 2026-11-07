@@ -3,8 +3,8 @@ package ui
 import (
 	"math"
 
-	"github.com/egoist/mygo/internal/gamut"
-	"github.com/egoist/mygo/internal/scene"
+	"github.com/caelyreth/evil-mygo/internal/gamut"
+	"github.com/caelyreth/evil-mygo/internal/scene"
 )
 
 // Oklch returns the color of CSS's oklch(l c h): lightness l from 0 to 1,

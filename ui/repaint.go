@@ -1,6 +1,6 @@
 package ui
 
-import "github.com/egoist/mygo/internal/scene"
+import "github.com/caelyreth/evil-mygo/internal/scene"
 
 // Frames that only paint again. A drawing that moves with the time
 // (Painter.AnimationFrame, AnimationFrameRate, After) while nothing else

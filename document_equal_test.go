@@ -10,7 +10,7 @@ import (
 	"io"
 	"testing"
 
-	"github.com/egoist/mygo/internal/wait"
+	"github.com/caelyreth/evil-mygo/internal/wait"
 )
 
 // An Equal that reads the document it compares for: Set and saving once

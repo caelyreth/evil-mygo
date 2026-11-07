@@ -246,7 +246,7 @@ Windows runners unless they set `shell: bash`.
 `mygo build` downloads NSIS on every run of a fresh runner. A step before
 "Build and upload" keeps it in the Actions cache instead, so builds need
 neither the download nor the hosts it comes from. The lockfile pins
-mygo-cli, which pins NSIS:
+@caelyreth/evil-mygo-cli, which pins NSIS:
 
 ```yaml
       - name: Cache NSIS

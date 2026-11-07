@@ -1,6 +1,6 @@
 // Package watch is the watch plugin of MyGo: it lets pages watch for
 // changes to the files and directories the app names (see
-// @mygo-plugins/watch). Go code and native UI call mygo.WatchFiles
+// @caelyreth/evil-mygo-watch). Go code and native UI call mygo.WatchFiles
 // directly.
 package watch
 
@@ -20,7 +20,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/egoist/mygo"
+	"github.com/caelyreth/evil-mygo"
 )
 
 // Root is a directory, or a file, pages may watch.

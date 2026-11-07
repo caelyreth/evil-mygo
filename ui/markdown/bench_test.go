@@ -4,7 +4,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 func llm(b *testing.B) string {

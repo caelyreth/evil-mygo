@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // svgPath is the path data of an SVG <path>, parsed once into commands

@@ -9,8 +9,8 @@ import (
 	"unsafe"
 	"weak"
 
-	"github.com/egoist/mygo/internal/scene"
-	"github.com/egoist/mygo/internal/text"
+	"github.com/caelyreth/evil-mygo/internal/scene"
+	"github.com/caelyreth/evil-mygo/internal/text"
 )
 
 // Removed elements must give up their resources while the window stays

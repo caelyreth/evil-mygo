@@ -4,7 +4,7 @@ import (
 	"math"
 	"sync"
 
-	"github.com/egoist/mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/platform"
 )
 
 // The IDs of the web view's own items in a page's context menu

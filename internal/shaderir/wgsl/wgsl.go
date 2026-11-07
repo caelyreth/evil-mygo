@@ -10,8 +10,8 @@ import (
 	"math"
 	"strings"
 
-	"github.com/egoist/mygo/internal/shaderir"
-	"github.com/egoist/mygo/internal/shaderir/packed"
+	"github.com/caelyreth/evil-mygo/internal/shaderir"
+	"github.com/caelyreth/evil-mygo/internal/shaderir/packed"
 )
 
 type compileContext struct {

@@ -1,8 +1,8 @@
 package markdown
 
 import (
-	"github.com/egoist/mygo/ui"
-	"github.com/egoist/mygo/ui/markdown/parser"
+	"github.com/caelyreth/evil-mygo/ui"
+	"github.com/caelyreth/evil-mygo/ui/markdown/parser"
 )
 
 // tableState keeps a table's column widths, which only grow while the

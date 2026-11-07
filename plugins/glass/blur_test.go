@@ -5,9 +5,9 @@ import (
 	"math"
 	"testing"
 
-	"github.com/egoist/mygo/internal/raster"
-	"github.com/egoist/mygo/internal/scene"
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/internal/raster"
+	"github.com/caelyreth/evil-mygo/internal/scene"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // TestBlurLevels checks that a varying blur's levels add up to its most,

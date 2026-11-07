@@ -5,7 +5,7 @@ package windows
 import (
 	"unsafe"
 
-	"github.com/egoist/mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/platform"
 )
 
 // WindowStateBounds is the window's rectangle in the screen's pixels,

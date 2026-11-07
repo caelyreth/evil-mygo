@@ -4,7 +4,7 @@ import (
 	"slices"
 	"time"
 
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // scrollbarDrag is a press on a scroll bar.

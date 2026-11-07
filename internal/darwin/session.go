@@ -6,8 +6,8 @@ import (
 	"log"
 	"sync"
 
+	"github.com/caelyreth/evil-mygo/internal/platform"
 	"github.com/ebitengine/purego/objc"
-	"github.com/egoist/mygo/internal/platform"
 )
 
 // Sessions (mygo.Session): a store is a WKWebsiteDataStore, which the

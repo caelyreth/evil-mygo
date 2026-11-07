@@ -10,11 +10,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/egoist/mygo"
-	"github.com/egoist/mygo/internal/wait"
-	"github.com/egoist/mygo/plugins/updater/internal/frontend"
-	"github.com/egoist/mygo/plugins/updater/internal/markdown"
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo"
+	"github.com/caelyreth/evil-mygo/internal/wait"
+	"github.com/caelyreth/evil-mygo/plugins/updater/internal/frontend"
+	"github.com/caelyreth/evil-mygo/plugins/updater/internal/markdown"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // session is a frontend.Session that records what the window does.

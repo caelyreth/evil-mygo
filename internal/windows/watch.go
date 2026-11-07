@@ -14,8 +14,8 @@ import (
 	"unicode/utf16"
 	"unsafe"
 
-	"github.com/egoist/mygo/internal/platform"
-	"github.com/egoist/mygo/internal/watchdriver"
+	"github.com/caelyreth/evil-mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/watchdriver"
 )
 
 // directoryWatch watches directories with ReadDirectoryChangesW, every

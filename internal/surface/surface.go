@@ -4,9 +4,9 @@
 package surface
 
 import (
-	"github.com/egoist/mygo/i18n"
-	"github.com/egoist/mygo/internal/platform"
-	"github.com/egoist/mygo/transfer"
+	"github.com/caelyreth/evil-mygo/i18n"
+	"github.com/caelyreth/evil-mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/transfer"
 )
 
 // Conn is a window's side of the connection. Package mygo fills it before

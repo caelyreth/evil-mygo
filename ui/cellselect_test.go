@@ -5,7 +5,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/egoist/mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/platform"
 )
 
 // cellTable shows a table that chooses blocks of cells (CellSelect), of

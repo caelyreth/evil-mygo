@@ -1,4 +1,4 @@
-// Builds dist/ of the mygo-runtime package: an ES module and its type
+// Builds dist/ of the @caelyreth/evil-mygo-runtime package: an ES module and its type
 // declarations. dist/ is not committed: `bun run build` at the root builds
 // it, as CI and releases do.
 import { rm } from "node:fs/promises";

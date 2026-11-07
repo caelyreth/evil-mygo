@@ -10,8 +10,8 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/egoist/mygo/internal/fake"
-	"github.com/egoist/mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/fake"
+	"github.com/caelyreth/evil-mygo/internal/platform"
 )
 
 func TestFileIcon(t *testing.T) {

@@ -4,7 +4,7 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // TestListRowWidth scrolls a List whose rows are wider than it sideways,

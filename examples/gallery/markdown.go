@@ -4,8 +4,8 @@ import (
 	"math/rand/v2"
 	"time"
 
-	"github.com/egoist/mygo/ui"
-	"github.com/egoist/mygo/ui/markdown"
+	"github.com/caelyreth/evil-mygo/ui"
+	"github.com/caelyreth/evil-mygo/ui/markdown"
 )
 
 // markdownSample is what the Markdown page shows, and streams.
@@ -15,7 +15,7 @@ const markdownSample = "## Streaming Markdown\n\n" +
 	"1. Headings, paragraphs, *emphasis*, **strong**, ~~strikethrough~~ and `code`\n" +
 	"2. Lists, ordered and not:\n" +
 	"   - nested items\n" +
-	"   - and [links](https://github.com/egoist/mygo) that open in the browser\n" +
+	"   - and [links](https://github.com/caelyreth/evil-mygo) that open in the browser\n" +
 	"3. Task lists:\n" +
 	"   - [x] parse incrementally\n" +
 	"   - [ ] take over the world\n\n" +

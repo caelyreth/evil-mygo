@@ -1,6 +1,6 @@
 // Package websocket is the WebSocket plugin of MyGo: pages open WebSocket
 // connections from Go with the WebSocket class of its JavaScript package,
-// @mygo-plugins/websocket, which has the API of the browser's. Unlike the
+// @caelyreth/evil-mygo-websocket, which has the API of the browser's. Unlike the
 // browser's, it may send any header with the opening handshake, such as
 // Authorization or Cookie, and is not subject to the page's Content
 // Security Policy.
@@ -9,7 +9,7 @@
 //
 // and in the frontend:
 //
-//	import { WebSocket } from "@mygo-plugins/websocket";
+//	import { WebSocket } from "@caelyreth/evil-mygo-websocket";
 //
 //	const ws = new WebSocket("wss://example.com/live", [], {
 //	  headers: { authorization: `Bearer ${token}` },
@@ -27,8 +27,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/egoist/mygo"
-	"github.com/egoist/mygo/netproxy"
+	"github.com/caelyreth/evil-mygo"
+	"github.com/caelyreth/evil-mygo/netproxy"
 )
 
 // Options configure the plugin.

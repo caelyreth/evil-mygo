@@ -10,7 +10,7 @@ import (
 	"runtime"
 	"slices"
 
-	"github.com/egoist/mygo/internal/scene"
+	"github.com/caelyreth/evil-mygo/internal/scene"
 )
 
 // Image is a premultiplied BGRA bitmap, the layout Windows DIBs, cairo

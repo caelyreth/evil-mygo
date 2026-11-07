@@ -5,7 +5,7 @@ package darwin
 import (
 	"testing"
 
-	"github.com/egoist/mygo/internal/platform"
+	"github.com/caelyreth/evil-mygo/internal/platform"
 )
 
 // frameHandler is a window handler that leaves the paced frames it is

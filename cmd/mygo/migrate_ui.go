@@ -9,7 +9,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/egoist/mygo/internal/uimigrate"
+	"github.com/caelyreth/evil-mygo/internal/uimigrate"
 )
 
 func runMigrateUI(args []string) error {

@@ -10,9 +10,9 @@ import (
 	"log"
 	"strings"
 
-	"github.com/egoist/mygo"
-	"github.com/egoist/mygo/plugins/glass"
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo"
+	"github.com/caelyreth/evil-mygo/plugins/glass"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // The ids of the pages, which are the sidebar's selection.

@@ -1,6 +1,6 @@
 package gputest
 
-import "github.com/egoist/mygo/internal/scene"
+import "github.com/caelyreth/evil-mygo/internal/scene"
 
 // BoxesScene returns a w×h frame of n rounded boxes of 24 pixels, each
 // casting a shadow, in rows of 30, as an animation of boxes moving draws

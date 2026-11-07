@@ -4,8 +4,8 @@ import (
 	"math"
 	"slices"
 
-	"github.com/egoist/mygo/internal/scene"
-	"github.com/egoist/mygo/internal/text"
+	"github.com/caelyreth/evil-mygo/internal/scene"
+	"github.com/caelyreth/evil-mygo/internal/text"
 )
 
 // morphText paints a text changing as ContentTransition's Morph moves it,

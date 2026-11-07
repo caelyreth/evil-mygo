@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/egoist/mygo/internal/shaderir"
-	"github.com/egoist/mygo/ui"
+	"github.com/caelyreth/evil-mygo/internal/shaderir"
+	"github.com/caelyreth/evil-mygo/ui"
 )
 
 // Uniform is a uniform variable of a shader, found by its name once
