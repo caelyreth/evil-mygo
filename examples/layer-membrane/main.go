@@ -1,8 +1,8 @@
 //go:build darwin && ((mygo_webgpu && nofakecgo) || cgo)
 
-// Layer-membrane presents an independent native UILayer on a moving
-// heightfield. CPU hit testing and the WebGPU renderer use the same camera
-// and wave state, so controls keep their place on the lit surface.
+// Layer-membrane presents an independent native UILayer on a silk flag.
+// CPU hit testing and WebGPU share one triangulated sheet, so controls keep
+// their place even when the cloth folds or is viewed from the side.
 //
 //	go run ./examples/layer-membrane
 package main
@@ -23,10 +23,10 @@ const (
 	layerHeight    = 800
 	sidebarWidth   = 340
 
-	fieldOfView = 0.74
+	fieldOfView = 0.60
 	panelLift   = 0.28
 	panelHalfH  = 0.70
-	groundY     = -0.74
+	groundY     = -0.92
 )
 
 type camera struct {
@@ -36,19 +36,20 @@ type camera struct {
 }
 
 type app struct {
-	canvas   *ui.WebGPUCanvas
-	renderer *membraneRenderer
-	layer    *ui.UILayer
-	surf     *membraneSurface
-	theme    *ui.Theme
-	host     ui.Handle
-	ctx      *ui.Context
+	canvas     *ui.WebGPUCanvas
+	renderer   *membraneRenderer
+	layer      *ui.UILayer
+	surf       *membraneSurface
+	theme      *ui.Theme
+	sceneTheme *ui.Theme
+	host       ui.Handle
+	ctx        *ui.Context
 
 	cam       camera
 	waveTime  float32
 	amplitude float32
 	motion    bool
-	depth     float64
+	wind      float64
 
 	last  time.Time
 	drag  bool
@@ -79,14 +80,29 @@ func newApp() *app {
 	theme.Scrollbar = ui.RGBA(30, 30, 28, 0.28)
 	theme.Radius = 8
 	theme.Font = "Avenir Next"
+	sceneTheme := ui.DarkTheme()
+	sceneTheme.Background = ui.Hex("#0d131b")
+	sceneTheme.Surface = ui.Hex("#151f2a")
+	sceneTheme.SurfaceHover = ui.Hex("#202e3b")
+	sceneTheme.SurfacePressed = ui.Hex("#293b4b")
+	sceneTheme.Border = ui.Hex("#2c3a48")
+	sceneTheme.Text = ui.Hex("#ece9df")
+	sceneTheme.TextMuted = ui.Hex("#94a2af")
+	sceneTheme.Accent = ui.Hex("#d3c7a9")
+	sceneTheme.AccentHover = ui.Hex("#e4d9be")
+	sceneTheme.AccentPressed = ui.Hex("#b6aa8e")
+	sceneTheme.AccentText = ui.Hex("#111820")
+	sceneTheme.Radius = 8
+	sceneTheme.Font = "Avenir Next"
 	a := &app{
-		cam:       camera{z: 3.65, y: 0.14},
-		amplitude: 1,
-		depth:     1,
-		motion:    true,
-		message:   "A native field on a living surface.",
-		theme:     theme,
-		renderer:  &membraneRenderer{},
+		cam:        initialCamera(),
+		amplitude:  1,
+		wind:       1,
+		motion:     true,
+		message:    "A little wind. A living flag.",
+		theme:      theme,
+		sceneTheme: sceneTheme,
+		renderer:   &membraneRenderer{},
 	}
 	a.surf = &membraneSurface{cam: a.cam, amplitude: a.amplitude, version: 1}
 	a.layer = ui.NewUILayer(a.layerView, layerWidth, layerHeight)
@@ -96,15 +112,11 @@ func newApp() *app {
 }
 
 func (a *app) draw(frame ui.WebGPUFrame) error {
-	return a.renderer.draw(
-		frame,
-		a.cam.x, a.cam.y, a.cam.z, a.cam.yaw, a.cam.pitch,
-		a.waveTime, a.amplitude, a.surf.aspect(),
-	)
+	return a.renderer.draw(frame, a.surf)
 }
 
 func (a *app) view(c *ui.Context) {
-	c.SetTheme(a.theme)
+	c.SetTheme(a.sceneTheme)
 	a.ctx = c
 	a.layer.SetScale(c.PixelsPerDIP())
 	a.tick(c)
@@ -112,7 +124,7 @@ func (a *app) view(c *ui.Context) {
 		a.layer.Render()
 		a.canvas.Invalidate()
 	}
-	ui.Row(c).Fill().Background(ui.Hex("#e1e1dc")).Children(func() {
+	ui.Row(c).Fill().Background(ui.Hex("#0d131b")).Children(func() {
 		a.viewport(c)
 		a.sidebar(c)
 	})
@@ -178,7 +190,7 @@ func (a *app) tick(c *ui.Context) {
 
 func (a *app) viewport(c *ui.Context) {
 	view := ui.Box(c).Grow(1).MinWidth(0).FillHeight().AutoFocus().Bind(&a.host).
-		Label("Interactive native UI membrane")
+		Label("Interactive native UI silk flag")
 	box := view.LayoutBounds()
 	a.viewBox = box
 	a.surf.setViewport(box.W, box.H)
@@ -228,7 +240,10 @@ func (a *app) viewport(c *ui.Context) {
 			if a.routeLayer(ev) {
 				return true
 			}
-			a.cam.z = max(1.35, a.cam.z-ev.DY*0.006)
+			_, forward, _, _ := a.surf.cameraBasis()
+			a.cam.x += forward.X * ev.DY * 0.006
+			a.cam.y += forward.Y * ev.DY * 0.006
+			a.cam.z += forward.Z * ev.DY * 0.006
 			a.canvas.Invalidate()
 			return true
 		case ui.InputKeyDown, ui.InputKeyUp, ui.InputText, ui.InputCompose, ui.InputCommand,
@@ -251,14 +266,14 @@ func (a *app) layerView(c *ui.Context) {
 	muted := ui.Hex("#575753")
 	ink := ui.Hex("#171715")
 	ui.Column(c).Fill().Padding(54, 50).Gap(18).
-		Background(ui.Hex("#e6e5e0")).Children(func() {
+		Background(ui.Hex("#f4f0e6")).Children(func() {
 		ui.Row(c).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, "MYGO / MEMBRANE 04").Font("monospace").FontSize(12).TextColor(muted)
+			ui.Text(c, "MYGO / SILK STUDY").Font("monospace").FontSize(12).TextColor(muted)
 			ui.Spacer(c)
 			ui.Text(c, "LIVE NATIVE LAYER").Font("monospace").FontSize(11).TextColor(muted)
 		})
-		ui.Text(c, "A surface\nthat answers.").Font("Baskerville").FontSize(74).LineHeight(.88).TextColor(ink)
-		ui.Text(c, "This text, field and button are native MyGo controls. The cloth is a separate WebGPU surface, and its input map follows the same moving geometry.").
+		ui.Text(c, "A little wind.\nA living flag.").Font("Baskerville").FontSize(74).LineHeight(.88).TextColor(ink)
+		ui.Text(c, "One sheet of silk, carrying a native interface. These controls follow every fold: the cloth you see and the surface you touch are the same mesh.").
 			FontSize(16).LineHeight(1.45).TextColor(muted).Width(690)
 		ui.Spacer(c)
 		ui.Column(c).Width(430).Shrink(0).Gap(14).Children(func() {
@@ -296,12 +311,12 @@ func (a *app) layerView(c *ui.Context) {
 }
 
 func (a *app) sidebar(c *ui.Context) {
-	ink, muted := ui.Hex("#151514"), ui.Hex("#50504a")
-	card, line := ui.Hex("#ecebe5"), ui.Hex("#c0beb6")
+	ink, muted := ui.Hex("#ece9df"), ui.Hex("#94a2af")
+	card, line := ui.Hex("#151f2a"), ui.Hex("#2c3a48")
 	ui.Column(c).Width(sidebarWidth).Shrink(0).FillHeight().Padding(22, 24, 20, 24).
-		Gap(18).Background(ui.Hex("#f8f7f3")).Children(func() {
+		Gap(18).Background(ui.Hex("#0d131b")).Children(func() {
 		ui.Row(c).AlignItems(ui.Center).Children(func() {
-			ui.Text(c, "MEMBRANE / 04").Font("monospace").FontSize(10).TextColor(muted)
+			ui.Text(c, "SILK / 01").Font("monospace").FontSize(10).TextColor(muted)
 			ui.Spacer(c)
 			ui.Row(c).Gap(6).Padding(4, 8).Radius(20).Border(1, line).Children(func() {
 				ui.Box(c).Size(6, 6).Radius(3).Background(ink)
@@ -309,8 +324,8 @@ func (a *app) sidebar(c *ui.Context) {
 			})
 		})
 		ui.Column(c).Gap(7).Children(func() {
-			ui.Text(c, "A moving\nnative face.").Font("Baskerville").FontSize(34).LineHeight(.93).TextColor(ink)
-			ui.Text(c, "Native controls on a live WebGPU surface.").FontSize(12).LineHeight(1.4).TextColor(muted)
+			ui.Text(c, "Silk,\nin motion.").Font("Baskerville").FontSize(38).LineHeight(.93).TextColor(ink)
+			ui.Text(c, "A single light sheet in a dark wind tunnel.").FontSize(12).LineHeight(1.4).TextColor(muted)
 		})
 		ui.Row(c).FillWidth().Padding(15).Radius(10).Background(card).Border(1, line).
 			AlignItems(ui.Center).Children(func() {
@@ -330,12 +345,12 @@ func (a *app) sidebar(c *ui.Context) {
 		})
 		ui.Column(c).Gap(8).Children(func() {
 			ui.Row(c).AlignItems(ui.Center).Children(func() {
-				ui.Text(c, "SURFACE DEPTH").Font("monospace").FontSize(9).TextColor(muted)
+				ui.Text(c, "WIND STRENGTH").Font("monospace").FontSize(9).TextColor(muted)
 				ui.Spacer(c)
-				ui.Textf(c, "%.2f×", a.depth).Font("monospace").FontSize(10).TextColor(ink)
+				ui.Textf(c, "%.2f×", a.wind).Font("monospace").FontSize(10).TextColor(ink)
 			})
-			ui.Slider(c.Key("depth"), &a.depth, 0.25, 1.6).FillWidth().Label("Surface depth")
-			if amplitude := float32(a.depth); amplitude != a.amplitude {
+			ui.Slider(c.Key("wind"), &a.wind, 0.25, 1.6).FillWidth().Label("Wind strength")
+			if amplitude := float32(a.wind); amplitude != a.amplitude {
 				a.amplitude = amplitude
 				a.surf.setState(a.cam, a.waveTime, a.amplitude)
 				a.canvas.Invalidate()
@@ -343,21 +358,21 @@ func (a *app) sidebar(c *ui.Context) {
 		})
 		ui.Row(c).FillWidth().Padding(10, 12).Radius(9).Background(card).Border(1, line).
 			AlignItems(ui.Center).Children(func() {
-			ui.Checkbox(c.Key("motion"), &a.motion, "Surface motion").
+			ui.Checkbox(c.Key("motion"), &a.motion, "Wind motion").
 				FillWidth().FontSize(12).TextColor(ink)
 		})
 		reset := ui.ButtonBase(c.Key("reset")).FillWidth().Height(42).Radius(8).
 			Background(ink).Border(0, ui.Transparent).Cursor(ui.CursorPointer).
 			Label("Reset camera")
 		if reset.Hovered() {
-			reset.Background(ui.Hex("#383834"))
+			reset.Background(ui.Hex("#d3c7a9"))
 		}
 		reset.Children(func() {
 			ui.Text(c, "RESET CAMERA").Font("monospace").FontSize(11).Bold().
-				TextColor(ui.Hex("#f7f7f3"))
+				TextColor(ui.Hex("#111820"))
 		})
 		if reset.Clicked() {
-			a.cam = camera{z: 3.65, y: 0.14}
+			a.cam = initialCamera()
 			a.surf.setState(a.cam, a.waveTime, a.amplitude)
 			a.canvas.Invalidate()
 		}
@@ -368,7 +383,7 @@ func (a *app) sidebar(c *ui.Context) {
 			ui.Text(c, "CONTROLS").Font("monospace").FontSize(9).TextColor(muted)
 			ui.Text(c, "WASD    WALK        Q/E    HEIGHT\nDRAG    LOOK        WHEEL  ZOOM").
 				Font("monospace").FontSize(9).LineHeight(1.75).TextColor(ink)
-			ui.Text(c, "The native field keeps its caret and cursor inside the moving surface.").
+			ui.Text(c, "Pinned on the left. Free in the wind. Native input follows the visible folds.").
 				FontSize(10.5).LineHeight(1.45).TextColor(muted)
 		})
 	})
@@ -380,6 +395,7 @@ type membraneSurface struct {
 	amplitude float32
 	w, h      float32
 	version   uint64
+	mesh      *clothMesh
 }
 
 func (s *membraneSurface) setViewport(w, h float32) {
@@ -416,7 +432,7 @@ func (s *membraneSurface) ScreenToSurface(p ui.Point) (ui.SurfaceHit, bool) {
 		return ui.SurfaceHit{}, false
 	}
 	return ui.SurfaceHit{
-		UV:       ui.UV{U: hit.u, V: hit.v},
+		UV:       ui.UV{U: clamp(hit.u, 0, 1), V: clamp(hit.v, 0, 1)},
 		Depth:    hit.t,
 		Backface: !hit.front,
 	}, true
@@ -426,23 +442,20 @@ func (s *membraneSurface) SurfaceToScreen(uv ui.UV) (ui.Point, bool) {
 	if uv.U < 0 || uv.U > 1 || uv.V < 0 || uv.V > 1 || s.w <= 0 || s.h <= 0 {
 		return ui.Point{}, false
 	}
-	halfW := panelHalfH * s.aspect()
-	p := v3{
-		uv.U*2*halfW - halfW,
-		panelLift + panelHalfH - uv.V*2*panelHalfH,
-		s.wave(uv.U, uv.V),
-	}
+	p, n := s.geometry().point(uv)
 	cam, fwd, right, up := s.cameraBasis()
 	rel := sub3(p, cam)
 	depth := dot3(rel, fwd)
-	if depth <= 0.01 {
+	if depth < nearPlane || depth >= farPlane {
 		return ui.Point{}, false
 	}
-	n := s.normal(uv.U, uv.V)
-	if dot3(normalize3(rel), n) >= 0 {
+	if dot3(rel, n) >= 0 {
 		return ui.Point{}, false
 	}
-	if t, ok := s.groundDepth(cam, normalize3(rel)); ok && t < depth-0.002 {
+	// A projected caret must not appear through another fold or the floor.
+	direction := normalize3(rel)
+	hit, ok := s.intersect(cam, direction)
+	if !ok || abs32(hit.t-dot3(rel, direction)) > 0.001 || abs32(hit.u-uv.U) > 0.0003 || abs32(hit.v-uv.V) > 0.0003 {
 		return ui.Point{}, false
 	}
 	nx := dot3(rel, right) / (depth * fieldOfView * s.aspect())
@@ -461,54 +474,6 @@ type surfaceHit struct {
 	front bool
 }
 
-func (s *membraneSurface) intersect(cam, rd v3) (surfaceHit, bool) {
-	if abs32(rd.Z) < 0.015 {
-		return surfaceHit{}, false
-	}
-	t := -cam.Z / rd.Z
-	halfW := panelHalfH * s.aspect()
-	var p v3
-	var u, v float32
-	for range 9 {
-		p = add3(cam, scale3(rd, t))
-		u = (p.X + halfW) / (2 * halfW)
-		v = (panelLift + panelHalfH - p.Y) / (2 * panelHalfH)
-		z := s.wave(clamp(u, 0, 1), clamp(v, 0, 1))
-		t = (z - cam.Z) / rd.Z
-	}
-	p = add3(cam, scale3(rd, t))
-	u = (p.X + halfW) / (2 * halfW)
-	v = (panelLift + panelHalfH - p.Y) / (2 * panelHalfH)
-	if t <= 0.01 || u < 0 || u > 1 || v < 0 || v > 1 {
-		return surfaceHit{}, false
-	}
-	if floor, ok := s.groundDepth(cam, rd); ok && floor < t {
-		return surfaceHit{}, false
-	}
-	n := s.normal(u, v)
-	return surfaceHit{
-		t: t, u: u, v: v, front: dot3(rd, n) < 0,
-	}, true
-}
-
-func (s *membraneSurface) wave(u, v float32) float32 {
-	a := sin32(6.1*u+0.82*s.waveTime) * sin32(3.2*v-0.46*s.waveTime)
-	b := sin32(12.4*u-1.27*s.waveTime) * sin32(6.3*v+0.31*s.waveTime)
-	return s.amplitude * (0.105*a + 0.034*b)
-}
-
-func (s *membraneSurface) normal(u, v float32) v3 {
-	const e = 0.0015
-	halfW := panelHalfH * s.aspect()
-	zu := (s.wave(u+e, v) - s.wave(u-e, v)) / (2 * e)
-	zv := (s.wave(u, v+e) - s.wave(u, v-e)) / (2 * e)
-	return normalize3(v3{
-		X: -zu * 2 * panelHalfH,
-		Y: 2 * halfW * zv,
-		Z: 4 * halfW * panelHalfH,
-	})
-}
-
 func (s *membraneSurface) ray(x, y float32) (v3, v3, bool) {
 	if s.w <= 0 || s.h <= 0 || x < 0 || x >= s.w || y < 0 || y >= s.h {
 		return v3{}, v3{}, false
@@ -524,11 +489,11 @@ func (s *membraneSurface) ray(x, y float32) (v3, v3, bool) {
 }
 
 func (s *membraneSurface) groundDepth(cam, rd v3) (float32, bool) {
-	if rd.Y >= -0.001 {
+	if abs32(rd.Y) < 1e-6 {
 		return 0, false
 	}
 	t := (groundY - cam.Y) / rd.Y
-	return t, t > 0.01
+	return t, t > 0
 }
 
 func (s *membraneSurface) cameraBasis() (v3, v3, v3, v3) {
@@ -574,11 +539,15 @@ func abs32(v float32) float32 {
 }
 func clamp(v, lo, hi float32) float32 { return min(max(v, lo), hi) }
 
+func initialCamera() camera {
+	return camera{x: 0.38, y: 0.52, z: 2.65, yaw: -0.14, pitch: -0.09}
+}
+
 func main() {
 	a := newApp()
 	mygo.App.WhenReady(func() {
 		mygo.NewWindow(mygo.WindowOptions{
-			Title:          "MyGo Layer Membrane",
+			Title:          "MyGo Silk Study",
 			Width:          1440,
 			Height:         900,
 			MinWidth:       1080,

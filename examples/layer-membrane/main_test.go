@@ -54,6 +54,7 @@ func TestMembraneShaderCompilesAndEncodes(t *testing.T) {
 	}
 	defer encoder.Release()
 	a := newApp()
+	defer a.renderer.release()
 	g.Device().PushErrorScope(wgpu.ErrorFilterValidation)
 	if err := a.draw(ui.WebGPUFrame{
 		Device: g.Device(), Encoder: encoder, Texture: target,
@@ -61,12 +62,6 @@ func TestMembraneShaderCompilesAndEncodes(t *testing.T) {
 		Width: 32, Height: 24, SourceWidth: 32, SourceHeight: 24,
 	}); err != nil {
 		t.Fatal(err)
-	}
-	g.Device().Poll(false)
-	if typ, message, err := g.Device().PopErrorScopeAsync(g.Instance()); err != nil {
-		t.Fatal(err)
-	} else if typ != wgpu.ErrorTypeNoError {
-		t.Fatalf("WebGPU validation error %v: %s", typ, message)
 	}
 	command, err := encoder.Finish(nil)
 	if err != nil {
@@ -77,6 +72,11 @@ func TestMembraneShaderCompilesAndEncodes(t *testing.T) {
 	}
 	command.Release()
 	g.Device().Poll(false)
+	if typ, message, err := g.Device().PopErrorScopeAsync(g.Instance()); err != nil {
+		t.Fatal(err)
+	} else if typ != wgpu.ErrorTypeNoError {
+		t.Fatalf("WebGPU validation error %v: %s", typ, message)
+	}
 }
 
 func TestMembraneSurfaceRoundTrip(t *testing.T) {
@@ -95,7 +95,7 @@ func TestMembraneSurfaceRoundTrip(t *testing.T) {
 		if !ok || hit.Backface {
 			t.Fatalf("UV %+v hit = %+v, %v", uv, hit, ok)
 		}
-		if math.Abs(float64(hit.UV.U-uv.U)) > 0.012 || math.Abs(float64(hit.UV.V-uv.V)) > 0.012 {
+		if math.Abs(float64(hit.UV.U-uv.U)) > 0.0001 || math.Abs(float64(hit.UV.V-uv.V)) > 0.0001 {
 			t.Fatalf("UV %+v round trip = %+v", uv, hit.UV)
 		}
 	}
@@ -190,9 +190,12 @@ func TestMembraneSidebarLayout(t *testing.T) {
 			tt := ui.NewTester(a.view, size.w, size.h)
 			tt.Frame()
 			if a.theme.Dark {
-				t.Fatal("the light demo inherited a dark widget theme")
+				t.Fatal("the light silk inherited a dark widget theme")
 			}
-			for _, name := range []string{"Surface depth", "Surface motion", "Reset camera"} {
+			if !a.sceneTheme.Dark {
+				t.Fatal("the wind tunnel must use a dark widget theme")
+			}
+			for _, name := range []string{"Wind strength", "Wind motion", "Reset camera"} {
 				info, ok := tt.Access(name)
 				if !ok || info.Bounds.W <= 0 || info.Bounds.H <= 0 {
 					t.Fatalf("%s is not laid out: %+v, %v", name, info, ok)
@@ -204,17 +207,17 @@ func TestMembraneSidebarLayout(t *testing.T) {
 					t.Fatalf("%s is outside the window: %+v", name, info.Bounds)
 				}
 			}
-			motion, _ := tt.Access("Surface motion")
+			motion, _ := tt.Access("Wind motion")
 			reset, _ := tt.Access("Reset camera")
 			if motion.Bounds.Y+motion.Bounds.H >= reset.Bounds.Y {
 				t.Fatalf("sidebar controls overlap: motion %+v, reset %+v", motion.Bounds, reset.Bounds)
 			}
 			was := a.motion
-			if err := tt.Click("Surface motion"); err != nil {
+			if err := tt.Click("Wind motion"); err != nil {
 				t.Fatal(err)
 			}
 			if a.motion == was {
-				t.Fatal("Surface motion did not toggle")
+				t.Fatal("Wind motion did not toggle")
 			}
 		})
 	}
