@@ -50,6 +50,11 @@ the correct `libwgpu_native` beside the application or set
 - WebGPU-native canvases and imported textures;
 - deterministic release of queue, device, adapter and instance.
 
+The 8-bit presentation target prefers `BGRA8Unorm`/`RGBA8Unorm`, not
+their `*Srgb` variants. MyGo's scene shaders produce sRGB-encoded values,
+and storing them in an `*Srgb` target would encode dark colors twice,
+lifting blacks into gray.
+
 The integration test clears a real offscreen texture, copies it to a
 readback buffer and verifies the pixels. It skips when wgpu-native is not
 installed.

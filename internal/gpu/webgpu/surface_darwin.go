@@ -107,7 +107,7 @@ func (s *Surface) Format() wgpu.TextureFormat {
 	return s.format
 }
 
-// SetWide switches the surface between the sRGB/BGRA8 format and the
+// SetWide switches the surface between its 8-bit BGRA8 format and the
 // extended-range RGBA16Float format. It reports false when the adapter's
 // surface capabilities do not offer that format.
 func (s *Surface) SetWide(on bool) bool {
@@ -165,10 +165,14 @@ func (s *Surface) Release() {
 
 func chooseSurfaceFormat(formats []wgpu.TextureFormat) (wgpu.TextureFormat, bool) {
 	for _, want := range []wgpu.TextureFormat{
-		wgpu.TextureFormatBGRA8UnormSrgb,
-		wgpu.TextureFormatRGBA8UnormSrgb,
 		wgpu.TextureFormatBGRA8Unorm,
 		wgpu.TextureFormatRGBA8Unorm,
+		// MyGo's scene shaders write sRGB-encoded values directly. Prefer a
+		// non-sRGB presentation target so the compositor does not encode
+		// them a second time; the sRGB variants remain fallbacks for
+		// platforms that expose only those.
+		wgpu.TextureFormatBGRA8UnormSrgb,
+		wgpu.TextureFormatRGBA8UnormSrgb,
 	} {
 		for _, format := range formats {
 			if format == want {
