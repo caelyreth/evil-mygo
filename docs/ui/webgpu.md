@@ -146,9 +146,9 @@ Neither callback may submit the frame or block the main thread. An owner
 replaced by `WebGPUTexture.SetTexture` is retained until the submitted
 frame completes, then released.
 
-[`examples/flagscape`](../../examples/flagscape) shows the whole path: a
-3D WebGPU scene samples a captured native MyGo face, while WASD,
-pointer-look and UV hit-testing remain in the native tree.
+[`examples/layer-membrane`](../../examples/layer-membrane) shows the whole
+path: a moving WebGPU heightfield samples a captured native MyGo face,
+while WASD, pointer-look and UV hit-testing remain in the native tree.
 
 [`examples/webgpu-layer`](../../examples/webgpu-layer) shows an
 independent `UILayer` used as a WebGPU source, with `PlanarSurface` and

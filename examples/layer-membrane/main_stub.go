@@ -5,5 +5,5 @@ package main
 import "fmt"
 
 func main() {
-	fmt.Println("flagscape needs cgo, or -tags mygo_webgpu,nofakecgo without cgo, on macOS")
+	fmt.Println("layer-membrane needs cgo, or -tags mygo_webgpu,nofakecgo without cgo, on macOS")
 }
