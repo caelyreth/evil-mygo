@@ -24,14 +24,20 @@ type effectPipeline struct {
 	layout *wgpu.BindGroupLayout
 }
 
-func (r *Renderer) effectPipelineFor(fx *scene.Effect) (*effectPipeline, error) {
+type effectKey struct {
+	format wgpu.TextureFormat
+	wgsl   string
+}
+
+func (r *Renderer) effectPipelineFor(fx *scene.Effect, format wgpu.TextureFormat) (*effectPipeline, error) {
 	if fx == nil {
 		return nil, errors.New("webgpu: nil effect")
 	}
 	if fx.WGSL == "" {
 		return nil, errors.New("webgpu: effect has no WGSL source")
 	}
-	if p := r.effects[fx.WGSL]; p != nil {
+	key := effectKey{format: format, wgsl: fx.WGSL}
+	if p := r.effects[key]; p != nil {
 		return p, nil
 	}
 	head, tail, ok := strings.Cut(effectShaderSource, "\n// effect\n")
@@ -66,7 +72,7 @@ func (r *Renderer) effectPipelineFor(fx *scene.Effect) (*effectPipeline, error) 
 		Fragment: &wgpu.FragmentState{
 			Module: shader, EntryPoint: "effect_fs",
 			Targets: []wgpu.ColorTargetState{{
-				Format: r.format, Blend: blend, WriteMask: wgpu.ColorWriteMaskAll,
+				Format: format, Blend: blend, WriteMask: wgpu.ColorWriteMaskAll,
 			}},
 		},
 	})
@@ -80,7 +86,7 @@ func (r *Renderer) effectPipelineFor(fx *scene.Effect) (*effectPipeline, error) 
 		return nil, errors.New("webgpu: effect pipeline has no bind group layout")
 	}
 	p := &effectPipeline{pipe: pipe, layout: layout}
-	r.effects[fx.WGSL] = p
+	r.effects[key] = p
 	return p, nil
 }
 
@@ -88,7 +94,7 @@ func (r *Renderer) drawEffect(pass *wgpu.RenderPassEncoder, st *drawState, batch
 	if batch.Effect == nil {
 		return nil
 	}
-	pipeline, err := r.effectPipelineFor(batch.Effect)
+	pipeline, err := r.effectPipelineFor(batch.Effect, st.targetFormat)
 	if err != nil {
 		return err
 	}

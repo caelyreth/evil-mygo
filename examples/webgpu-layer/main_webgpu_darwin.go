@@ -91,7 +91,7 @@ func (a *app) draw(f ui.WebGPUFrame) error {
 			Fragment: &wgpu.FragmentState{
 				Module: module, EntryPoint: "fs",
 				Targets: []wgpu.ColorTargetState{{
-					Format: wgpu.TextureFormatRGBA8Unorm,
+					Format: wgpu.TextureFormatRGBA8Unorm, WriteMask: wgpu.ColorWriteMaskAll,
 				}},
 			},
 		})

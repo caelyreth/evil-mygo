@@ -24,10 +24,7 @@ type Renderer struct {
 	gpu         *GPU
 	format      wgpu.TextureFormat
 	shader      *wgpu.ShaderModule
-	layout      *wgpu.BindGroupLayout
-	pipe        *wgpu.RenderPipeline
-	holePipe    *wgpu.RenderPipeline
-	holeLayout  *wgpu.BindGroupLayout
+	pipelines   map[wgpu.TextureFormat]*scenePipelines
 	clearShader *wgpu.ShaderModule
 	clearPipe   *wgpu.RenderPipeline
 	clearLayout *wgpu.BindGroupLayout
@@ -50,7 +47,7 @@ type Renderer struct {
 	root     drawState
 	canvases map[uint64]*canvasEntry
 	images   map[uintptr]*textureEntry
-	effects  map[string]*effectPipeline
+	effects  map[effectKey]*effectPipeline
 	blurred  map[uintptr]*textureEntry
 	blurID   uint64
 	encoder  *wgpu.CommandEncoder
@@ -59,6 +56,13 @@ type Renderer struct {
 	external map[*scene.ExternalTexture]bool
 	pending  []func()
 	frame    uint64
+}
+
+type scenePipelines struct {
+	pipe       *wgpu.RenderPipeline
+	holePipe   *wgpu.RenderPipeline
+	layout     *wgpu.BindGroupLayout
+	holeLayout *wgpu.BindGroupLayout
 }
 
 // drawState is the per-target state a scene draws with. Keeping it apart
@@ -79,6 +83,7 @@ type drawState struct {
 	sceneWidth, sceneHeight int
 	sceneScale              float32
 	targetFormat            wgpu.TextureFormat
+	pipelines               *scenePipelines
 	part                    *gpu.Part
 	grab                    *textureEntry
 	backdrop                [2]*textureEntry
@@ -96,87 +101,20 @@ func NewRenderer(g *GPU, format wgpu.TextureFormat) (*Renderer, error) {
 	if g == nil || g.device == nil {
 		return nil, errors.New("webgpu: renderer needs an open GPU")
 	}
-	r := &Renderer{gpu: g, format: format}
+	r := &Renderer{
+		gpu:       g,
+		format:    format,
+		pipelines: map[wgpu.TextureFormat]*scenePipelines{},
+		effects:   map[effectKey]*effectPipeline{},
+	}
 	var err error
 	if r.shader, err = g.device.CreateShaderModuleWGSL(sceneShader); err != nil {
 		r.Release()
 		return nil, fmt.Errorf("webgpu: scene shader: %w", err)
 	}
-	blend := &wgpu.BlendState{
-		Color: wgpu.BlendComponent{
-			Operation: gputypes.BlendOperationAdd,
-			SrcFactor: gputypes.BlendFactorOne,
-			DstFactor: gputypes.BlendFactorOneMinusSrcAlpha,
-		},
-		Alpha: wgpu.BlendComponent{
-			Operation: gputypes.BlendOperationAdd,
-			SrcFactor: gputypes.BlendFactorOne,
-			DstFactor: gputypes.BlendFactorOneMinusSrcAlpha,
-		},
-	}
-	r.pipe, err = g.device.CreateRenderPipeline(&wgpu.RenderPipelineDescriptor{
-		Label: "MyGo scene",
-		Vertex: wgpu.VertexState{
-			Module: r.shader, EntryPoint: "vs",
-		},
-		Primitive: wgpu.PrimitiveState{
-			// go-webgpu v0.5.5 passes PrimitiveTopology without the
-			// gputypes-to-native conversion that it applies to other
-			// enums. Native TriangleStrip is 5.
-			Topology:  wgpu.PrimitiveTopology(5),
-			FrontFace: wgpu.FrontFaceCCW,
-			CullMode:  wgpu.CullModeNone,
-		},
-		Multisample: wgpu.MultisampleState{Count: 1},
-		Fragment: &wgpu.FragmentState{
-			Module: r.shader, EntryPoint: "fs",
-			Targets: []wgpu.ColorTargetState{{
-				Format: format, Blend: blend, WriteMask: wgpu.ColorWriteMaskAll,
-			}},
-		},
-	})
-	if err != nil {
+	if _, err := r.pipelinesFor(format); err != nil {
 		r.Release()
-		return nil, fmt.Errorf("webgpu: scene pipeline: %w", err)
-	}
-	holeBlend := &wgpu.BlendState{
-		Color: wgpu.BlendComponent{
-			Operation: gputypes.BlendOperationAdd,
-			SrcFactor: gputypes.BlendFactorZero,
-			DstFactor: gputypes.BlendFactorOneMinusSrcAlpha,
-		},
-		Alpha: wgpu.BlendComponent{
-			Operation: gputypes.BlendOperationAdd,
-			SrcFactor: gputypes.BlendFactorZero,
-			DstFactor: gputypes.BlendFactorOneMinusSrcAlpha,
-		},
-	}
-	holePipe, err := g.device.CreateRenderPipeline(&wgpu.RenderPipelineDescriptor{
-		Label: "MyGo scene holes",
-		Vertex: wgpu.VertexState{
-			Module: r.shader, EntryPoint: "vs",
-		},
-		Primitive: wgpu.PrimitiveState{
-			Topology:  wgpu.PrimitiveTopology(5),
-			FrontFace: wgpu.FrontFaceCCW,
-			CullMode:  wgpu.CullModeNone,
-		},
-		Multisample: wgpu.MultisampleState{Count: 1},
-		Fragment: &wgpu.FragmentState{
-			Module: r.shader, EntryPoint: "fs",
-			Targets: []wgpu.ColorTargetState{{
-				Format: format, Blend: holeBlend, WriteMask: wgpu.ColorWriteMaskAll,
-			}},
-		},
-	})
-	if err != nil {
-		r.Release()
-		return nil, fmt.Errorf("webgpu: hole pipeline: %w", err)
-	}
-	r.holePipe = holePipe
-	if r.holeLayout = holePipe.GetBindGroupLayout(0); r.holeLayout == nil {
-		r.Release()
-		return nil, errors.New("webgpu: hole pipeline has no bind group layout")
+		return nil, err
 	}
 	if err := r.initClear(); err != nil {
 		r.Release()
@@ -185,10 +123,6 @@ func NewRenderer(g *GPU, format wgpu.TextureFormat) (*Renderer, error) {
 	if err := r.initCopy(); err != nil {
 		r.Release()
 		return nil, err
-	}
-	if r.layout = r.pipe.GetBindGroupLayout(0); r.layout == nil {
-		r.Release()
-		return nil, errors.New("webgpu: scene pipeline has no bind group layout")
 	}
 	if r.sampler, err = g.device.CreateLinearSampler(); err != nil {
 		r.Release()
@@ -220,7 +154,6 @@ func NewRenderer(g *GPU, format wgpu.TextureFormat) (*Renderer, error) {
 	}
 	r.images = map[uintptr]*textureEntry{}
 	r.canvases = map[uint64]*canvasEntry{}
-	r.effects = map[string]*effectPipeline{}
 	r.blurred = map[uintptr]*textureEntry{}
 	r.waited = map[*scene.ExternalTexture]bool{}
 	r.signals = map[*scene.ExternalTexture]any{}
@@ -231,6 +164,110 @@ func NewRenderer(g *GPU, format wgpu.TextureFormat) (*Renderer, error) {
 		return nil, err
 	}
 	return r, nil
+}
+
+func (r *Renderer) pipelinesFor(format wgpu.TextureFormat) (*scenePipelines, error) {
+	if p := r.pipelines[format]; p != nil {
+		return p, nil
+	}
+	if r.shader == nil {
+		return nil, errors.New("webgpu: renderer is released")
+	}
+	blend := &wgpu.BlendState{
+		Color: wgpu.BlendComponent{
+			Operation: gputypes.BlendOperationAdd,
+			SrcFactor: gputypes.BlendFactorOne,
+			DstFactor: gputypes.BlendFactorOneMinusSrcAlpha,
+		},
+		Alpha: wgpu.BlendComponent{
+			Operation: gputypes.BlendOperationAdd,
+			SrcFactor: gputypes.BlendFactorOne,
+			DstFactor: gputypes.BlendFactorOneMinusSrcAlpha,
+		},
+	}
+	p := &scenePipelines{}
+	fail := func(err error) (*scenePipelines, error) {
+		if p.holePipe != nil {
+			p.holePipe.Release()
+		}
+		if p.holeLayout != nil {
+			p.holeLayout.Release()
+		}
+		if p.pipe != nil {
+			p.pipe.Release()
+		}
+		if p.layout != nil {
+			p.layout.Release()
+		}
+		return nil, err
+	}
+	pipe, err := r.gpu.device.CreateRenderPipeline(&wgpu.RenderPipelineDescriptor{
+		Label: "MyGo scene",
+		Vertex: wgpu.VertexState{
+			Module: r.shader, EntryPoint: "vs",
+		},
+		Primitive: wgpu.PrimitiveState{
+			// go-webgpu v0.5.5 passes PrimitiveTopology without the
+			// gputypes-to-native conversion that it applies to other
+			// enums. Native TriangleStrip is 5.
+			Topology:  wgpu.PrimitiveTopology(5),
+			FrontFace: wgpu.FrontFaceCCW,
+			CullMode:  wgpu.CullModeNone,
+		},
+		Multisample: wgpu.MultisampleState{Count: 1},
+		Fragment: &wgpu.FragmentState{
+			Module: r.shader, EntryPoint: "fs",
+			Targets: []wgpu.ColorTargetState{{
+				Format: format, Blend: blend, WriteMask: wgpu.ColorWriteMaskAll,
+			}},
+		},
+	})
+	if err != nil {
+		return fail(fmt.Errorf("webgpu: scene pipeline: %w", err))
+	}
+	p.pipe = pipe
+	holeBlend := &wgpu.BlendState{
+		Color: wgpu.BlendComponent{
+			Operation: gputypes.BlendOperationAdd,
+			SrcFactor: gputypes.BlendFactorZero,
+			DstFactor: gputypes.BlendFactorOneMinusSrcAlpha,
+		},
+		Alpha: wgpu.BlendComponent{
+			Operation: gputypes.BlendOperationAdd,
+			SrcFactor: gputypes.BlendFactorZero,
+			DstFactor: gputypes.BlendFactorOneMinusSrcAlpha,
+		},
+	}
+	holePipe, err := r.gpu.device.CreateRenderPipeline(&wgpu.RenderPipelineDescriptor{
+		Label: "MyGo scene holes",
+		Vertex: wgpu.VertexState{
+			Module: r.shader, EntryPoint: "vs",
+		},
+		Primitive: wgpu.PrimitiveState{
+			Topology:  wgpu.PrimitiveTopology(5),
+			FrontFace: wgpu.FrontFaceCCW,
+			CullMode:  wgpu.CullModeNone,
+		},
+		Multisample: wgpu.MultisampleState{Count: 1},
+		Fragment: &wgpu.FragmentState{
+			Module: r.shader, EntryPoint: "fs",
+			Targets: []wgpu.ColorTargetState{{
+				Format: format, Blend: holeBlend, WriteMask: wgpu.ColorWriteMaskAll,
+			}},
+		},
+	})
+	if err != nil {
+		return fail(fmt.Errorf("webgpu: hole pipeline: %w", err))
+	}
+	p.holePipe = holePipe
+	if p.layout = p.pipe.GetBindGroupLayout(0); p.layout == nil {
+		return fail(errors.New("webgpu: scene pipeline has no bind group layout"))
+	}
+	if p.holeLayout = p.holePipe.GetBindGroupLayout(0); p.holeLayout == nil {
+		return fail(errors.New("webgpu: hole pipeline has no bind group layout"))
+	}
+	r.pipelines[format] = p
+	return p, nil
 }
 
 func (s *drawState) reset(r *Renderer, mask, color *textureEntry) {
@@ -257,7 +294,7 @@ func (r *Renderer) RenderTargetPart(s *scene.Scene, encoder *wgpu.CommandEncoder
 }
 
 func (r *Renderer) render(s *scene.Scene, encoder *wgpu.CommandEncoder, target *wgpu.Texture, view *wgpu.TextureView, part *gpu.Part) error {
-	if r == nil || r.pipe == nil {
+	if r == nil || r.pipelines == nil {
 		return errors.New("webgpu: renderer is released")
 	}
 	if s == nil || s.Width <= 0 || s.Height <= 0 {
@@ -300,9 +337,14 @@ func (r *Renderer) renderScene(s *scene.Scene, encoder *wgpu.CommandEncoder, tar
 		// partially valid backdrop.
 		part = nil
 	}
+	pipelines, err := r.pipelinesFor(targetFormat)
+	if err != nil {
+		return err
+	}
 	st.sceneWidth, st.sceneHeight = s.Width, s.Height
 	st.sceneScale = s.Scale
 	st.targetFormat = targetFormat
+	st.pipelines = pipelines
 	st.part = part
 	if st.sceneScale <= 0 {
 		st.sceneScale = 1
@@ -454,9 +496,9 @@ func (r *Renderer) renderScene(s *scene.Scene, encoder *wgpu.CommandEncoder, tar
 			// An effect batch changes the pipeline; restore the scene
 			// pipeline before a following fill, glyph or image batch.
 			if batch.Hole {
-				pass.SetPipeline(r.holePipe)
+				pass.SetPipeline(st.pipelines.holePipe)
 			} else {
-				pass.SetPipeline(r.pipe)
+				pass.SetPipeline(st.pipelines.pipe)
 			}
 			image := r.defaultImage.view
 			if batch.Image != 0 {
@@ -474,9 +516,9 @@ func (r *Renderer) renderScene(s *scene.Scene, encoder *wgpu.CommandEncoder, tar
 				}
 				clip = t.view
 			}
-			layout := r.layout
+			layout := st.pipelines.layout
 			if batch.Hole {
-				layout = r.holeLayout
+				layout = st.pipelines.holeLayout
 			}
 			bind, err := st.bindFor(r, layout, image, clip)
 			if err != nil {
@@ -871,14 +913,21 @@ func (r *Renderer) Release() {
 		r.downPipe.Release()
 		r.downPipe = nil
 	}
-	if r.holePipe != nil {
-		r.holePipe.Release()
-		r.holePipe = nil
+	for _, p := range r.pipelines {
+		if p.holePipe != nil {
+			p.holePipe.Release()
+		}
+		if p.holeLayout != nil {
+			p.holeLayout.Release()
+		}
+		if p.pipe != nil {
+			p.pipe.Release()
+		}
+		if p.layout != nil {
+			p.layout.Release()
+		}
 	}
-	if r.holeLayout != nil {
-		r.holeLayout.Release()
-		r.holeLayout = nil
-	}
+	r.pipelines = nil
 	if r.clearPipe != nil {
 		r.clearPipe.Release()
 		r.clearPipe = nil
@@ -945,14 +994,6 @@ func (r *Renderer) Release() {
 		effect.layout.Release()
 	}
 	r.effects = nil
-	if r.pipe != nil {
-		r.pipe.Release()
-		r.pipe = nil
-	}
-	if r.layout != nil {
-		r.layout.Release()
-		r.layout = nil
-	}
 	if r.shader != nil {
 		r.shader.Release()
 		r.shader = nil

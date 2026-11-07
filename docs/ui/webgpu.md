@@ -130,6 +130,9 @@ encode render or compute passes. `WebGPUFrame.Source` is the rendered
 native subtree when the canvas is used with `Element.Effect`;
 `WebGPUFrame.SourceTexture` is its stable backing texture, so a callback
 can cache a view and bind group instead of retaining a frame-scoped view.
+The target is `RGBA8Unorm`; a custom pipeline must set
+`WriteMask: wgpu.ColorWriteMaskAll`, since the binding's zero write mask
+writes no channels.
 
 `ui.NewWebGPUTexture` publishes an application-owned `*wgpu.Texture` as an
 image. MyGo creates only a view and samples it; there is no CPU upload or

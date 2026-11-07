@@ -224,3 +224,44 @@ func TestWebGPUCanvasUsesUILayerSource(t *testing.T) {
 	encoder.Release()
 	renderer.FinishFrame()
 }
+
+func TestWebGPUCanvasRendersInWindowScene(t *testing.T) {
+	if _, ok := webgpu.RuntimePath(); !ok {
+		t.Skip("wgpu-native is not installed")
+	}
+	canvas := NewWebGPUCanvas(64, 32, func(f WebGPUFrame) error {
+		view, err := f.Texture.CreateView(nil)
+		if err != nil {
+			return err
+		}
+		defer view.Release()
+		pass, err := f.Encoder.BeginRenderPass(&wgpu.RenderPassDescriptor{
+			ColorAttachments: []wgpu.RenderPassColorAttachment{{
+				View: view, LoadOp: wgpu.LoadOpClear, StoreOp: wgpu.StoreOpStore,
+				ClearValue: wgpu.Color{R: 1, G: 0, B: 0, A: 1},
+			}},
+		})
+		if err != nil {
+			return err
+		}
+		pass.End()
+		pass.Release()
+		return nil
+	})
+	tester := NewTester(func(c *Context) {
+		Box(c).Fill().Radius(16).Clip().Background(RGB(7, 17, 19)).Children(func() {
+			Image(c, canvas.Bitmap()).Fill()
+		})
+	}, 64, 32)
+	if tester.h.last == nil {
+		t.Fatal("window scene is nil")
+	}
+	pixels, err := webgpu.RenderOffscreen(tester.h.last)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pixel := pixels[(16*64+32)*4:][:4]
+	if pixel[0] != 0 || pixel[1] != 0 || pixel[2] != 255 || pixel[3] != 255 {
+		t.Fatalf("window canvas pixel = %v, want opaque red", pixel)
+	}
+}

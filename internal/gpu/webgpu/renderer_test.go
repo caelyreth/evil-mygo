@@ -910,6 +910,143 @@ func TestRendererDrawsNestedCanvas(t *testing.T) {
 	}
 }
 
+func TestRendererUsesPipelinesForEachTargetFormat(t *testing.T) {
+	if _, ok := RuntimePath(); !ok {
+		t.Skip("wgpu-native is not installed")
+	}
+	g, err := Open()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer g.Release()
+	const width, height = 64, 48
+	target, view := testTargetFormat(t, g, width, height, wgpu.TextureFormatBGRA8UnormSrgb)
+	defer target.Release()
+	defer view.Release()
+	renderer, err := NewRenderer(g, wgpu.TextureFormatBGRA8UnormSrgb)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer renderer.Release()
+
+	fx := &scene.Effect{
+		Name: "format effect",
+		WGSL: `
+fn effect(p: vec2<f32>, e: Effect) -> vec4<f32> {
+	return e.p1;
+}`,
+	}
+	params := [5][4]float32{{}, {0.3, 0.6, 0.9, 1}}
+	canvas := scene.NewCanvas(16, 16)
+	canvas.Scene.Effects = []scene.EffectOp{{Effect: fx, Params: params}}
+	canvas.Scene.Ops = append(canvas.Scene.Ops, scene.Op{
+		Kind: scene.OpEffect, Rect: scene.Rect{W: 16, H: 16}, Start: 0,
+	})
+	s := &scene.Scene{
+		Width: width, Height: height,
+		Effects: []scene.EffectOp{{Effect: fx, Params: params}},
+		Ops: []scene.Op{
+			{Kind: scene.OpEffect, Rect: scene.Rect{W: 16, H: 16}, Start: 0},
+			{
+				Kind: scene.OpImage, Image: canvas,
+				Rect: scene.Rect{X: 20, Y: 12, W: 16, H: 16},
+				Src:  scene.Rect{W: 16, H: 16},
+			},
+		},
+	}
+	encoder, err := g.Device().CreateCommandEncoder(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g.Device().PushErrorScope(wgpu.ErrorFilterValidation)
+	if err := renderer.Render(s, encoder, view); err != nil {
+		t.Fatal(err)
+	}
+	command, err := encoder.Finish(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := g.Queue().Submit(command); err != nil {
+		t.Fatal(err)
+	}
+	command.Release()
+	encoder.Release()
+	renderer.FinishFrame()
+	if typ, message, err := g.Device().PopErrorScopeAsync(g.Instance()); err != nil {
+		t.Fatal(err)
+	} else if typ != wgpu.ErrorTypeNoError {
+		t.Fatalf("WebGPU validation error %v: %s", typ, message)
+	}
+}
+
+func TestRendererSamplesNativeCanvasOnSurfaceFormat(t *testing.T) {
+	if _, ok := RuntimePath(); !ok {
+		t.Skip("wgpu-native is not installed")
+	}
+	g, err := Open()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer g.Release()
+	const width, height = 64, 32
+	target, view := testTargetFormat(t, g, width, height, wgpu.TextureFormatBGRA8UnormSrgb)
+	defer target.Release()
+	defer view.Release()
+	renderer, err := NewRenderer(g, wgpu.TextureFormatBGRA8UnormSrgb)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer renderer.Release()
+	canvas := scene.NewGPUCanvas(width, height, func(f scene.GPUFrame) error {
+		texture := f.TextureObject.(*wgpu.Texture)
+		canvasView, err := texture.CreateView(nil)
+		if err != nil {
+			return err
+		}
+		defer canvasView.Release()
+		encoder := f.EncoderObject.(*wgpu.CommandEncoder)
+		pass, err := encoder.BeginRenderPass(&wgpu.RenderPassDescriptor{
+			ColorAttachments: []wgpu.RenderPassColorAttachment{{
+				View: canvasView, LoadOp: wgpu.LoadOpClear, StoreOp: wgpu.StoreOpStore,
+				ClearValue: wgpu.Color{R: 1, G: 0, B: 0, A: 1},
+			}},
+		})
+		if err != nil {
+			return err
+		}
+		pass.End()
+		pass.Release()
+		return nil
+	})
+	s := &scene.Scene{
+		Width: width, Height: height, Clear: scene.Color{G: 255, A: 255},
+		Ops: []scene.Op{{
+			Kind: scene.OpImage, Image: canvas,
+			Rect: scene.Rect{W: width, H: height},
+			Src:  scene.Rect{W: width, H: height},
+		}},
+	}
+	encoder, err := g.Device().CreateCommandEncoder(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g.Device().PushErrorScope(wgpu.ErrorFilterValidation)
+	if err := renderer.Render(s, encoder, view); err != nil {
+		t.Fatal(err)
+	}
+	pixels := readTarget(t, g, target, encoder, width, height)
+	renderer.FinishFrame()
+	if typ, message, err := g.Device().PopErrorScopeAsync(g.Instance()); err != nil {
+		t.Fatal(err)
+	} else if typ != wgpu.ErrorTypeNoError {
+		t.Fatalf("WebGPU validation error %v: %s", typ, message)
+	}
+	pixel := pixels[(16*width+32)*4:][:4]
+	if pixel[0] != 0 || pixel[1] != 0 || pixel[2] != 255 || pixel[3] != 255 {
+		t.Fatalf("native canvas pixel = %v, want opaque red", pixel)
+	}
+}
+
 func TestRendererRunsNativeWebGPUCanvas(t *testing.T) {
 	if _, ok := RuntimePath(); !ok {
 		t.Skip("wgpu-native is not installed")
@@ -1386,10 +1523,15 @@ func TestRendererReportsExternalSyncErrors(t *testing.T) {
 
 func testTarget(t *testing.T, g *GPU, width, height int) (*wgpu.Texture, *wgpu.TextureView) {
 	t.Helper()
+	return testTargetFormat(t, g, width, height, wgpu.TextureFormatRGBA8Unorm)
+}
+
+func testTargetFormat(t *testing.T, g *GPU, width, height int, format wgpu.TextureFormat) (*wgpu.Texture, *wgpu.TextureView) {
+	t.Helper()
 	target, err := g.Device().CreateTexture(&wgpu.TextureDescriptor{
 		Usage:         wgpu.TextureUsageRenderAttachment | wgpu.TextureUsageCopySrc,
 		Size:          wgpu.Extent3D{Width: uint32(width), Height: uint32(height), DepthOrArrayLayers: 1},
-		Format:        wgpu.TextureFormatRGBA8Unorm,
+		Format:        format,
 		MipLevelCount: 1,
 		SampleCount:   1,
 	})

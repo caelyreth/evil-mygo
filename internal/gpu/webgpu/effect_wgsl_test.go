@@ -46,7 +46,7 @@ fn effect(p: vec2<f32>, e: Effect) -> vec4<f32> {
 		t.Fatal(err)
 	}
 	defer r.Release()
-	if _, err := r.effectPipelineFor(fx); err != nil {
+	if _, err := r.effectPipelineFor(fx, wgpu.TextureFormatRGBA8Unorm); err != nil {
 		t.Fatal(err)
 	}
 }

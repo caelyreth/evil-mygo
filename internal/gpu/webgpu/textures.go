@@ -268,7 +268,12 @@ func (r *Renderer) syncExternalImage(img *scene.Image) (uintptr, error) {
 
 func (s *drawState) bindFor(r *Renderer, layout *wgpu.BindGroupLayout, image, clip *wgpu.TextureView) (*wgpu.BindGroup, error) {
 	if layout == nil {
-		layout = r.layout
+		if s.pipelines != nil {
+			layout = s.pipelines.layout
+		}
+	}
+	if layout == nil {
+		return nil, errors.New("webgpu: scene pipeline has no bind group layout")
 	}
 	if image == nil {
 		image = r.defaultImage.view
