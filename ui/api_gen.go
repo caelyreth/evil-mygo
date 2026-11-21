@@ -322,6 +322,19 @@ func (_handle *Context) Announce(text string) {
 	_ctx.Announce(text)
 }
 
+// AssistiveTechnology reports whether assistive technology, as a screen
+// reader, has asked for the window's content: from then on each frame is
+// described to it. A view may leave out what only assistive technology
+// reads, as an editor's description of each paragraph, until it is on;
+// the frame after it comes on is built anew.
+func (_handle *Context) AssistiveTechnology() bool {
+	_ctx := _handle.build()
+	if _ctx == nil {
+		return false
+	}
+	return _ctx.AssistiveTechnology()
+}
+
 // CloseToast closes the toast with id, or every toast when id is empty,
 // and runs their OnClose.
 func (_handle *Context) CloseToast(id string) {

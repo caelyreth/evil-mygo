@@ -1168,12 +1168,10 @@ func (e *node) describes() string {
 func (rt *engine) accessibilityOn() {
 	if !rt.access {
 		rt.access = true
-		// None built yet, or one waiting for the window to show: the
-		// frame builds, out of sight too (the event is input), so that
-		// assistive technology reads what the window shows now.
-		if rt.c.root == nil || rt.held {
-			rt.requestFrame()
-		}
+		// The frame builds anew, out of sight too (the event is input),
+		// so that assistive technology reads what the window shows now,
+		// with what views describe only for it (AssistiveTechnology).
+		rt.requestFrame()
 	}
 	t := rt.accessTree()
 	rt.liveRegions(t, false) // what live regions show was there before

@@ -91,6 +91,13 @@ func (rt *engine) passFocus() {
 // window tells the system's input methods then.
 func (c *context) FocusTakesText() bool { return c.rt.focusTakesText() }
 
+// AssistiveTechnology reports whether assistive technology, as a screen
+// reader, has asked for the window's content: from then on each frame is
+// described to it. A view may leave out what only assistive technology
+// reads, as an editor's description of each paragraph, until it is on;
+// the frame after it comes on is built anew.
+func (c *context) AssistiveTechnology() bool { return c.rt.access }
+
 // focusTakesText is FocusTakesText.
 func (rt *engine) focusTakesText() bool {
 	s := rt.states[rt.focused]
