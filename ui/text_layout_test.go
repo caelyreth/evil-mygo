@@ -86,3 +86,27 @@ func TestBaselineShiftObjects(t *testing.T) {
 		t.Errorf("objects %+v on a baseline at %v", objs, line.Baseline)
 	}
 }
+
+// TestReleasedTextLayout keeps a released layout's size without shaping
+// it, and shapes it again, the same, when it is read.
+func TestReleasedTextLayout(t *testing.T) {
+	l := ShapeText("😀 one two three four five six seven\nend", Font{Size: 16}, 120)
+	w, h := l.Size()
+	lines, caret, next := l.Lines(), l.Caret(5), l.NextBoundary(0)
+	l.Release()
+	if l.Shaped() {
+		t.Fatal("released, it still holds its shaping")
+	}
+	if rw, rh := l.Size(); rw != w || rh != h || l.Shaped() {
+		t.Errorf("released, it is %vx%v (shaped again: %v), want %vx%v", rw, rh, l.Shaped(), w, h)
+	}
+	if got := l.Lines(); len(got) != len(lines) || got[len(got)-1] != lines[len(lines)-1] {
+		t.Errorf("shaped again, its lines are %+v, want %+v", got, lines)
+	}
+	if !l.Shaped() {
+		t.Error("read, it is not shaped again")
+	}
+	if l.Caret(5) != caret || l.NextBoundary(0) != next {
+		t.Errorf("shaped again, its caret %v and boundary %d, want %v and %d", l.Caret(5), l.NextBoundary(0), caret, next)
+	}
+}

@@ -20,6 +20,54 @@ type TextLayout struct {
 	units      []int // rune offset -> UTF-16 offset
 	boundaries []int // grapheme boundaries in runes
 	spans      []Span
+	// params is what it was shaped from, and w and h its extent, kept
+	// while Release has let its shaping go.
+	params text.Params
+	w, h   float32
+}
+
+// Release lets the layout's shaping go, its lines and glyphs, keeping
+// what it was shaped from and its size: an application holding many, as
+// the paragraphs of a long document, releases those far out of view. The
+// next call that reads its lines, positions or glyphs, or paints it,
+// shapes it again, the same.
+func (t *TextLayout) Release() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.l == nil {
+		return
+	}
+	t.params, t.w, t.h = t.l.Params, t.l.Width, t.l.Height
+	t.l, t.units, t.boundaries = nil, nil, nil
+}
+
+// Shaped is whether the layout holds its shaping: false from Release
+// until it is read or painted again.
+func (t *TextLayout) Shaped() bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.l != nil
+}
+
+// shaped shapes the layout again if it was released, the lock held.
+func (t *TextLayout) shaped() *text.Layout {
+	if t.l == nil {
+		t.shape(t.params)
+	}
+	return t.l
+}
+
+// shape shapes the layout from params.
+func (t *TextLayout) shape(params text.Params) {
+	l := text.Shared().Shape(params)
+	t.l, t.units = l, make([]int, len(l.Runes)+1)
+	for i, r := range l.Runes {
+		t.units[i+1] = t.units[i] + utf16.RuneLen(r)
+	}
+	var boundaries text.Boundaries
+	boundaries.Reset(l.Runes)
+	// Boundary iteration is per shaped paragraph, never per document edit.
+	t.boundaries = boundaries.GraphemeOffsets()
 }
 
 // TextAffinity chooses a caret's preceding or following logical edge. Bidi
@@ -45,6 +93,7 @@ func (t *TextLayout) position(p TextCaretPosition) text.CaretPosition {
 func (t *TextLayout) CaretAt(p TextCaretPosition) Rect {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	t.shaped()
 	x, y, h := t.l.CaretAt(t.position(p))
 	return Rect{x, y, 1, h}
 }
@@ -53,6 +102,7 @@ func (t *TextLayout) CaretAt(p TextCaretPosition) Rect {
 func (t *TextLayout) PositionAt(point Point) TextCaretPosition {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	t.shaped()
 	p := t.l.PositionAt(point.X, point.Y)
 	return TextCaretPosition{Index: t.units[p.Index], Affinity: p.Affinity}
 }
@@ -61,6 +111,7 @@ func (t *TextLayout) PositionAt(point Point) TextCaretPosition {
 func (t *TextLayout) MoveCaret(p TextCaretPosition, direction int) TextCaretPosition {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	t.shaped()
 	next := t.l.MoveCaret(t.position(p), direction)
 	return TextCaretPosition{Index: t.units[next.Index], Affinity: next.Affinity}
 }
@@ -71,6 +122,7 @@ func (t *TextLayout) MoveCaret(p TextCaretPosition, direction int) TextCaretPosi
 func (t *TextLayout) SelectionRanges(anchor, caret TextCaretPosition) []TextInputRange {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	t.shaped()
 	var out []TextInputRange
 	for _, r := range t.l.SelectionRanges(t.position(anchor), t.position(caret)) {
 		out = append(out, TextInputRange{Start: t.units[r.Start], End: t.units[r.End]})
@@ -164,15 +216,8 @@ func shapeTextAligned(s string, font Font, shape TextShape, spans []Span) *TextL
 	case shape.Align == End:
 		params.Align = text.End
 	}
-	l := text.Shared().Shape(params)
-	t := &TextLayout{l: l, units: make([]int, len(l.Runes)+1), spans: spans}
-	for i, r := range l.Runes {
-		t.units[i+1] = t.units[i] + utf16.RuneLen(r)
-	}
-	var boundaries text.Boundaries
-	boundaries.Reset(l.Runes)
-	// Boundary iteration is per shaped paragraph, never per document edit.
-	t.boundaries = boundaries.GraphemeOffsets()
+	t := &TextLayout{spans: spans}
+	t.shape(params)
 	return t
 }
 
@@ -190,6 +235,7 @@ type TextObject struct {
 func (t *TextLayout) Objects() []TextObject {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	t.shaped()
 	var out []TextObject
 	var spans []text.Span
 	for _, line := range t.l.Lines {
@@ -241,6 +287,7 @@ type TextLine struct {
 func (t *TextLayout) Lines() []TextLine {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	t.shaped()
 	out := make([]TextLine, len(t.l.Lines))
 	for i, line := range t.l.Lines {
 		out[i] = TextLine{
@@ -257,6 +304,9 @@ func (t *TextLayout) Lines() []TextLine {
 func (t *TextLayout) Size() (float32, float32) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	if t.l == nil {
+		return t.w, t.h
+	}
 	return t.l.Width, t.l.Height
 }
 
@@ -280,6 +330,7 @@ func (t *TextLayout) runeAt(index int, forward bool) int {
 func (t *TextLayout) Caret(index int) Rect {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	t.shaped()
 	x, y, h := t.l.Caret(t.runeAt(index, false))
 	return Rect{x, y, 1, h}
 }
@@ -290,6 +341,7 @@ func (t *TextLayout) Caret(index int) Rect {
 func (t *TextLayout) PreviousBoundary(index int) int {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	t.shaped()
 	i := t.runeAt(index, false)
 	b, _ := slices.BinarySearch(t.boundaries, i)
 	return t.units[t.boundaries[max(0, b-1)]]
@@ -297,6 +349,7 @@ func (t *TextLayout) PreviousBoundary(index int) int {
 func (t *TextLayout) NextBoundary(index int) int {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	t.shaped()
 	i := t.runeAt(index, false)
 	b, _ := slices.BinarySearch(t.boundaries, i)
 	return t.units[t.boundaries[min(len(t.boundaries)-1, b+1)]]
@@ -311,6 +364,7 @@ func (t *TextLayout) IndexAt(point Point) int { return t.PositionAt(point).Index
 func (t *TextLayout) SelectionRects(ranges ...TextInputRange) []Rect {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	t.shaped()
 	var out []Rect
 	for _, r := range ranges {
 		r = platformTextRange(r)
@@ -336,5 +390,6 @@ func (p *Painter) TextLayout(layout *TextLayout, x, y float32, color Color) {
 	}
 	layout.mu.Lock()
 	defer layout.mu.Unlock()
+	layout.shaped()
 	p.textLayout(layout.l, x, y, color, textStyle{size: layout.l.Params.Style.FontSize()}, newSpanPaint(layout.spans))
 }

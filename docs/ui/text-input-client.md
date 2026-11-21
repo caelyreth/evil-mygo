@@ -205,6 +205,13 @@ for _, line := range layout.Lines() {
 }
 ```
 
+An application holding many layouts, as the paragraphs of a long
+document, lets those far out of view go with `Release`: the layout keeps
+its size and what it was shaped from, and the next read of its lines,
+carets, objects or selection, or a paint, shapes it again, the same.
+`Shaped` says whether it holds its shaping now, so an application finds
+the ones read while out of view and keeps them.
+
 A span with an `ObjectWidth` makes its object replacement characters
 (U+FFFC) inline objects: boxes of `ObjectWidth`×`ObjectHeight` standing on
 the baseline, `ObjectDescent` more below it, which lines break around and
