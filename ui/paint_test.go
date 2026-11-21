@@ -89,6 +89,8 @@ func TestFramesRedrawOnlyWhatChanged(t *testing.T) {
 	full := raster.NewImage(1, 1)
 	check := func(what string) {
 		t.Helper()
+		// The Tester draws its frame as it is read (Image).
+		tt.Image()
 		s := &tt.rt.scene
 		full.Resize(s.Width, s.Height)
 		raster.Render(full, s)

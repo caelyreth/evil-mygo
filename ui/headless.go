@@ -23,6 +23,8 @@ type headless struct {
 	// maxButton is where the view shows the maximize button.
 	maxButton Rect
 	img       raster.Renderer
+	// drawn is whether img holds the last frame (present, image).
+	drawn bool
 	// text is the window's text system, its own so that the Tester's
 	// frames shape and paint apart from the other windows' (textSystem).
 	text *text.System
@@ -122,9 +124,13 @@ func (h *headless) textSystem() *text.System {
 	}
 	return h.text
 }
+
+// present keeps the frame's scene; its pixels are drawn only when the
+// image is read (image), as most tests read what was built, not pixels:
+// the scene stands until the next frame, and the renderer redraws what
+// changed since the scene it drew last, however many frames ago.
 func (h *headless) present(s *scene.Scene) {
-	h.last = s
-	h.img.Render(s)
+	h.last, h.drawn = s, false
 }
 func (h *headless) afterTimer(at time.Time) {
 	h.afterAt = at
@@ -254,6 +260,10 @@ func (h *headless) placeGlass([]platform.GlassPlacement)           {}
 func (h *headless) tabIntoWebView(v NativeWebView, back bool)      { h.tabbedInto, h.tabbedBack = v, back }
 func (h *headless) platformWebView(NativeWebView) platform.WebView { return nil }
 func (h *headless) image() *image.RGBA {
+	if !h.drawn && h.last != nil {
+		h.img.Render(h.last)
+		h.drawn = true
+	}
 	m := &h.img.Image
 	return &image.RGBA{Pix: m.RGBA(), Stride: 4 * m.W, Rect: image.Rect(0, 0, m.W, m.H)}
 }
