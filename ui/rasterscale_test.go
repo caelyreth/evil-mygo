@@ -556,3 +556,50 @@ func TestGhostOfClonesScaleWatches(t *testing.T) {
 			ghost.st.scales.layer.k, liveScales.layer.k)
 	}
 }
+
+// TestCacheScaledHoldsItsRaster verifies that a CacheScaled layer, shrunk
+// from 1 to under half and grown back, renders at a scale never under the
+// one it shows at nor over twice it, again only as it passes half of the
+// one it holds or grows past it, and asks for no frame to render at the
+// scale it rests at.
+func TestCacheScaledHoldsItsRaster(t *testing.T) {
+	k := float32(1)
+	var card *node
+	st := newScaleTester(func(c *context) {
+		card = coreBox(c).Absolute().Left(20).Top(20).Size(120, 48).
+			TransformOrigin(0, 0).Scale(k, k).CacheScaled().Children(func() {
+			coreBox(c).Size(10, 10).Background(RGB(0, 0, 0))
+		})
+	}, 360, 160, 1)
+	var seen []float32
+	at := func(to float32) {
+		t.Helper()
+		k = to
+		st.rt.requestFrame()
+		st.frame(0)
+		h := card.st.scales.held
+		if h < k*0.99 || h > 2*k*1.01 {
+			t.Fatalf("shown at %v, the layer rendered at %v, want from it up to twice it", k, h)
+		}
+		if len(seen) == 0 || seen[len(seen)-1] != h {
+			seen = append(seen, h)
+		}
+	}
+	for to := float32(0.98); to >= 0.38; to -= 0.02 {
+		at(to)
+	}
+	at(0.38)
+	if st.frame(0) {
+		t.Error("at rest the layer asked for a frame to render at its own scale")
+	}
+	if len(seen) != 2 || seen[0] != 1 || seen[1] != 0.5 {
+		t.Fatalf("shrinking from 1 to 0.38 rendered at %v, want 1, then 0.5 once under half", seen)
+	}
+	seen = seen[:0]
+	for to := float32(0.4); to <= 1; to += 0.02 {
+		at(to)
+	}
+	if len(seen) > 3 {
+		t.Errorf("growing back to 1 rendered at %v, want a few scales ahead, not each step", seen)
+	}
+}

@@ -37,7 +37,22 @@ import "github.com/egoist/mygo/internal/scene"
 // most 4096 pixels across, and 8 times the window's scale: beyond, it is
 // stretched as before. Turned, skewed or in perspective, the bitmap is
 // resampled, and shows a little softer than the shapes it holds would.
+// A subtree that only moves and scales as one picture is better kept by
+// CacheScaled, which draws it again far less on the way.
 func (e *node) Cache() *node { e.cache = keptLayer{}; return e }
+
+// CacheScaled is Cache for a subtree that only moves and scales as one
+// picture, as a page shrinking into a thumbnail and back: it is drawn on
+// the way as few times as its sharpness allows. Its bitmap keeps the scale
+// it was drawn at while the picture shows at from half of it up to it,
+// scaled down, and is drawn again only as the picture shrinks under half
+// of it, at the picture's step of about 9% at or above it, or grows past
+// it, ahead toward the window's scale, at most twice the picture's. It is
+// never drawn again for the scale the picture comes to rest at, nor put
+// on whole pixels as it stops, as Cache's is: the picture stops as it
+// moved, a little softer than one drawn at its size. What changes inside
+// it draws it again, as in Cache.
+func (e *node) CacheScaled() *node { e.cache = keptLayer{held: true}; return e }
 
 // layerKeeper renders an element's layer only when what it paints
 // changed (Cache): the methods are linked into apps that use it alone.
@@ -50,7 +65,9 @@ type layerKeeper interface {
 	draw(cv *Canvas, p *Painter, scale float32, w, h int, fn func(cp *Painter))
 }
 
-type keptLayer struct{}
+// keptLayer keeps an element's layer (Cache); held, its raster scale too
+// as it scales (CacheScaled).
+type keptLayer struct{ held bool }
 
 func (keptLayer) area(e *node) Rect {
 	box := Rect{e.x, e.y, e.w, e.h}

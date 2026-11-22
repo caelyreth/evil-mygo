@@ -81,6 +81,12 @@ func scaleBucket(k float32) float32 {
 	return float32(math.Exp2(n / scaleSteps))
 }
 
+// bucketUnder returns the step of scaleSteps an octave at or just under k.
+func bucketUnder(k float32) float32 {
+	n := math.Floor(math.Log2(float64(k))*scaleSteps + scaleSlack)
+	return float32(math.Exp2(n / scaleSteps))
+}
+
 // unscaled reports whether k is 1 within the slack of a bucket, at which
 // what a transform draws rasterizes as without it.
 func unscaled(k float32) bool {
@@ -91,6 +97,8 @@ func unscaled(k float32) bool {
 // and its layer rasterized at, once a transform scaled either.
 type scaleWatches struct {
 	text, layer scaleWatch
+	// held is the scale a CacheScaled layer last rendered at (heldScale).
+	held float32
 }
 
 // scaleWatch tells whether the scale of what an element draws changed
@@ -256,17 +264,28 @@ const maxLayerScaled = 4096
 // or its opacity's group), from, an area of its own space, renders: the
 // scale e's transform draws it at, as its text (glyphSpace), and whether
 // that is the scale itself and e, as in the frame before, stays where it
-// was, its bitmap then drawn on whole pixels (layerOp). It is 1 for an
-// effect's layer or a blur's, which render in the window's pixels.
+// was, its bitmap then drawn on whole pixels (layerOp); for a CacheScaled
+// one, the scale it holds (heldScale), never on whole pixels. It is 1 for
+// an effect's layer or a blur's, which render in the window's pixels.
 func (p *Painter) layerScale(e *node, from Rect) (q float32, still bool) {
 	m := e.world
+	kl, _ := e.cache.(keptLayer)
 	if !m.Set || e.effect != nil || e.blur > 0 {
-		if !m.Set && e.st.scales != nil && e.st.scales.layer.frame != 0 {
-			e.st.scales.layer.note(p.rt.paintFrames, 1, [2]float32{})
+		if !m.Set && e.st.scales != nil {
+			if e.st.scales.layer.frame != 0 {
+				e.st.scales.layer.note(p.rt.paintFrames, 1, [2]float32{})
+			}
+			if kl.held {
+				e.st.scales.held = 1
+			}
 		}
 		return 1, false
 	}
 	k := transformScale(m, e.x+e.w/2, e.y+e.h/2)
+	most := layerMost(from, p.scale)
+	if kl.held {
+		return heldScale(e, k, most), false
+	}
 	if unscaled(k) && (e.st.scales == nil || e.st.scales.layer.frame == 0) {
 		return 1, false
 	}
@@ -276,11 +295,6 @@ func (p *Painter) layerScale(e *node, from Rect) (q float32, still bool) {
 	w := &e.st.scales.layer
 	saved := p.owner
 	p.owner = e.st
-	side := max(from.W, from.H) * p.scale
-	most := float32(maxRasterScale)
-	if side > 0 {
-		most = maxLayerScaled / side
-	}
 	at := [2]float32{m.X, m.Y}
 	first := w.frame != p.rt.paintFrames
 	q, exact := p.rasterScale(w, k, most, at)
@@ -297,6 +311,42 @@ func (p *Painter) layerScale(e *node, from Rect) (q float32, still bool) {
 	}
 	p.owner = saved
 	return q, still
+}
+
+// layerMost is the most a layer of from, an area of its own space,
+// renders at over the window's scale, scale pixels a DIP: as large as
+// maxLayerScaled, or the window's scale itself where it is larger, and
+// within maxRasterScale.
+func layerMost(from Rect, scale float32) float32 {
+	most := float32(maxRasterScale)
+	if side := max(from.W, from.H) * scale; side > 0 {
+		most = min(max(maxLayerScaled/side, 1), maxRasterScale)
+	}
+	return most
+}
+
+// heldScale is the scale a CacheScaled layer e, shown k times larger,
+// renders at, within most: the one it last rendered at while k is from
+// half of it up to it; shrunk under half, k's step at or above it; grown
+// past it, ahead toward the window's scale, at most twice k, so that it
+// holds the scale shrinking back. It is never k for k's own sake, so the
+// layer rests as it moved.
+func heldScale(e *node, k, most float32) float32 {
+	if e.st.scales == nil {
+		e.st.scales = &scaleWatches{}
+	}
+	k = max(k, minRasterScale)
+	h := &e.st.scales.held
+	switch {
+	case *h == 0 || k < *h/2:
+		*h = scaleBucket(k)
+	case k > *h && !unscaled(k / *h):
+		*h = max(scaleBucket(k), min(1, bucketUnder(2*k)))
+	}
+	if q := min(*h, most); !unscaled(q) {
+		return q
+	}
+	return 1
 }
 
 // scaledLayerOp adds op, an image of a layer rendered q times the
