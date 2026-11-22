@@ -218,7 +218,11 @@ func (p *Painter) layerOp(cv *Canvas, x0, y0 float32, w, h int, opacity, blur, q
 // unworld takes off the transform w of e's subtree, laid out as it moved
 // by (dx, dy): each one's maps its layout, moved, as w's inverse does
 // what it mapped before, so that e itself draws untransformed. An unset w
-// is the identity: the transforms are only conjugated by the shift.
+// is the identity: the transforms are only conjugated by the shift. Those
+// that w alone transforms, e and what inside it has no transform of its
+// own, draw untransformed exactly: undone by w's inverse, w would leave
+// what rounding does, far out from the origin more than nearIdentity
+// takes, and a clip under it a mask rasterized on the CPU.
 func unworld(e *node, w scene.Affine, dx, dy float32) {
 	inv, ok := w.Inverse()
 	if !ok {
@@ -228,9 +232,11 @@ func unworld(e *node, w scene.Affine, dx, dy float32) {
 	var walk func(n *node)
 	walk = func(n *node) {
 		if n.world.Set {
-			m := pre.Mul(n.world).Mul(post)
-			if nearIdentity(m) {
-				m = scene.Affine{}
+			m := scene.Affine{}
+			if n.world != w {
+				if m = pre.Mul(n.world).Mul(post); nearIdentity(m) {
+					m = scene.Affine{}
+				}
 			}
 			n.world = m
 		}

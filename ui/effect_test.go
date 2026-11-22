@@ -3,6 +3,8 @@ package ui
 import (
 	"testing"
 	"time"
+
+	"github.com/egoist/mygo/internal/scene"
 )
 
 // layerSpy is an effect that draws nothing, and notes the bitmaps it
@@ -172,5 +174,31 @@ func TestEffectLayerClipsOverflow(t *testing.T) {
 	}
 	if p := img.RGBAAt(100, 20); p.G < 245 { // the layer's padding
 		t.Errorf("beyond the margin %v, want white", p)
+	}
+}
+
+// A layer of an element its transform scales and moves far out from the
+// origin, as a desk resting at a window's right edge, draws e and what
+// only e's transform moves untransformed: undoing it by its inverse left
+// a translation of a little more than nearIdentity takes, which made the
+// clips inside masks rasterized on the CPU.
+func TestUnworldUndoesTheLayersOwnTransformExactly(t *testing.T) {
+	for _, c := range []struct{ k, x, y, d float32 }{
+		{0.38, 1222, 263.5, 5.1873584},
+		{0.40006775, 1182.447, 254.9712, 4.5389385},
+		{0.41138294, 1160.1453, 250.16225, 4.5389385},
+	} {
+		w := scene.Matrix(c.k, 0, 0, c.k, c.x, c.y)
+		own := scene.Translation(3, 0).Mul(w)
+		inside, moved := &node{world: w}, &node{world: own}
+		inside.next = moved
+		e := &node{world: w, first: inside}
+		unworld(e, w, c.d, c.d)
+		if e.world.Set || inside.world.Set {
+			t.Errorf("at %v: the layer's own transform left %+v, %+v", c, e.world, inside.world)
+		}
+		if !moved.world.Set {
+			t.Errorf("at %v: a transform of its own was taken off", c)
+		}
 	}
 }
