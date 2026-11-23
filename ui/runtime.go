@@ -991,7 +991,14 @@ func (rt *engine) runFrame() {
 	rt.insp.lap(2)
 	rt.syncStack()
 	rt.frameAhead() // what moved in the layout, as a drop target under a scroll
-	rt.host.present(&rt.scene)
+	if f := rt.fit; f != nil && f.resizing {
+		// The window takes the size the frame told: the frame laid out at
+		// that size shows instead.
+		f.resizing = false
+		rt.host.post(rt.changed)
+	} else {
+		rt.host.present(&rt.scene)
+	}
 	rt.stackShown()
 	rt.placeWebViews()
 	rt.placeNativeGlass()

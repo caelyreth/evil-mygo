@@ -149,11 +149,6 @@ func (w *Window) fitBeforeShow() {
 	}
 	if c.Fit() {
 		w.resizeFitNative()
-		// That frame was laid out at the size the flyout had, which it
-		// would show stretched to its new size until the next: it lays
-		// out, and draws, at the size it took before it shows.
-		w.contentChanged()
-		c.Fit()
 	}
 }
 

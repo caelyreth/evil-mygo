@@ -13,6 +13,10 @@ type fitter struct {
 	// told is the size last told, and before the one told before it;
 	// laid is the window's size the last frame was laid out at.
 	told, before, laid [2]float32
+	// resizing is set by a frame that told a size: laid out at the size
+	// the window had, it is not shown, which the window would stretch to
+	// its new size until the next.
+	resizing bool
 }
 
 func newFitter(widths func() (min, max float64), tell func(width, height float64)) *fitter {
@@ -54,4 +58,5 @@ func (rt *engine) measureFit(root *node) {
 	}
 	f.before, f.told = f.told, m
 	f.tell(float64(w), float64(h))
+	f.resizing = true
 }
