@@ -142,12 +142,16 @@ type Content interface {
 // returned, or of the window when Parent is nil, on the side and along
 // it as Placement names (mygo.Placement), Gap DIPs from it. It sizes to
 // its content, takes the keyboard as a menu does when shown so, and
-// casts the system's shadow.
+// casts the system's shadow; with Material, the system's material of
+// menus shows behind its content where the platform has one, its corners
+// cut to Radius DIPs.
 type FlyoutSpec struct {
 	Parent    Flyout
 	Anchor    [4]float64 // x, y, width, height
 	Placement string
 	Gap       int
+	Material  bool
+	Radius    float64
 }
 
 // Flyout is a flyout Conn.Flyout opened. Main thread only.

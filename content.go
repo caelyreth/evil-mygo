@@ -162,19 +162,25 @@ func (w *Window) contentFlyout(spec surface.FlyoutSpec, content surface.Content)
 		parent = p.w
 	}
 	a := spec.Anchor
+	var material Vibrancy
+	if spec.Material {
+		material = VibrancyMenu
+	}
 	f := NewFlyout(FlyoutOptions{
 		Parent: parent,
 		Anchor: Rectangle{
 			X: int(math.Round(a[0])), Y: int(math.Round(a[1])),
 			Width: int(math.Round(a[2])), Height: int(math.Round(a[3])),
 		},
-		Placement:  Placement(spec.Placement),
-		Gap:        spec.Gap,
-		FitContent: true,
-		Focusable:  true,
-		Shadow:     true,
-		Hidden:     true,
-		Content:    content,
+		Placement:    Placement(spec.Placement),
+		Gap:          spec.Gap,
+		FitContent:   true,
+		Focusable:    true,
+		Shadow:       true,
+		Hidden:       true,
+		Vibrancy:     material,
+		CornerRadius: int(math.Round(spec.Radius)),
+		Content:      content,
 	})
 	return &flyoutOfContent{f}
 }

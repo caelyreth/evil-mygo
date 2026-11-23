@@ -126,6 +126,12 @@ func (f *menuFlyouts) openMenu(e *node) bool {
 	return f.open(&flyoutLevel{}, spec, true)
 }
 
+// material has spec show the system's material of menus behind the
+// flyout, cut to the panel's corners.
+func (f *menuFlyouts) material(spec *surface.FlyoutSpec) {
+	spec.Material, spec.Radius = true, float64(f.d.radius(f.theme)*f.zoom)
+}
+
 // flyoutPlacement returns the flyout placement (mygo.Placement) of a
 // menu attached to its button by the points at of the button's box and
 // self of the menu's (PopoverMenuButtonOptions).
@@ -155,6 +161,7 @@ func flyoutPlacement(at, self Anchor, rtl bool) string {
 // open opens the flyout of lv, placed by spec, taking the keyboard as it
 // shows when focus is set, and reports whether the window opened it.
 func (f *menuFlyouts) open(lv *flyoutLevel, spec surface.FlyoutSpec, focus bool) bool {
+	f.material(&spec)
 	fl := f.rt.host.flyout(spec, coreView(func(c *context) { f.build(c, lv) }))
 	if fl == nil {
 		return false
@@ -274,7 +281,7 @@ func (f *menuFlyouts) build(c *context, lv *flyoutLevel) {
 	open := true
 	parts := &menuParts{Trigger: c.root, c: c, open: &open, s: s, level: -1, built: make([]menuBuilt, k, k+1)}
 	parts.moved = [2]float32{rt.pointerX, rt.pointerY} != s.pointer
-	b := &drawnRows{d: f.d, run: f.run, parts: parts, t: c.theme, flyout: true, refs: map[uint64]menuRef{}, rows: map[uint64]Rect{}}
+	b := &drawnRows{d: f.d, run: f.run, parts: parts, t: c.theme, flyout: true, material: rt.host.vibrancy(), refs: map[uint64]menuRef{}, rows: map[uint64]Rect{}}
 	panel := parts.panel(k, nil, func(panel *node) {
 		b.style(panel, width, false)
 		if lv.label != "" {

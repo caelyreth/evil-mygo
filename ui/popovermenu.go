@@ -84,6 +84,9 @@ type PopoverMenuOptions struct {
 	// Highlight is how the row the pointer or the keys are on stands out,
 	// as PopoverMenuButtonOptions.Highlight.
 	Highlight MenuHighlight
+	// Radius rounds the corners of the panels, as
+	// PopoverMenuButtonOptions.Radius.
+	Radius float32
 }
 
 // MenuHighlight is how a drawn menu shows the row the pointer or the keys
@@ -171,7 +174,7 @@ func (e *node) PopoverMenuButton(build func(m *Menu), options ...PopoverMenuButt
 		if o.At != 0 || o.Self != 0 {
 			d.menu.attach = attachment(1 + min(o.At, AnchorBottomEnd)*15 + min(o.Self, AnchorBottomEnd))
 		}
-		d.style = PopoverMenuOptions{Panel: o.Panel, Item: o.Item, Highlight: o.Highlight}
+		d.style = PopoverMenuOptions{Panel: o.Panel, Item: o.Item, Highlight: o.Highlight, Radius: o.Radius}
 	}
 	rt.drawMenu(e, build)
 	if synced != nil {
@@ -235,6 +238,10 @@ type PopoverMenuButtonOptions struct {
 	// Highlight is how the row the pointer or the keys are on stands out:
 	// in the accent, as the default, or in the surface's hover color.
 	Highlight MenuHighlight
+	// Radius rounds the corners of the panels, 0 for the theme's: those
+	// of a menu in a flyout (FlyoutMenus) cut the material behind it to
+	// them.
+	Radius float32
 }
 
 type menuOpenKey struct{}
@@ -1229,18 +1236,22 @@ type drawnRows struct {
 	parts  *menuParts
 	t      *Theme
 	flyout bool
-	chosen *platform.MenuItem
-	refs   map[uint64]menuRef
-	rows   map[uint64]Rect
+	// material is set where the panel's flyout shows the system's
+	// material, which its background lets through.
+	material bool
+	chosen   *platform.MenuItem
+	refs     map[uint64]menuRef
+	rows     map[uint64]Rect
 }
 
 // style gives a panel of the menu the theme's look, at most width wide
 // when it is not 0, with a shadow of its own when shadow is set, then the
-// look the menu was given (PopoverMenuOptions.Panel).
+// look the menu was given (PopoverMenuOptions.Panel). Over the system's
+// material, its background lets some of it through.
 func (b *drawnRows) style(panel *node, width float32, shadow bool) {
 	t := b.t
 	panel.widget = "PopoverMenu"
-	panel.MinWidth(t.Space(45)).Padding(t.Space(1)).Radius(t.Radius+2).Background(t.Background).Border(1, t.Border)
+	panel.MinWidth(t.Space(45)).Padding(t.Space(1)).Radius(b.d.radius(t)).Background(t.Background).Border(1, t.Border)
 	if shadow {
 		panel.Shadow(0, 6, 20, 0, RGBA(0, 0, 0, 0.18))
 	}
@@ -1250,6 +1261,24 @@ func (b *drawnRows) style(panel *node, width float32, shadow bool) {
 	if f := b.d.style.Panel; f != nil {
 		f(wrapElement(panel))
 	}
+	if b.material {
+		bg := panel.bg
+		panel.Background(bg.Alpha(menuMaterialShows * float32(bg.A) / 255))
+	}
+}
+
+// menuMaterialShows is how much of a drawn menu's background stands over
+// the system's material: enough to keep its look and its text legible,
+// letting what is behind show blurred, as a hint.
+const menuMaterialShows = 0.86
+
+// radius returns the corner radius of the menu's panels: its own, else
+// the theme's.
+func (d *drawnMenu) radius(t *Theme) float32 {
+	if d.style.Radius > 0 {
+		return d.style.Radius
+	}
+	return t.Radius + 2
 }
 
 // items builds the rows of menu, at most width wide, and of its submenus
