@@ -1269,8 +1269,8 @@ func (b *drawnRows) style(panel *node, width float32, shadow bool) {
 
 // menuMaterialShows is how much of a drawn menu's background stands over
 // the system's material: enough to keep its look and its text legible,
-// letting what is behind show blurred, as a hint.
-const menuMaterialShows = 0.86
+// letting what is behind show through, blurred.
+const menuMaterialShows = 0.7
 
 // radius returns the corner radius of the menu's panels: its own, else
 // the theme's.

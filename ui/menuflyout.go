@@ -3,6 +3,7 @@ package ui
 import (
 	"math"
 	"slices"
+	"time"
 
 	"github.com/egoist/mygo/internal/platform"
 	"github.com/egoist/mygo/internal/surface"
@@ -251,6 +252,35 @@ func (f *menuFlyouts) dismissed(lv *flyoutLevel) {
 	f.rt.requestFrame()
 }
 
+// The way a level's panel comes in as its flyout shows: from menuRise
+// DIPs away, down from where the menu opened or in from the row opening a
+// submenu, fading in, as Windows' and GNOME's menus come in. While the
+// desktop asks for less motion, it only fades.
+const menuRise = 6
+
+var menuEntrance = Animation{Duration: 160 * time.Millisecond, Ease: EaseOut}
+
+type menuEnteredKey struct{}
+
+// enter poses the panel of level k away from its place in its first
+// frame, and at its place from the next, which moves it there.
+func (f *menuFlyouts) enter(c *context, panel *node, k int) {
+	entered := coreLocal(panel, menuEnteredKey{}, func() bool { return false })
+	p := Pose{}
+	if !*entered {
+		*entered = true
+		p = Pose{Y: -menuRise, Fade: 1}
+		if k > 0 {
+			p = Pose{X: -menuRise, Fade: 1}
+			if f.rtl {
+				p.X = menuRise
+			}
+		}
+		c.Invalidate()
+	}
+	panel.AnimatePose(p, menuEntrance)
+}
+
 // build builds the panel of the level lv in its flyout's view, from what
 // the window's build of the menu last collected, in its theme: the menu's
 // items, or those of the submenu the row lv.sub opens. It asks the window
@@ -289,6 +319,7 @@ func (f *menuFlyouts) build(c *context, lv *flyoutLevel) {
 		}
 		b.items(menu, width)
 	})
+	f.enter(c, panel, k)
 	if s.focus == k {
 		panel.Focus()
 		s.focus = -1
