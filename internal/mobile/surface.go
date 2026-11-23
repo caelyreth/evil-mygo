@@ -111,7 +111,7 @@ func (s *surface) back() bool {
 
 // Native is the CAMetalLayer of iOS, the ANativeWindow of Android.
 func (s *surface) Native() platform.SurfaceNative {
-	if mapsSchemes { // Android
+	if runtime.GOOS == "android" {
 		return platform.SurfaceNative{Window: s.handle}
 	}
 	return platform.SurfaceNative{Layer: s.handle}
@@ -314,37 +314,31 @@ func (s *surface) StartDataDrag(platform.DragRequest) {}
 func (s *surface) CancelDataDrag()                    {}
 func (s *surface) SetDropFormats([]transfer.Format)   {}
 
-// NewWebView makes a web view the host holds under the surface, hidden until
-// PlaceWebViews shows it.
-func (s *surface) NewWebView(o *platform.WindowOptions, h platform.WindowHandler) (platform.WebView, error) {
-	return s.w.b.makeWindow(o, h, s.w, "", "")
-}
-
-// NewPluginView makes a view of a plugin's native code, under the surface as a
-// web view is (platform.PluginViewSurface).
-func (s *surface) NewPluginView(viewType string, args []byte, h platform.WindowHandler) (platform.WebView, error) {
+// NewPluginView makes a view of a plugin's native code, under the surface
+// (platform.PluginViewSurface).
+func (s *surface) NewPluginView(viewType string, args []byte, h platform.WindowHandler) (platform.EmbeddedView, error) {
 	o := &platform.WindowOptions{}
 	return s.w.b.makeWindow(o, h, s.w, viewType, string(args))
 }
 
-// EmbedView shows a view of a native module's under the surface, as a
-// plugin's view is (platform.ViewSurface): the host finds it by its
-// handle, among the objects of the modules' Swift or Kotlin. It has no
-// page to tell of: its handler is its host's, which hears nothing from it.
-func (s *surface) EmbedView(view uintptr) (platform.WebView, error) {
+// EmbedView shows a view of a native module's under the surface
+// (platform.ViewSurface): the host finds it by its handle, among the objects
+// of the modules' Swift or Kotlin. It has no page to tell of: its handler
+// is its host's, which hears nothing from it.
+func (s *surface) EmbedView(view uintptr) (platform.EmbeddedView, error) {
 	return s.w.b.makeWindow(&platform.WindowOptions{}, s.w.h, s.w, nativeViewType, strconv.FormatUint(uint64(view), 10))
 }
 
 // nativeViewType is the type of plugin view of a native module's view.
 const nativeViewType = "mygo.native"
 
-// PlaceWebViews shows the views the surface holds where the content shows
+// PlaceViews shows the views the surface holds where the content shows
 // them; the frames are transparent there, and the host routes fingers to them
 // but where the content painted over them.
-func (s *surface) PlaceWebViews(views []platform.WebViewPlacement) {
+func (s *surface) PlaceViews(views []platform.ViewPlacement) {
 	var w wire.Writer
 	for _, p := range views {
-		v, ok := p.WebView.(*window)
+		v, ok := p.View.(*window)
 		if !ok || v.closed {
 			continue
 		}
@@ -697,12 +691,6 @@ func (b *Backend) handleSurface(op uint64, r *wire.Reader, w *wire.Writer) bool 
 	case wire.EventStatusBarTapped:
 		if w := b.front(); w != nil && w.s != nil {
 			w.s.send(platform.SurfaceEvent{Kind: platform.SurfaceScrollToTop})
-		}
-	case wire.EventViewPressed:
-		var e wire.ViewPressedEvent
-		e.Decode(r)
-		if s := sf(e.ID); s != nil {
-			s.send(platform.SurfaceEvent{Kind: platform.WebViewPress, X: e.X, Y: e.Y})
 		}
 	case wire.EventTextReplace, wire.EventTextMark, wire.EventTextUnmark, wire.EventTextDelete, wire.EventTextSelect,
 		wire.EventTextCommand, wire.EventTextState, wire.EventTextRange, wire.EventTextBounds, wire.EventTextIndexAt, wire.EventTextInputEnded:

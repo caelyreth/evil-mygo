@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -184,93 +183,6 @@ func isImportPath(s string) bool {
 		}
 	}
 	return true
-}
-
-// generateBindings runs a compiled app in generate mode, which writes the
-// TypeScript client when it changed, and reports whether it did.
-func generateBindings(c *Config, binary string) (bool, error) {
-	if c.Bindings == "" {
-		return false, nil // no frontend
-	}
-	out := c.path(c.Bindings)
-	before, _ := os.ReadFile(out)
-	cmd := exec.Command(binary)
-	cmd.Dir = c.root
-	o, e := con.output("app", os.Stdout), con.output("app", os.Stderr)
-	cmd.Stdout, cmd.Stderr = o, e
-	cmd.Env = append(os.Environ(), "MYGO_GENERATE="+out)
-	cmd.WaitDelay = waitDelay
-	err := waited(cmd.Run())
-	o.flush()
-	e.flush()
-	if err != nil {
-		return false, fmt.Errorf("generating the TypeScript client: %w", err)
-	}
-	after, _ := os.ReadFile(out)
-	return !bytes.Equal(before, after), nil
-}
-
-// writeClient builds the app for this computer and writes its TypeScript
-// client, when it has a frontend and binds anything for it to call. asked
-// is set where the user asked for the client, as mygo generate does, which
-// then tells when there is none; mygo dev and mygo build pass over it.
-func writeClient(ctx context.Context, c *Config, asked bool) error {
-	if c.Bindings == "" {
-		return nil
-	}
-	t := con.start("Generating the TypeScript client")
-	bin := tempBinary(c.executableName())
-	defer os.Remove(bin)
-	changed := false
-	err := goBuild(ctx, c, t, bin, nil)
-	if err == nil {
-		t.set("running the app in generate mode")
-		changed, err = generateBindings(c, bin)
-	}
-	if err != nil {
-		if ctx.Err() != nil {
-			t.stop()
-		} else {
-			t.fail()
-		}
-		return err
-	}
-	switch {
-	case !fileExists(c.path(c.Bindings)):
-		// The app binds nothing: there is no client.
-		if asked {
-			t.done("No TypeScript client to write: the app binds no services or events")
-		} else {
-			t.stop()
-		}
-	case changed:
-		t.done("Wrote " + cyan(relPathTo(c.root, c.path(c.Bindings))))
-	default:
-		t.done(relPathTo(c.root, c.path(c.Bindings)) + " is up to date")
-	}
-	return nil
-}
-
-// waitForURL polls url until it answers. It fails when ctx is done or the
-// server exits first.
-func waitForURL(ctx context.Context, url string, exited <-chan error) error {
-	client := &http.Client{Timeout: time.Second}
-	for {
-		if resp, err := client.Get(url); err == nil {
-			resp.Body.Close()
-			return nil
-		}
-		select {
-		case <-ctx.Done():
-			if errors.Is(ctx.Err(), context.Canceled) {
-				return ctx.Err()
-			}
-			return fmt.Errorf("the dev server did not start at %s", url)
-		case err := <-exited:
-			return fmt.Errorf("the dev server exited: %v", err)
-		case <-time.After(150 * time.Millisecond):
-		}
-	}
 }
 
 func tempBinary(name string) string {

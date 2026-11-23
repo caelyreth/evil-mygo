@@ -9,14 +9,8 @@ import (
 
 func newBackend() platform.Backend { return win.New() }
 
-func linkContentRules() { win.LinkContentRules() }
-
-func linkNowPlaying() { win.LinkNowPlaying() }
-
 func linkNotificationImages() { win.LinkNotificationImages() }
 
 func linkMenuIcons() { win.LinkMenuIcons() }
-
-func linkContextMenus() { win.LinkContextMenus() }
 
 func linkThumbBars() { win.LinkThumbBars() }

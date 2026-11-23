@@ -274,11 +274,22 @@ func TestUploadNatives(t *testing.T) {
 func TestNativeBuildSwiftUpToDate(t *testing.T) {
 	log := fakeGH(t)
 	dir := t.TempDir()
-	src := filepath.Join("..", "..", "examples", "native-module", "modules", "motion")
-	if err := os.CopyFS(dir, os.DirFS(src)); err != nil {
+	src := filepath.Join(dir, "swift", "Sources", "Motion")
+	if err := os.MkdirAll(src, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	os.RemoveAll(filepath.Join(dir, "swift", ".build"))
+	write := func(path, s string) {
+		t.Helper()
+		if err := os.WriteFile(path, []byte(s), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(filepath.Join(dir, "motion.go"), "package motion\n\n//mygo:native\ntype Motion interface {\n\tPing() string\n}\n")
+	write(filepath.Join(dir, "swift", "Package.swift"), "// swift-tools-version: 6.0\nimport PackageDescription\nlet package = Package(name: \"Motion\", platforms: [.macOS(.v13)], products: [.library(name: \"Motion\", type: .dynamic, targets: [\"Motion\"])], targets: [.target(name: \"Motion\")])\n")
+	write(filepath.Join(src, "Motion.swift"), "func makeMotion() -> String { \"ok\" }\n")
+	if _, err := nativegen.Generate(dir); err != nil {
+		t.Fatal(err)
+	}
 	m, err := nativegen.Load(dir)
 	if err != nil {
 		t.Fatal(err)

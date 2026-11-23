@@ -4,7 +4,6 @@ package mygo
 
 import (
 	"math"
-	"strings"
 	"testing"
 
 	"github.com/egoist/mygo/internal/platform"
@@ -67,87 +66,6 @@ func TestFitContentScrollbars(t *testing.T) {
 		if got, ok := f.fit(c.c, zoom, c.maxHeight); !ok || got != c.want {
 			t.Errorf("%s: fit(%+v) = %v, %v; want %v", c.what, c.c, got, ok, c.want)
 		}
-	}
-}
-
-// fitLimitsEvent matches the page event of FitContent's limits.
-func fitLimitsEvent(minW, minH, maxW, maxH float64) func(m map[string]any) bool {
-	return func(m map[string]any) bool {
-		p, _ := m["p"].(map[string]any)
-		return m["n"] == "mygo:fit-content" && p["minWidth"] == minW && p["minHeight"] == minH && p["maxWidth"] == maxW && p["maxHeight"] == maxH
-	}
-}
-
-// A flyout with FitContent takes the size its page tells, within its
-// limits, and its page hears the limits in its CSS pixels.
-func TestFlyoutFitContent(t *testing.T) {
-	parent, _ := testWindow(t, WindowOptions{X: 100, Y: 100, Width: 400, Height: 300})
-	fl, fw := testFlyout(t, FlyoutOptions{
-		Parent:     parent,
-		Anchor:     Rectangle{Y: 200},
-		Width:      150,
-		Height:     120,
-		FitContent: true,
-		MinWidth:   100,
-		MinHeight:  40,
-		MaxWidth:   300,
-		MaxHeight:  200,
-	})
-	if s := fw.Opts.UserScripts[0].Source; !strings.Contains(s, `"fit":{"minWidth":100,"minHeight":40,"maxWidth":300,"maxHeight":200}`) {
-		t.Errorf("the bridge's configuration has no limits: %s", s[strings.LastIndex(s, "})("):])
-	}
-	if o := fw.Opts; o.MinSize != (platform.Size{}) || o.MaxSize != (platform.Size{}) || o.Width != 150 || o.Height != 120 {
-		t.Errorf("flyout window options: size %dx%d, min %v, max %v", o.Width, o.Height, o.MinSize, o.MaxSize)
-	}
-	size := func(what string, w, h int) {
-		t.Helper()
-		if b := fl.Bounds(); b.Width != w || b.Height != h {
-			t.Errorf("%s: flyout %dx%d, want %dx%d", what, b.Width, b.Height, w, h)
-		}
-	}
-	size("before the page told its size", 150, 120)
-	page(fw, `{"t":"content-size","w":120.5,"h":80}`)
-	size("the content's size", 121, 80)
-	page(fw, `{"t":"content-size","w":500,"h":400}`)
-	size("too large", 300, 200)
-	page(fw, `{"t":"content-size","w":20,"h":10}`)
-	size("too small", 100, 40)
-	page(fw, `{"t":"content-size","w":-1,"h":10}`)
-	size("no size", 100, 40)
-
-	// SetSize holds until the content's size changes.
-	fl.SetSize(160, 90)
-	page(fw, `{"t":"content-size","w":20,"h":10}`)
-	size("the same content after SetSize", 160, 90)
-	page(fw, `{"t":"content-size","w":200,"h":150}`)
-	size("other content after SetSize", 200, 150)
-
-	// Zoom changes the CSS pixels of the limits and of the content.
-	page(fw, `{"t":"dom-ready"}`)
-	fl.Page().SetZoomFactor(2)
-	received(t, fw, fitLimitsEvent(50, 20, 150, 100))
-	if s := fw.Opts.UserScripts[0].Source; !strings.Contains(s, `"fit":{"minWidth":50,"minHeight":20,"maxWidth":150,"maxHeight":100}`) {
-		t.Errorf("the next pages' limits after a zoom: %s", s[strings.LastIndex(s, "})("):])
-	}
-	size("the content zoomed", 300, 200) // 200x150 CSS pixels, bounded
-	page(fw, `{"t":"content-size","w":60,"h":30}`)
-	size("zoomed content", 120, 60)
-
-	// A flyout without FitContent does not fit; native UI fits without a
-	// bridge (TestFlyoutFitNativeContent).
-	native, nfw := testFlyout(t, FlyoutOptions{Parent: parent, FitContent: true, Content: ui.View(func(c *ui.Context) {})})
-	plain, pfw := testFlyout(t, FlyoutOptions{Parent: parent})
-	onMain(func() {
-		if native.fit == nil || plain.fit != nil {
-			t.Errorf("fit of native UI %v, of a flyout without FitContent %v", native.fit, plain.fit)
-		}
-	})
-	if strings.Contains(pfw.Opts.UserScripts[0].Source, `"fit"`) || len(nfw.Opts.UserScripts) > 0 && strings.Contains(nfw.Opts.UserScripts[0].Source, `"fit"`) {
-		t.Error("limits in the bridge of a flyout that does not fit, or of native UI")
-	}
-	page(pfw, `{"t":"content-size","w":50,"h":50}`)
-	if b := plain.Bounds(); b.Width != 200 || b.Height != 200 {
-		t.Errorf("a flyout without FitContent took its content's size: %+v", b)
 	}
 }
 
@@ -365,78 +283,4 @@ func TestFlyoutFitNativeContentHidden(t *testing.T) {
 			t.Errorf("%d builds as a flyout shows again unchanged", builds-n)
 		}
 	}, 100, 90)
-}
-
-// A window with FitContent sizes its page area to its content, in the
-// dimension it changes in, within its limits and the work area.
-func TestWindowFitContent(t *testing.T) {
-	w, fw := testWindow(t, WindowOptions{X: 100, Y: 100, Width: 400, Height: 300, FitContent: true, MinHeight: 100, MaxWidth: 600})
-	if s := fw.Opts.UserScripts[0].Source; !strings.Contains(s, `"fit":{"minWidth":0,"minHeight":100,"maxWidth":600,"maxHeight":0}`) {
-		t.Errorf("the bridge's configuration has no limits: %s", s[strings.LastIndex(s, "})("):])
-	}
-	size := func(what string, width, height int) {
-		t.Helper()
-		if gw, gh := w.ContentSize(); gw != width || gh != height {
-			t.Errorf("%s: page area %dx%d, want %dx%d", what, gw, gh, width, height)
-		}
-	}
-	page(fw, `{"t":"content-size","w":250,"h":150}`)
-	size("the content's size", 250, 150)
-	if x, y := w.Position(); x != 100 || y != 100 {
-		t.Errorf("the window moved to %d,%d", x, y)
-	}
-
-	// The user resizes it: that holds until the content changes, in the
-	// dimension it changes in.
-	w.SetContentSize(320, 200)
-	page(fw, `{"t":"content-size","w":250,"h":150}`)
-	size("the same content after a resize", 320, 200)
-	page(fw, `{"t":"content-size","w":250,"h":180}`)
-	size("taller content", 320, 180)
-	page(fw, `{"t":"content-size","w":260,"h":180}`)
-	size("wider content", 260, 180)
-
-	// The user resizes it, and the content grows before the web view takes
-	// the size: the page shows a vertical scrollbar for a moment, which
-	// changes none of the content's width.
-	w.SetContentSize(400, 200)
-	page(fw, `{"t":"content-size","w":260,"h":220,"sw":17}`)
-	size("taller content right after a resize", 400, 220)
-	page(fw, `{"t":"content-size","w":260,"h":220}`)
-	size("the scrollbar gone", 400, 220)
-
-	// Its limits, and the fake display's work area (1440x875).
-	page(fw, `{"t":"content-size","w":900,"h":5000}`)
-	size("huge content", 600, 875)
-	page(fw, `{"t":"content-size","w":200,"h":10}`)
-	size("short content", 200, 100)
-
-	// Not while maximized.
-	w.Maximize()
-	page(fw, `{"t":"content-size","w":300,"h":300}`)
-	size("content of a maximized window", 200, 100)
-
-	// Without FitContent, the content's size changes nothing.
-	plain, pfw := testWindow(t, WindowOptions{Width: 400, Height: 300})
-	if strings.Contains(pfw.Opts.UserScripts[0].Source, `"fit"`) {
-		t.Error("limits in the bridge of a window that does not fit")
-	}
-	page(pfw, `{"t":"content-size","w":250,"h":150}`)
-	if gw, gh := plain.ContentSize(); gw != 400 || gh != 300 {
-		t.Errorf("a window without FitContent took its content's size: %dx%d", gw, gh)
-	}
-}
-
-// A zoom the backend reports, as the user's Ctrl+wheel on Windows
-// (ZoomControl), changes the CSS pixels of FitContent's limits as
-// SetZoomFactor's does.
-func TestUserZoomChanged(t *testing.T) {
-	w, fw := testWindow(t, WindowOptions{FitContent: true, MinWidth: 100, MinHeight: 40, MaxWidth: 300, MaxHeight: 200, Page: PageOptions{ZoomControl: true}})
-	page(fw, `{"t":"dom-ready"}`)
-	fw.SetZoom(2)
-	onMain(fw.H.ZoomChanged)
-	received(t, fw, fitLimitsEvent(50, 20, 150, 100))
-	if z := w.Page().ZoomFactor(); z != 2 {
-		t.Errorf("ZoomFactor after the user zoomed = %v", z)
-	}
 }

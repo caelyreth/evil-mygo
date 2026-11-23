@@ -63,15 +63,13 @@ func TestArchPkgname(t *testing.T) {
 func TestArchDepends(t *testing.T) {
 	t.Run("legacy", func(t *testing.T) {
 		for _, tc := range []struct {
-			webview           *bool
 			deb               []string
 			want, wantUnknown []string
 		}{
-			{nil, nil, []string{"gtk3", "webkit2gtk-4.1"}, nil},
-			{new(false), nil, []string{"gtk3"}, nil},
-			{new(false), []string{"libnotify4", "libasound2t64 (>= 1.2)", "libfoo1 | libsecret-1-0:any", "libgtk-3-0", "libfoo2"}, []string{"gtk3", "libnotify", "alsa-lib", "libsecret"}, []string{"libfoo2"}},
+			{nil, []string{"gtk3"}, nil},
+			{[]string{"libnotify4", "libasound2t64 (>= 1.2)", "libfoo1 | libsecret-1-0:any", "libgtk-3-0", "libfoo2"}, []string{"gtk3", "libnotify", "alsa-lib", "libsecret"}, []string{"libfoo2"}},
 		} {
-			l := Linux{WebView: tc.webview, Depends: linuxDepends{Deb: tc.deb, legacy: true}}
+			l := Linux{Depends: linuxDepends{Deb: tc.deb, legacy: true}}
 			got, unknown := l.archDepends()
 			if !slices.Equal(got, tc.want) || !slices.Equal(unknown, tc.wantUnknown) {
 				t.Errorf("Debian %q: got %q, %q; want %q, %q", l.debDepends(), got, unknown, tc.want, tc.wantUnknown)
@@ -81,16 +79,14 @@ func TestArchDepends(t *testing.T) {
 
 	t.Run("object", func(t *testing.T) {
 		for _, tc := range []struct {
-			webview *bool
-			arch    []string
-			want    []string
+			arch []string
+			want []string
 		}{
-			{nil, nil, []string{"gtk3", "webkit2gtk-4.1"}},
-			{new(false), nil, []string{"gtk3"}},
-			{nil, []string{"libnotify", "curl"}, []string{"gtk3", "webkit2gtk-4.1", "libnotify", "curl"}},
-			{new(false), []string{"custom-pkg"}, []string{"gtk3", "custom-pkg"}},
+			{nil, []string{"gtk3"}},
+			{[]string{"libnotify", "curl"}, []string{"gtk3", "libnotify", "curl"}},
+			{[]string{"custom-pkg"}, []string{"gtk3", "custom-pkg"}},
 		} {
-			l := Linux{WebView: tc.webview, Depends: linuxDepends{Arch: tc.arch, legacy: false}}
+			l := Linux{Depends: linuxDepends{Arch: tc.arch, legacy: false}}
 			got, unknown := l.archDepends()
 			if !slices.Equal(got, tc.want) || len(unknown) != 0 {
 				t.Errorf("arch %v: got %q, unknown %q; want %q", tc.arch, got, unknown, tc.want)
@@ -102,34 +98,23 @@ func TestArchDepends(t *testing.T) {
 func TestArchLicenseAndURL(t *testing.T) {
 	for _, tc := range []struct {
 		config       string
-		packageJSON  string
 		github       string
 		license, url string
 	}{
-		{"", "", "", "LicenseRef-custom", ""},
-		{"", `{"license": "MIT", "homepage": "https://example.com"}`, "me/app", "MIT", "https://example.com"},
-		{"", `{"license": "(MIT OR Apache-2.0)"}`, "me/app", "MIT OR Apache-2.0", "https://github.com/me/app"},
-		{"", `{"license": "UNLICENSED"}`, "", "LicenseRef-custom", ""},
-		{"", `{"license": "SEE LICENSE IN LICENSE.txt"}`, "", "LicenseRef-custom", ""},
-		{"", `{"license": {"type": "MIT"}}`, "", "LicenseRef-custom", ""},
-		// mygo.json's license wins over the one of package.json, which a
-		// frontend may declare for npm rather than for the app.
-		{"MIT", "", "", "MIT", ""},
-		{"(MPL-2.0)", `{"license": "MIT"}`, "", "MPL-2.0", ""},
-		{"UNLICENSED", "", "", "LicenseRef-custom", ""},
+		{"", "", "LicenseRef-custom", ""},
+		{"(MIT OR Apache-2.0)", "me/app", "MIT OR Apache-2.0", "https://github.com/me/app"},
+		{"UNLICENSED", "", "LicenseRef-custom", ""},
+		{"SEE LICENSE IN LICENSE.txt", "", "LicenseRef-custom", ""},
+		{"MIT", "", "MIT", ""},
+		{"(MPL-2.0)", "", "MPL-2.0", ""},
 	} {
 		c := &Config{root: t.TempDir(), License: tc.config}
-		if tc.packageJSON != "" {
-			if err := os.WriteFile(filepath.Join(c.root, "package.json"), []byte(tc.packageJSON), 0o644); err != nil {
-				t.Fatal(err)
-			}
-		}
 		if tc.github != "" {
 			c.Updates = &Updates{GitHub: tc.github}
 		}
 		if license, url := c.linuxLicense(), archURL(c); license != tc.license || url != tc.url {
-			t.Errorf("mygo.json license %q, package.json %s, updates.github %q: license %q, url %q",
-				tc.config, tc.packageJSON, tc.github, license, url)
+			t.Errorf("mygo.json license %q, updates.github %q: license %q, url %q",
+				tc.config, tc.github, license, url)
 		}
 	}
 }
@@ -152,11 +137,9 @@ func TestPKGBUILD(t *testing.T) {
 		t.Fatal(err)
 	}
 	f.Close()
-	if err := os.WriteFile(filepath.Join(root, "package.json"), []byte(`{"license": "MIT", "homepage": "https://example.com/note-pad"}`), 0o644); err != nil {
-		t.Fatal(err)
-	}
 	c := &Config{
-		root: root, Name: "Note's Pad", Slug: "note-pad", Version: "1.2.0-beta.1", Icon: "icon.png",
+		root: root, Name: "Note's Pad", Slug: "note-pad", Version: "1.2.0-beta.1", License: "MIT", Icon: "icon.png",
+		Updates:          &Updates{GitHub: "example/note-pad"},
 		URLSchemes:       []string{"notepad"},
 		FileAssociations: []FileAssociation{{Ext: []string{"npad"}, Name: "Note <Pad>"}},
 	}
@@ -227,8 +210,8 @@ func TestPKGBUILD(t *testing.T) {
 	}
 	fields := strings.Split(strings.TrimSuffix(string(out), "\n"), "\n")
 	want := []string{
-		"note-pad", "1.2.0beta.1", "1", "Take $notes `now` & 'then'", "https://example.com/note-pad",
-		"x86_64", "MIT", "gtk3 webkit2gtk-4.1 libnotify", "!strip !debug",
+		"note-pad", "1.2.0beta.1", "1", "Take $notes `now` & 'then'", "https://github.com/example/note-pad",
+		"x86_64", "MIT", "gtk3 libnotify", "!strip !debug",
 		"note-pad-1.2.0-beta.1-linux-amd64.tar.gz note-pad-256x256.png note-pad-512x512.png",
 	}
 	if len(fields) != len(want)+1 || !slices.Equal(fields[:len(want)], want) {

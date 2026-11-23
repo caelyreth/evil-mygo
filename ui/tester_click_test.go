@@ -109,7 +109,7 @@ func TestClickRejectsClippedOrCoveredElement(t *testing.T) {
 						target()
 					}
 					if fixture == "webview" {
-						WebView(c, &testWebView{"cover"}).Absolute().Top(60).Left(0).Size(100, 40)
+						coreEmbeddedView(c.build(), &testEmbeddedView{"cover"}).Absolute().Top(60).Left(0).Size(100, 40)
 					} else if fixture != "nested" && fixture != "inset" && fixture != "menucover" && fixture != "menunested" {
 						Button(c, "cover").Absolute().Top(60).Left(0).Size(100, 40).
 							OnClick(func() { clicks++ }).
@@ -277,19 +277,19 @@ func TestRightClickRowWithMenuOnItsContent(t *testing.T) {
 func TestNamedClickOnWebViewIgnoringInput(t *testing.T) {
 	for _, nested := range []bool{false, true} {
 		t.Run(map[bool]string{false: "direct", true: "container"}[nested], func(t *testing.T) {
-			page := &testWebView{"page"}
+			var page embeddedView = &testEmbeddedView{"page"}
 			tt := NewTester(func(c *Context) {
 				if nested {
 					Box(c).Size(100, 80).IgnoreInput(true).Children(func() {
-						WebView(c, page).Label("page").Fill()
+						coreEmbeddedView(c.build(), page).Label("page").Fill()
 					})
 				} else {
-					WebView(c, page).Label("page").Size(100, 80).IgnoreInput(true)
+					coreEmbeddedView(c.build(), page).Label("page").Size(100, 80).IgnoreInput(true)
 				}
 			}, 200, 100)
 			defer tt.rt.close()
-			if tt.WebViewAt(50, 40) != page {
-				t.Fatal("the native page does not take the pointer")
+			if tt.embeddedViewAt(50, 40) != page {
+				t.Fatal("the embedded view does not take the pointer")
 			}
 			for _, click := range []func() error{
 				func() error { return tt.Click("page") },

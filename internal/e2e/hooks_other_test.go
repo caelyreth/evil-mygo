@@ -24,8 +24,6 @@ func click(*mygo.Window, float64, float64) bool { return false }
 
 func appClick(*mygo.Window, float64, float64) bool { return false }
 
-func clickPage(*mygo.Window, float64, float64) bool { return false }
-
 func heldAppClick(*mygo.Window, float64, float64) bool { return false }
 
 func drag(*mygo.Window, [][2]float64) bool { return false }
@@ -35,8 +33,6 @@ func sideButton(*mygo.Window, bool) bool { return false }
 func pinch(*mygo.Window, float64, float64, float64) (float64, bool) { return 0, false }
 
 func wheel(*mygo.Window, float64, float64) bool { return false }
-
-func webViewAttached(*mygo.Window) (bool, bool) { return false, false }
 
 // Collection behaviors and deactivating the app are macOS's.
 func collectionBehavior(*mygo.Window) (uint, bool)               { return 0, false }
@@ -48,13 +44,7 @@ func roundedBacking(*mygo.Window) (bool, float64, float64, bool) { return false,
 func windowBacking(*mygo.Window) (bool, float64, bool)           { return false, 0, false }
 func appActive() (bool, bool)                                    { return false, false }
 
-func dockDevTools(*mygo.Window) bool { return false }
-
-func dockedDevToolsPlace(*mygo.Window) string { return "" }
-
 func dismissPopups() (int, bool) { return 0, false }
-
-func setDroppedFiles(*mygo.Window, []string) bool { return false }
 
 // The progress bar is shown by the shell, out of the app's reach.
 func dockTileImage() ([]byte, bool) { return nil, false }
@@ -100,8 +90,6 @@ func titleButtonColor(*mygo.Window, string) (uint8, uint8, uint8, bool) { return
 func composition(*mygo.Window) (bool, bool, bool) { return false, false, false }
 func canCompose() bool                            { return false }
 func loseComposition(bool) bool                   { return false }
-
-func failWebViews(int) bool { return false }
 
 // A Control-click is a secondary click on macOS only.
 func controlClick(*mygo.Window, float64, float64) bool { return false }
@@ -180,19 +168,6 @@ func endSheetButton(*mygo.Window, int) bool               { return false }
 
 // Panels' window styles are Windows'.
 func panelStyles(*mygo.Window) (bool, bool, bool, bool) { return false, false, false, false }
-
-func throttlingOff(*mygo.Window, bool) (bool, int)                   { return false, 0 }
-func mockCapture(*mygo.Window) bool                                  { return false }
-func pageGestures(*mygo.Window, int) (bool, bool, bool)              { return false, false, false }
-func pinchPage(*mygo.Window, int, float64, float64, ...float64) bool { return false }
-
-// Right-clicking a page and reading the menu it opens are not hooked here.
-const pageMenusHooked = false
-
-func rightClickPage(*mygo.Window, float64, float64) bool { return false }
-func pageMenu() ([]string, bool)                         { return nil, false }
-func choosePageMenuItem(string) bool                     { return false }
-func dismissPageMenu()                                   {}
 
 func takeForeground(*mygo.Window) {}
 

@@ -84,19 +84,6 @@ func TestMain(m *testing.M) {
 	case "hang":
 		signal.Ignore(syscall.SIGTERM)
 		time.Sleep(time.Hour)
-
-	// A build's processes for TestKillSparesWebView2: a child of its own,
-	// and a WebView2 browser (a copy of the test binary) with a child too.
-	// Each quits after a minute, whatever happens to the test.
-	case "tree":
-		_ = fakeChild(os.Args[0], "sleep").Start()
-		_ = fakeChild(os.Getenv("MYGO_FAKE_WEBVIEW"), "webview").Start()
-		time.Sleep(time.Minute)
-	case "webview":
-		_ = fakeChild(os.Args[0], "sleep").Start()
-		time.Sleep(time.Minute)
-	case "sleep":
-		time.Sleep(time.Minute)
 	}
 }
 
@@ -405,7 +392,7 @@ func TestListBuildInputs(t *testing.T) {
 		t.Errorf("trees = %q, resources = %q", in.trees, in.resources)
 	}
 	// The CLI embeds its project template.
-	if !slices.Contains(in.fileDirs, filepath.Join(root, "cmd", "mygo", "template", "web")) {
+	if !slices.Contains(in.fileDirs, filepath.Join(root, "cmd", "mygo", "template", "native")) {
 		t.Errorf("fileDirs lacks the embedded template: %q", in.fileDirs)
 	}
 }

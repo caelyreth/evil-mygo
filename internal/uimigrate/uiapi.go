@@ -35,6 +35,7 @@ var uiResults = map[string]string{
 	"DialogBase":           "Element",
 	"Divider":              "Element",
 	"EditableText":         "Element",
+	"EmbeddedView":         "Element",
 	"Field":                "Element",
 	"Fieldset":             "Element",
 	"FindBar":              "Element",
@@ -119,7 +120,6 @@ var uiResults = map[string]string{
 	"TreeBase":             "TreeParts",
 	"TreeItem":             "Element",
 	"Video":                "Element",
-	"WebView":              "Element",
 }
 
 // elementChains lists the methods of Element that return an Element.
@@ -165,6 +165,7 @@ var elementChains = map[string]bool{
 	"Browse":               true,
 	"Busy":                 true,
 	"Cache":                true,
+	"CacheScaled":          true,
 	"Capitalize":           true,
 	"CaretColor":           true,
 	"CaretWidth":           true,

@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/egoist/mygo/internal/nsis"
-	"github.com/egoist/mygo/internal/webview2"
 )
 
 func runDoctor(args []string) error {
@@ -27,18 +26,13 @@ func runDoctor(args []string) error {
 
 	goOut, err := exec.Command("go", "version").Output()
 	check("go", err == nil, strings.TrimSpace(string(goOut)))
-	if bunOut, err := exec.Command("bun", "--version").Output(); err == nil {
-		check("bun", true, strings.TrimSpace(string(bunOut)))
-	} else {
-		fmt.Println("- bun        not found (optional, used by the frontend template: https://bun.sh)")
-	}
 
 	switch runtime.GOOS {
 	case "darwin":
 		out, err := exec.Command("sw_vers", "-productVersion").Output()
 		v := strings.TrimSpace(string(out))
 		major, _ := strconv.Atoi(strings.Split(v, ".")[0])
-		check("macOS", err == nil && major >= 12, v+" (WKWebView; macOS 12 or later is required)")
+		check("macOS", err == nil && major >= 12, v+" (macOS 12 or later is required)")
 	case "linux":
 		libs := func(pattern string) string {
 			out, _ := exec.Command("sh", "-c", "ldconfig -p 2>/dev/null | grep -o '"+pattern+"' | sort -u").Output()
@@ -46,22 +40,8 @@ func runDoctor(args []string) error {
 		}
 		gtk := libs(`libgtk-3\.so\.0`)
 		check("gtk", gtk != "", or(gtk, "GTK 3 not found: install libgtk-3-0 (Debian/Ubuntu) or gtk3 (Fedora)"))
-		// Only web pages need WebKitGTK: not the project in the current
-		// directory when it says it shows none.
-		if c, err := loadConfig("."); err == nil && !c.Linux.webView() {
-			fmt.Printf("- %-10s not needed (linux.webview is false)\n", "webkit")
-			break
-		}
-		webkit := libs(`libwebkit2gtk-4\.[01]\.so[.0-9]*`)
-		check("webkit", webkit != "", or(webkit, "WebKitGTK not found: install libwebkit2gtk-4.1-0 (Debian/Ubuntu) or webkit2gtk4.1 (Fedora)"))
 	case "windows":
-		// The runtime a window showing a web page gets, not the install
-		// EdgeUpdate registers, which outlives its files.
-		dir, _, err := webview2.Find()
-		if err != nil {
-			dir = err.Error()
-		}
-		check("webview2", err == nil, dir)
+		check("windows", true, "Win32 + Direct2D/D3D11")
 	default:
 		check(runtime.GOOS, false, "no MyGo backend for this platform yet")
 	}

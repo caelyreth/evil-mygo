@@ -90,7 +90,7 @@ func initMenuCallbacks() {
 				break
 			}
 		}
-		if cmd, ok := editCommands[itemRoles[id]]; ok {
+		if _, ok := editCommands[itemRoles[id]]; ok {
 			if w == nil {
 				for _, x := range b.windows {
 					if !x.closed && gtkWindowIsActive(x.win) {
@@ -99,20 +99,9 @@ func initMenuCallbacks() {
 					}
 				}
 			}
-			var v *window
-			if w != nil {
-				v = w.focusedWebView()
-			}
-			if v != nil {
-				// The page of a web view in the content has the keyboard.
-				webkitWebViewExecuteEditingCommand(v.web, cs(cmd))
-			} else if w != nil {
-				if w.surface != nil {
-					role := itemRoles[id]
-					w.h.SurfaceEvent(platform.SurfaceEvent{Kind: platform.SurfaceCommand, Text: role})
-				} else {
-					webkitWebViewExecuteEditingCommand(w.web, cs(cmd))
-				}
+			if w != nil && w.surface != nil {
+				role := itemRoles[id]
+				w.h.SurfaceEvent(platform.SurfaceEvent{Kind: platform.SurfaceCommand, Text: role})
 			}
 			return
 		}
@@ -476,7 +465,7 @@ func (b *Backend) UpdateMenuItem(it *platform.MenuItem) {
 // Those of a page keep the app's state: what a page would do is not known
 // before.
 func (w *window) enableEditItems() {
-	native := w.surface != nil && w.focusedWebView() == nil
+	native := w.surface != nil
 	for id, role := range itemRoles {
 		if !platform.EditCommands[role] {
 			continue

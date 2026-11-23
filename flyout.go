@@ -152,25 +152,20 @@ type FlyoutOptions struct {
 	// (ui.Context.Vibrancy reports it). A Popover has its own.
 	Vibrancy Vibrancy
 	// CornerRadius rounds the flyout's corners on macOS, in DIPs: its
-	// material and content are cut to them, and its Shadow follows them.
+	// material and content are cut to them, and its shadow follows them.
 	// Windows 11 rounds flyouts as it rounds its menus; Linux does not.
 	CornerRadius int
 
-	// URL is loaded right after the flyout is created, as
-	// WindowOptions.URL.
-	URL string
-	// Page configures the flyout's web page.
-	Page PageOptions
-	// Content makes the flyout show native UI instead of a web page, as
-	// WindowOptions.Content.
+	// DevTools selects whether the native UI inspector is available.
+	DevTools DevTools
+	// Content makes the flyout show native UI built with package ui.
 	Content Content
 }
 
 // NewFlyout creates a flyout: a window without a frame, a background, a
 // shadow or a taskbar button, owned by its parent and placed next to a
 // rectangle of it, which may extend beyond the parent but stays in the
-// work area of a display. Its page or native UI draws all of it: give the
-// page a background, or the native UI's root one. Like NewWindow, it must
+// work area of a display. Its native UI draws all of it. Like NewWindow, it must
 // be called after the application is ready.
 func NewFlyout(opts FlyoutOptions) *Window {
 	if (opts.Parent == nil) == (opts.Tray == nil) {
@@ -191,7 +186,6 @@ func NewFlyout(opts FlyoutOptions) *Window {
 		}
 	}
 	return createWindow("NewFlyout", WindowOptions{
-		URL:               opts.URL,
 		Width:             or(opts.Width, 200),
 		Height:            or(opts.Height, 200),
 		UseContentSize:    true,
@@ -204,7 +198,7 @@ func NewFlyout(opts FlyoutOptions) *Window {
 		DisableShadow:     !opts.Shadow,
 		SkipTaskbar:       true,
 		Parent:            opts.Parent,
-		Page:              opts.Page,
+		DevTools:          opts.DevTools,
 		Content:           opts.Content,
 		Hidden:            opts.Hidden,
 		Vibrancy:          opts.Vibrancy,

@@ -27,7 +27,6 @@ type Backend struct {
 
 	// Lookup tables for Objective-C callbacks. Main thread only.
 	byDelegate map[id]*window
-	byWebView  map[id]*window
 	byNSWindow map[id]*window
 	bySurface  map[id]*surface
 	byAccess   map[id]*accessElement
@@ -80,7 +79,6 @@ func New() *Backend {
 	load()
 	return &Backend{
 		byDelegate: map[id]*window{},
-		byWebView:  map[id]*window{},
 		byNSWindow: map[id]*window{},
 		bySurface:  map[id]*surface{},
 		byAccess:   map[id]*accessElement{},
@@ -92,7 +90,7 @@ func New() *Backend {
 
 var theBackend *Backend
 
-func (b *Backend) Name() string { return "darwin/wkwebview" }
+func (b *Backend) Name() string { return "darwin" }
 
 func (b *Backend) IsMainThread() bool {
 	r, _, _ := purego.SyscallN(mainNPFn)
@@ -272,7 +270,6 @@ func registerClasses() {
 	registerClipboardClass()
 	registerAccessClass()
 	registerMenuTarget()
-	registerSchemeHandler()
 	registerTrayTarget()
 	registerNotificationDelegate()
 }
@@ -289,16 +286,6 @@ const (
 
 func registerAppDelegate() {
 	classDef("MyGoAppDelegate", "NSObject", []string{"NSApplicationDelegate"}, []objc.MethodDef{
-		// The end of a PrintToPDF job (printJobs). WebKit's print operations
-		// may finish on a background thread.
-		method("mygoPrintOperationDidRun:success:contextInfo:", func(self id, _ objc.SEL, op id, success bool, job uintptr) {
-			theBackend.runOnMain(func() {
-				if j := printJobs[job]; j != nil {
-					delete(printJobs, job)
-					j.done(success)
-				}
-			})
-		}),
 		method("applicationWillFinishLaunching:", func(self id, _ objc.SEL, n id) {
 			// Handle the quit Apple Event (Dock > Quit, AppleScript, logout)
 			// ourselves so the sender gets a proper reply while Run still
@@ -522,13 +509,6 @@ func (a appController) Package() (platform.PackageInfo, bool) {
 	return info, ok
 }
 
-func (a appController) ClearBrowsingData(store platform.DataStore, types platform.SiteData, done func(error)) {
-	a.removeData(store, types, done)
-}
-
-// AddRecentDocument and ClearRecentDocuments use the shared document
-// controller, as Electron does: AppKit lists its recent documents in the
-// Dock menu, and in an Open Recent menu.
 func (a appController) AddRecentDocument(path string) error {
 	withPool(func() {
 		send(send(class("NSDocumentController"), "sharedDocumentController"), "noteNewRecentDocumentURL:", uintptr(fileURL(path)))
@@ -544,7 +524,3 @@ func (a appController) ClearRecentDocuments() error {
 }
 
 func (appController) SetJumpList(platform.JumpList) error { return nil }
-
-// WebViewAvailable reports whether a window showing a web page can have
-// one. WKWebView is part of macOS, so this holds wherever the app runs.
-func (b *Backend) WebViewAvailable() bool { return hasClass("WKWebView") }

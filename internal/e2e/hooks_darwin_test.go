@@ -47,9 +47,6 @@ func click(w *mygo.Window, x, y float64) bool {
 	return true
 }
 
-// clickPage clicks a window's page: click reaches web views too.
-func clickPage(w *mygo.Window, x, y float64) bool { return click(w, x, y) }
-
 // appClick clicks through the application, whose event monitors see it.
 func appClick(w *mygo.Window, x, y float64) bool {
 	waitOnScreen(w)
@@ -111,11 +108,6 @@ func hitView(w *mygo.Window, x, y float64) (class string) {
 	return class
 }
 
-func webViewAttached(w *mygo.Window) (attached bool, supported bool) {
-	mygo.RunOnMain(func() { attached = darwin.TestWebViewAttached(w.NativeHandle()) })
-	return attached, true
-}
-
 // deactivateApp activates the Finder, as the user would.
 func deactivateApp() bool {
 	return exec.Command("open", "-a", "Finder").Run() == nil
@@ -159,23 +151,8 @@ func windowBacking(w *mygo.Window) (opaque bool, alpha float64, supported bool) 
 	return opaque, alpha, true
 }
 
-func dockDevTools(w *mygo.Window) (ok bool) {
-	mygo.RunOnMain(func() { ok = darwin.TestDockInspector(w.NativeHandle()) })
-	return ok
-}
-
-func dockedDevToolsPlace(w *mygo.Window) (place string) {
-	mygo.RunOnMain(func() { place = darwin.TestInspectorPlace(w.NativeHandle()) })
-	return place
-}
-
 // Context menus track the mouse in a modal loop; not automated.
 func dismissPopups() (int, bool) { return 0, false }
-
-func setDroppedFiles(w *mygo.Window, paths []string) bool {
-	mygo.RunOnMain(func() { darwin.TestSetDroppedFiles(w.NativeHandle(), paths) })
-	return true
-}
 
 func dockTileImage() (png []byte, supported bool) {
 	mygo.RunOnMain(func() { png = darwin.TestDockTileImage() })
@@ -407,63 +384,11 @@ func panelStyles(*mygo.Window) (bool, bool, bool, bool) { return false, false, f
 // throttlingOff reports whether the page of w, or of its first web view,
 // is set up to keep running while it can't be seen, and how many of the
 // settings that take the platform has.
-func throttlingOff(w *mygo.Window, webView bool) (off bool, settings int) {
-	mygo.RunOnMain(func() { off, settings = darwin.TestBackgroundThrottlingOff(w.NativeHandle(), webView) })
-	return off, settings
-}
-
-// mockCapture gives a window's page WebKit's mock camera and microphone.
-func mockCapture(w *mygo.Window) (ok bool) {
-	mygo.RunOnMain(func() { ok = darwin.TestMockCaptureDevices(w.NativeHandle()) })
-	return ok
-}
-
-// pageGestures reports whether a swipe navigates and a pinch magnifies the
-// page of a window, or with webView 0 or more, of its web view of that
-// index.
-func pageGestures(w *mygo.Window, webView int) (swipe, pinch, ok bool) {
-	mygo.RunOnMain(func() { swipe, pinch, ok = darwin.TestPageGestures(w.NativeHandle(), webView) })
-	return swipe, pinch, ok
-}
-
-// A WKWebView's magnification follows a trackpad's gesture through its
-// phases, which a test can't make.
-func pinchPage(*mygo.Window, int, float64, float64, ...float64) bool { return false }
-
-// pageMenusHooked tells that the tests can right-click a page and read
-// the menu it opens, through rightClickPage, pageMenu, choosePageMenuItem
-// and dismissPageMenu.
-const pageMenusHooked = true
-
-// rightClickPage right-clicks (x, y) in a window's page.
-func rightClickPage(w *mygo.Window, x, y float64) bool {
-	waitOnScreen(w)
-	mygo.RunOnMain(func() { darwin.TestRightClickPage(w.NativeHandle(), x, y) })
-	return true
-}
-
-// pageMenu returns the titles of the items of the web view's context menu
-// shown over a page, "-" for separators, and whether one is shown. AppKit
-// tracks the menu in a loop of its own, which runs the main thread's work.
-func pageMenu() (labels []string, shown bool) {
-	mygo.RunOnMain(func() { labels, shown = darwin.TestPageMenu() })
-	return labels, shown
-}
-
-// choosePageMenuItem chooses an item of that menu by its title.
-func choosePageMenuItem(label string) (ok bool) {
-	mygo.RunOnMain(func() { ok = darwin.TestChoosePageMenuItem(label) })
-	return ok
-}
-
-func dismissPageMenu() { mygo.RunOnMain(darwin.TestDismissPageMenu) }
-
 // Only Windows' tests start a process that takes the foreground.
 func takeForeground(*mygo.Window) {}
 
 // pressLetter presses the key of an uppercase letter, with Command held
-// when cmd is set, as the keyboard does in a window of native UI: in the
-// content, or in the page of a web view that has the keyboard.
+// when cmd is set, as the keyboard does in a window of native UI.
 func pressLetter(w *mygo.Window, letter byte, cmd bool) (ok bool) {
 	code, known := map[byte]uint16{'J': 0x26, 'K': 0x28, 'L': 0x25}[letter]
 	if !known {
@@ -477,18 +402,6 @@ func pressLetter(w *mygo.Window, letter byte, cmd bool) (ok bool) {
 			ok = darwin.TestKey(w.NativeHandle(), code, chars)
 		}
 	})
-	return ok
-}
-
-// pressPageLetter presses the key of an uppercase letter in a window showing
-// a web page, sending it to the window's first responder.
-func pressPageLetter(w *mygo.Window, letter byte) (ok bool) {
-	code, known := map[byte]uint16{'J': 0x26, 'K': 0x28, 'L': 0x25}[letter]
-	if !known {
-		return false
-	}
-	chars := string(rune(letter - 'A' + 'a'))
-	mygo.RunOnMain(func() { ok = darwin.TestPageKeyShift(w.NativeHandle(), code, chars, false) })
 	return ok
 }
 
@@ -514,13 +427,9 @@ func nativeGlassTint(w *mygo.Window) (red, green, blue, alpha float64) {
 
 func activateApp() { mygo.RunOnMain(darwin.TestActivate) }
 
-func checkActivationHit(t *testing.T, w *mygo.Window, kind string, enabled bool) {
+func checkActivationHit(t *testing.T, w *mygo.Window, _ string, enabled bool) {
 	t.Helper()
-	wantClass := "MyGoWebView"
-	if kind == "native" {
-		wantClass = "MyGoSurfaceView"
-	}
-	eventually(t, "the content placed", func() bool { return hitView(w, 100, 100) == wantClass })
+	eventually(t, "the content placed", func() bool { return hitView(w, 100, 100) == "MyGoSurfaceView" })
 	var accepts bool
 	mygo.RunOnMain(func() { accepts = darwin.TestAcceptsFirstMouse(w.NativeHandle(), 100, 100) })
 	if accepts == enabled {

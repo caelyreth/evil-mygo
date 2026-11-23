@@ -53,10 +53,7 @@ func envLocale(category string) string {
 func (a appController) SavedLocale() (string, bool) { return "", false }
 func (a appController) SaveLocale(string) bool      { return false }
 
-// SetLanguages gives WebKitGTK the languages, as the Accept-Language of
-// its requests and the navigator.language of pages: now if it is loaded,
-// else as it loads for the first web view. GTK's widgets, as menus, whose
-// items take no direction from the window, are laid out in the direction.
+// SetLanguages lays GTK widgets (such as menus) out in rtl when set.
 func (a appController) SetLanguages(tags []string, rtl bool) {
 	dir := int32(1) // GTK_TEXT_DIR_LTR
 	if rtl {
@@ -64,29 +61,6 @@ func (a appController) SetLanguages(tags []string, rtl bool) {
 	}
 	if gtkWidgetSetDefaultDirection != nil {
 		gtkWidgetSetDefaultDirection(dir)
-	}
-	a.b.languages = append([]string(nil), tags...)
-	// WebKitGTK may have loaded on another goroutine (WebViewAvailable),
-	// which libWebKit does not tell safely: webKit then makes its first
-	// calls here, on the main thread.
-	if webKitLoaded.Load() && webKit() == nil {
-		a.b.applyWebLanguages()
-	}
-}
-
-// applyWebLanguages gives the web contexts, the default one and those of
-// sessions, the app's languages.
-func (b *Backend) applyWebLanguages() {
-	if len(b.languages) == 0 || webkitWebContextSetPreferredLanguages == nil {
-		return
-	}
-	strs := make([]*byte, len(b.languages)+1) // NULL-terminated
-	for i, l := range b.languages {
-		strs[i] = cs(l)
-	}
-	webkitWebContextSetPreferredLanguages(webkitWebContextGetDefault(), &strs[0])
-	for _, s := range b.stores {
-		webkitWebContextSetPreferredLanguages(s.ctx, &strs[0])
 	}
 }
 

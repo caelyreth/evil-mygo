@@ -27,24 +27,6 @@ const (
 	ActivationPolicyProhibited ActivationPolicy = "prohibited"
 )
 
-// DMABUFRenderer says whether WebKitGTK draws web pages with its DMA-BUF
-// renderer on Linux; see Application.SetDMABUFRenderer.
-type DMABUFRenderer string
-
-// DMA-BUF renderer settings.
-const (
-	// DMABUFRendererOff turns the renderer off, unless the user set
-	// WEBKIT_DISABLE_DMABUF_RENDERER: the default.
-	DMABUFRendererOff DMABUFRenderer = "off"
-	// DMABUFRendererOn leaves the renderer to WebKitGTK, which uses it
-	// wherever it can.
-	DMABUFRendererOn DMABUFRenderer = "on"
-	// DMABUFRendererAuto leaves the renderer on where the host is known to
-	// draw with it: on Wayland, with a GPU of Mesa's, outside containers
-	// and virtual machines. Elsewhere it is off.
-	DMABUFRendererAuto DMABUFRenderer = "auto"
-)
-
 // Application controls the event loop and the lifecycle of the process.
 // Use the App singleton.
 type Application struct {
@@ -52,7 +34,6 @@ type Application struct {
 	name      string
 	version   string
 	policy    ActivationPolicy
-	dmabuf    DMABUFRenderer
 	running   bool
 	ready     bool
 	readyCh   chan struct{}
@@ -108,15 +89,7 @@ var App = &Application{readyCh: make(chan struct{}), Dock: &Dock{}, JumpList: &J
 //
 // SIGINT and SIGTERM quit the application like Quit; a second signal exits
 // immediately.
-//
-// When the MYGO_GENERATE environment variable is set (see `mygo generate`),
-// Run writes the TypeScript client for the bound services to that path, or
-// nothing when the app binds none, and returns without starting the event
-// loop.
 func (a *Application) Run() error {
-	if out := os.Getenv("MYGO_GENERATE"); out != "" {
-		return writeClient(out)
-	}
 	takeDevMarker()
 	if !isMainThread() {
 		return errors.New("mygo: App.Run must be called from the main goroutine")
@@ -135,7 +108,6 @@ func (a *Application) Run() error {
 	if err := b.Init(appHandler{}, platform.AppOptions{
 		Name:             a.Name(),
 		ActivationPolicy: string(a.ActivationPolicy()),
-		DMABUFRenderer:   string(a.dmabuf),
 		Background:       devBackground,
 	}); err != nil {
 		return err
@@ -282,7 +254,6 @@ func (a *Application) prepareQuit() bool {
 	// closed. Persist them before the native loop ends; callers needing
 	// error handling may Flush explicitly from a quit listener.
 	_ = Clipboard.Flush()
-	stopNativeCalls()
 	return true
 }
 
@@ -308,14 +279,12 @@ func (a *Application) endSession() {
 	}
 	fire1(&a.onWillQuit, &QuitEvent{SessionEnding: true})
 	_ = Clipboard.Flush()
-	stopNativeCalls()
 }
 
 // finish runs once after the event loop has stopped.
 func (a *Application) finish() {
 	a.finished.Do(func() {
 		a.ended = true
-		stopNativeCalls()
 		stopFileWatches()
 		clipboardStopped = true
 		backend().Clipboard().Close()
@@ -484,21 +453,6 @@ func (a *Application) SetActivationPolicy(p ActivationPolicy) {
 	if running {
 		onMain(func() { backend().App().SetActivationPolicy(string(p)) })
 	}
-}
-
-// SetDMABUFRenderer sets whether WebKitGTK may draw web pages with its
-// DMA-BUF renderer on Linux, which MyGo turns off by default because it
-// shows blank windows on NVIDIA's driver, in virtual machines and in
-// containers. Where it works, pages scroll at several times the frame
-// rate with less CPU. WEBKIT_DISABLE_DMABUF_RENDERER, set by the user,
-// overrides it. Call it before Run; other systems ignore it.
-func (a *Application) SetDMABUFRenderer(r DMABUFRenderer) {
-	if r == DMABUFRendererAuto {
-		linkDMABUFProbe()
-	}
-	a.mu.Lock()
-	a.dmabuf = r
-	a.mu.Unlock()
 }
 
 // Focus brings the application to the foreground.
@@ -688,20 +642,6 @@ func (a *Application) OnWindowCreated(fn func(w *Window)) (off func()) {
 	return a.onWindowCreated.add(fn, false)
 }
 
-// ClearBrowsingData deletes what the app's pages stored in the default
-// session: cookies, local and session storage, IndexedDB, service workers
-// and caches, e.g. when the user signs out. Open pages keep what they hold
-// in memory until they are reloaded. Session.ClearData clears the data of
-// other sessions, or some kinds of data.
-func (a *Application) ClearBrowsingData() error {
-	needsApp("App.ClearBrowsingData")
-	ch := make(chan error, 1)
-	onMain(func() {
-		backend().App().ClearBrowsingData(nil, platform.SiteDataAll, func(err error) { deliver(ch, err) })
-	})
-	return await(ch)
-}
-
 // Dock controls the application's Dock icon (macOS). Its methods do
 // nothing on other platforms.
 type Dock struct {
@@ -813,9 +753,6 @@ func (appHandler) ThemeChanged() {
 	updateBackgrounds()
 	contentThemeChanged()
 	Theme.changed()
-	// Pages hear the accent and the settings of accessibility, which the
-	// media queries do not tell them.
-	sendPreferences()
 }
 func (appHandler) MemoryWarning()   { fire(&App.onMemoryWarning) }
 func (appHandler) DisplaysChanged() { Screen.changed() }

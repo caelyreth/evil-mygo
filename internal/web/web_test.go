@@ -153,15 +153,6 @@ func TestDroppedFiles(t *testing.T) {
 	}
 }
 
-// TestWebViewAvailable: browsers have no system webview, so the call says
-// so, and an app opens a window of native UI instead of one showing a page
-// it could not show.
-func TestWebViewAvailable(t *testing.T) {
-	if New().WebViewAvailable() {
-		t.Error("WebViewAvailable = true in a browser, which has no webview")
-	}
-}
-
 func TestChord(t *testing.T) {
 	// A DOM pointermove with button (DOM numbering) going down or up while
 	// another is held, and buttons held after it.

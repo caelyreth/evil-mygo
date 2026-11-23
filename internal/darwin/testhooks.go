@@ -719,117 +719,6 @@ func TestSetPopoverAnchorAppearance(handle uintptr, dark bool) {
 	send(view, "setAppearance:", uintptr(send(class("NSAppearance"), "appearanceNamed:", uintptr(nsString(name)))))
 }
 
-// TestWebViewAttached reports whether a window's web view is in its view
-// hierarchy.
-func TestWebViewAttached(handle uintptr) bool {
-	w := theBackend.byNSWindow[id(handle)]
-	return w != nil && send(w.web, "window") == w.win
-}
-
-// TestTabFocusesLinks reports whether Tab reaches links and form controls
-// that are not text fields in a window's page.
-func TestTabFocusesLinks(handle uintptr) bool {
-	w := theBackend.byNSWindow[id(handle)]
-	return w != nil && w.web != 0 && sendBool(send(send(w.web, "configuration"), "preferences"), "tabFocusesLinks")
-}
-
-// TestBackgroundThrottlingOff reports whether the page of a window, or of
-// its first web view, keeps running while it can't be seen: every one of
-// throttlingPrefs WebKit has at its value for that, and the web view's
-// window occlusion detection off where WebKit has it; and how many of
-// those settings WebKit has.
-func TestBackgroundThrottlingOff(handle uintptr, webView bool) (off bool, settings int) {
-	w := theBackend.byNSWindow[id(handle)]
-	if w != nil && webView {
-		if len(w.webViews) == 0 {
-			return false, 0
-		}
-		w = w.webViews[0]
-	}
-	if w == nil || w.web == 0 {
-		return false, 0
-	}
-	off = true
-	withPool(func() {
-		prefs := send(send(w.web, "configuration"), "preferences")
-		for _, p := range throttlingPrefs {
-			if respondsTo(prefs, p.get) {
-				settings++
-				v := uintptr(send(prefs, p.get))
-				if p.boolean {
-					v = boolArg(byte(v) != 0)
-				}
-				off = off && v == p.off
-			}
-		}
-		if respondsTo(w.web, "_windowOcclusionDetectionEnabled") {
-			settings++
-			off = off && !sendBool(w.web, "_windowOcclusionDetectionEnabled")
-		}
-	})
-	return off, settings
-}
-
-// TestMockCaptureDevices gives a window's page WebKit's mock camera and
-// microphone, which getUserMedia() captures without devices or the
-// system's permission (private -[WKPreferences
-// _setMockCaptureDevicesEnabled:]), even while the page is not focused
-// (_setGetUserMediaRequiresFocus:), for the pages it loads from then on;
-// false when WebKit doesn't answer them.
-func TestMockCaptureDevices(handle uintptr) bool {
-	w := theBackend.byNSWindow[id(handle)]
-	if w == nil || w.web == 0 {
-		return false
-	}
-	prefs := send(send(w.web, "configuration"), "preferences")
-	if !respondsTo(prefs, "_setMockCaptureDevicesEnabled:") {
-		return false
-	}
-	send(prefs, "_setMockCaptureDevicesEnabled:", boolArg(true))
-	if respondsTo(prefs, "_setMediaDevicesEnabled:") {
-		send(prefs, "_setMediaDevicesEnabled:", boolArg(true))
-	}
-	if respondsTo(prefs, "_setMockCaptureDevicesPromptEnabled:") {
-		send(prefs, "_setMockCaptureDevicesPromptEnabled:", boolArg(false))
-	}
-	if respondsTo(prefs, "_setGetUserMediaRequiresFocus:") {
-		send(prefs, "_setGetUserMediaRequiresFocus:", boolArg(false))
-	}
-	return true
-}
-
-// TestAllowsPictureInPicture reports whether a window's page lets its
-// videos go into picture in picture, and false for supported when WebKit
-// doesn't answer its private _allowsPictureInPictureMediaPlayback.
-func TestAllowsPictureInPicture(handle uintptr) (allowed, supported bool) {
-	w := theBackend.byNSWindow[id(handle)]
-	if w == nil || w.web == 0 {
-		return false, false
-	}
-	prefs := send(send(w.web, "configuration"), "preferences")
-	if !respondsTo(prefs, "_allowsPictureInPictureMediaPlayback") {
-		return false, false
-	}
-	return sendBool(prefs, "_allowsPictureInPictureMediaPlayback"), true
-}
-
-// TestPageGestures reports whether a swipe navigates and a pinch magnifies
-// the page of a window, or with webView 0 or more, of its web view of that
-// index, as WKWebView's properties say. ok is false without that page.
-func TestPageGestures(handle uintptr, webView int) (swipe, pinch, ok bool) {
-	w := theBackend.byNSWindow[id(handle)]
-	if w != nil && webView >= 0 {
-		if webView >= len(w.webViews) {
-			return false, false, false
-		}
-		w = w.webViews[webView]
-	}
-	if w == nil || w.web == 0 {
-		return false, false, false
-	}
-	return sendBool(w.web, "allowsBackForwardNavigationGestures"), sendBool(w.web, "allowsMagnification"), true
-}
-
 // TestActivate brings the application in front, as clicking its Dock icon
 // does.
 func TestActivate() {
@@ -1003,61 +892,6 @@ func TestWindowBacking(handle uintptr) (opaque bool, alpha float64) {
 	return opaque, alpha
 }
 
-// TestDockInspector opens the web inspector of a window docked to it, and
-// reports whether the window has one.
-func TestDockInspector(handle uintptr) bool {
-	w := theBackend.byNSWindow[id(handle)]
-	if w == nil {
-		return false
-	}
-	in := w.inspector()
-	if in == 0 {
-		return false
-	}
-	send(in, "show")
-	send(in, "attach")
-	return true
-}
-
-// TestInspectorPlace reports where the docked inspector of a window is:
-// "content" in its content view, "frame" elsewhere in the window, "" when
-// the window has none.
-func TestInspectorPlace(handle uintptr) string {
-	w := theBackend.byNSWindow[id(handle)]
-	if w == nil {
-		return ""
-	}
-	var find func(view id) id
-	find = func(view id) id {
-		if view != w.web && sendBool(view, "isKindOfClass:", uintptr(class("WKWebView"))) {
-			return view
-		}
-		for _, sub := range arrayItems(send(view, "subviews")) {
-			if found := find(sub); found != 0 {
-				return found
-			}
-		}
-		return 0
-	}
-	content := send(w.win, "contentView")
-	switch in := find(send(content, "superview")); {
-	case in == 0:
-		return ""
-	case sendBool(in, "isDescendantOf:", uintptr(content)):
-		return "content"
-	default:
-		return "frame"
-	}
-}
-
-// TestSetDroppedFiles makes paths the files of the next drop on a window's
-// page, as if they had been dragged there.
-func TestSetDroppedFiles(handle uintptr, paths []string) {
-	if w := theBackend.byNSWindow[id(handle)]; w != nil {
-		w.dropped = paths
-	}
-}
-
 // TestDockTileImage renders the content of the Dock tile offscreen, as the
 // Dock does, to PNG; nil when the tile shows the plain application icon.
 func TestDockTileImage() []byte {
@@ -1220,18 +1054,6 @@ func TestAppKey(code uint16, chars string) {
 func TestKeyShift(handle uintptr, code uint16, chars string, shift bool) bool {
 	w := theBackend.byNSWindow[id(handle)]
 	if w == nil || w.surface == nil {
-		return false
-	}
-	sendKeyToWindow(w, code, chars, shift)
-	return true
-}
-
-// TestPageKeyShift presses a key in a window showing a web page, which the
-// window sends to its first responder as it does the keyboard's, with Shift
-// held when shift is set. It reports false for a window without a page.
-func TestPageKeyShift(handle uintptr, code uint16, chars string, shift bool) bool {
-	w := theBackend.byNSWindow[id(handle)]
-	if w == nil || w.web == 0 {
 		return false
 	}
 	sendKeyToWindow(w, code, chars, shift)
@@ -1778,61 +1600,6 @@ func TestCancelModal(handle uintptr) bool {
 		send(theBackend.app, "abortModal")
 	}
 	return true
-}
-
-// TestRightClickPage right-clicks (x, y), in points from the top-left
-// corner of a window's content, as TestClick clicks. WebKit opens the
-// page's context menu once the page heard the click, later.
-func TestRightClickPage(handle uintptr, x, y float64) {
-	testMouse(handle, x, y, false, 3, 4) // NSEventTypeRightMouseDown, RightMouseUp
-}
-
-// TestPageMenu returns the titles of the items of the page's context menu
-// being shown, "-" for separators, and false when none is.
-func TestPageMenu() ([]string, bool) {
-	menu := openContextMenu
-	if menu == 0 {
-		return nil, false
-	}
-	labels := []string{}
-	for i := range sendInt(menu, "numberOfItems") {
-		item := send(menu, "itemAtIndex:", uintptr(i))
-		switch {
-		case sendBool(item, "isHidden"):
-		case sendBool(item, "isSeparatorItem"):
-			labels = append(labels, "-")
-		default:
-			labels = append(labels, goString(send(item, "title")))
-		}
-	}
-	return labels, true
-}
-
-// TestChoosePageMenuItem chooses the item titled label of the page's
-// context menu being shown, as a click on it does, closes the menu, and
-// reports whether it has one.
-func TestChoosePageMenuItem(label string) bool {
-	menu := openContextMenu
-	if menu == 0 {
-		return false
-	}
-	for i := range sendInt(menu, "numberOfItems") {
-		item := send(menu, "itemAtIndex:", uintptr(i))
-		if !sendBool(item, "isHidden") && !sendBool(item, "isSeparatorItem") && goString(send(item, "title")) == label {
-			send(menu, "performActionForItemAtIndex:", uintptr(i))
-			send(menu, "cancelTracking")
-			return true
-		}
-	}
-	return false
-}
-
-// TestDismissPageMenu closes the page's context menu being shown, if one
-// is.
-func TestDismissPageMenu() {
-	if openContextMenu != 0 {
-		send(openContextMenu, "cancelTracking")
-	}
 }
 
 var (

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -19,16 +20,13 @@ type buildOptions struct {
 	sign          string // macOS signing identity
 	skipDMG       bool
 	skipNotarize  bool
-	skipInstaller bool              // no Windows installer, nor NSIS for it
-	pkg           string            // directory of the main package
-	work          string            // for generated files
-	overlay       map[string]string // go build -overlay entries (the frontend)
+	skipInstaller bool   // no Windows installer, nor NSIS for it
+	pkg           string // directory of the main package
+	work          string // for generated files
 }
 
 func runBuild(args []string) error {
-	flags := newFlags("build", "[flags] [dir]", `Builds a production app for each platform. It runs buildCommand from
-mygo.json, then compiles the app with the frontendDist files embedded, served
-at mygo://localhost/. macOS gets a signed .app bundle and a
+	flags := newFlags("build", "[flags] [dir]", `Builds a production app for each platform. macOS gets a signed .app bundle and a
 "<slug>-<version>-<arch>.dmg" disk image (slug in mygo.json, by default
 the name in lower case), without the arch for darwin/universal, whose
 window invites dragging the app to Applications; other platforms get an
@@ -63,8 +61,7 @@ The platform web (or js/wasm) builds an app of native UI for browsers into
 <out>/web: index.html, which loads the app, Go's wasm_exec.js and the app's
 WebAssembly, named by its content: a static site, to serve from anywhere.`)
 	platforms := flags.String("platform", runtime.GOOS+"/"+runtime.GOARCH, "comma separated GOOS/GOARCH targets, e.g. darwin/universal,linux/amd64,windows/amd64, or web for browsers")
-	debug := flags.Bool("debug", false, "keep development features such as the web inspector")
-	skipBuildCommand := flags.Bool("skip-build-command", false, "do not run buildCommand")
+	debug := flags.Bool("debug", false, "keep development features")
 	skipDMG := flags.Bool("skip-dmg", false, "do not create a disk image for macOS")
 	skipNotarize := flags.Bool("skip-notarize", false, "do not notarize even when macos.notarize is set")
 	skipInstaller := flags.Bool("skip-installer", false, "do not create the Windows installer (<slug>-setup-<version>-<arch>.exe), nor download NSIS for it")
@@ -119,15 +116,6 @@ WebAssembly, named by its content: a static site, to serve from anywhere.`)
 			checkCatalogImported(c, dirs)
 		}
 	}
-	if err := writeClient(context.Background(), c, false); err != nil {
-		return err
-	}
-	if c.BuildCommand != "" && !*skipBuildCommand {
-		t := con.start("Building the frontend")
-		if err := t.end(run(t, "web", c.root, c.BuildCommand), "Built the frontend"); err != nil {
-			return err
-		}
-	}
 	work, err := os.MkdirTemp("", "mygo-build-")
 	if err != nil {
 		return err
@@ -142,9 +130,6 @@ WebAssembly, named by its content: a static site, to serve from anywhere.`)
 		if strings.HasPrefix(filepath.Base(p), "mygo_windows_") {
 			os.Remove(p)
 		}
-	}
-	if opts.overlay, err = frontendFiles(c, opts.pkg, work); err != nil {
-		return err
 	}
 
 	var built []string
@@ -283,15 +268,8 @@ func buildPlatform(c *Config, goos, goarch string, opts buildOptions) ([]string,
 				}
 				defer cleanup()
 			}
-			overlay, err := writeOverlay(filepath.Join(opts.work, "overlay.json"), opts.overlay)
-			if err != nil {
-				return err
-			}
 			flags := []string{"-trimpath", "-ldflags", ldflags}
 			flags = append(flags, productionTags(opts.debug)...)
-			if overlay != "" {
-				flags = append(flags, "-overlay", overlay)
-			}
 			return goBuild(context.Background(), c, t, out, []string{"GOOS=" + goos, "GOARCH=" + arch}, flags...)
 		}()
 		return t.end(err, "Compiled "+goos+"/"+arch)
@@ -746,4 +724,15 @@ func linuxDesktopEntry(c *Config, exec, icon string) string {
 		b.WriteString("MimeType=" + strings.Join(mime, ";") + ";\n")
 	}
 	return b.String()
+}
+
+// packageDir returns the directory of the app's main package.
+func packageDir(c *Config) (string, error) {
+	var out bytes.Buffer
+	cmd := goCommand(c.root, nil, "list", "-f", "{{.Dir}}", c.Main)
+	cmd.Stdout = &out
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("go list %s: %w", c.Main, err)
+	}
+	return strings.TrimSpace(out.String()), nil
 }

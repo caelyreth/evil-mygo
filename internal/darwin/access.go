@@ -33,8 +33,8 @@ type accessElement struct {
 	node     platform.AccessNode
 	parent   id
 	children []uint64
-	// webView is the web view whose page is the first child.
-	webView *window
+	// view is the embedded view whose accessibility tree is the first child.
+	view *window
 	// chosen are the rows of a list or table that are chosen, and count
 	// its rows, built or not.
 	chosen []uint64
@@ -675,17 +675,17 @@ func (s *surface) updateAccessibility(tree *platform.AccessTree) {
 				el.parent = parent
 				send(el.obj, "setAccessibilityParent:", uintptr(parent))
 			}
-			// The page of a web view is inside the element showing it.
-			var web *window
-			if v, ok := n.WebView.(*window); ok && v.host == s.w && !v.closed && !grafted[v] {
-				web, grafted[v] = v, true
+			// An embedded view is inside the element showing it.
+			var embedded *window
+			if v, ok := n.View.(*window); ok && v.host == s.w && !v.closed && !grafted[v] {
+				embedded, grafted[v] = v, true
 				v.accessParent = el.obj
 			}
-			if !slices.Equal(el.children, children[i]) || el.webView != web {
-				el.children, el.webView = children[i], web
+			if !slices.Equal(el.children, children[i]) || el.view != embedded {
+				el.children, el.view = children[i], embedded
 				kids := childObjs[i]
-				if web != nil {
-					kids = append([]id{web.web}, kids...)
+				if embedded != nil {
+					kids = append([]id{embedded.embeddedView}, kids...)
 				}
 				send(el.obj, "setAccessibilityChildren:", uintptr(nsArray(kids...)))
 				changed = true
@@ -694,7 +694,7 @@ func (s *surface) updateAccessibility(tree *platform.AccessTree) {
 		if s.w.closed || s.accessDead {
 			return
 		}
-		for _, v := range s.w.webViews {
+		for _, v := range s.w.embeddedViews {
 			if !grafted[v] {
 				v.accessParent = 0
 			}
@@ -908,7 +908,7 @@ func (s *surface) destroyAccess() {
 	}
 	elements, top := s.elements, s.topLevel
 	s.elements, s.topLevel, s.access = nil, 0, platform.AccessTree{}
-	for _, v := range s.w.webViews {
+	for _, v := range s.w.embeddedViews {
 		v.accessParent = 0
 	}
 	for _, el := range elements {

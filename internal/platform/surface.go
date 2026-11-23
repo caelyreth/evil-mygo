@@ -43,16 +43,6 @@ type Surface interface {
 	CancelDataDrag()
 	// SetDropFormats registers the formats the content can receive.
 	SetDropFormats([]transfer.Format)
-	// NewWebView creates a web view under the surface, hidden until
-	// PlaceWebViews shows it. Of opts, the options of a webview apply
-	// (UserScripts, Schemes, DevTools, UserAgent, Zoom, BackgroundColor,
-	// Transparent); h hears of its page.
-	NewWebView(opts *WindowOptions, h WindowHandler) (WebView, error)
-	// PlaceWebViews shows the web views of the surface where the content's
-	// last frame shows them, in the order it painted them, and hides the
-	// others, which keep their pages. A press on one, which takes it,
-	// comes as WebViewPress.
-	PlaceWebViews(views []WebViewPlacement)
 }
 
 // DamageSurface is a Surface that shows a frame drawn in memory by what
@@ -101,16 +91,17 @@ type GlassPlacement struct {
 	Tint *Color
 }
 
-// ViewSurface is a Surface that shows views of the platform's own under
-// it, as it shows web views: those of native modules (package native),
-// shown with ui.NativeView. macOS's surfaces are.
+// ViewSurface is a Surface that hosts embedded native views under it
+// (package native, shown with ui.NativeView). macOS's surfaces are.
 type ViewSurface interface {
 	// EmbedView puts view, an NSView on macOS, under the surface, hidden
-	// until PlaceWebViews shows it as it shows a web view. The WebView it
-	// returns stands for it there; of its Page, only what concerns a view
-	// applies (Focus, TabInto, Close, which takes the view out of the
-	// window and lets go of it). The surface keeps view while it shows it.
-	EmbedView(view uintptr) (WebView, error)
+	// until PlaceViews shows it. The EmbeddedView it returns stands for
+	// it there. The surface keeps view while it shows it.
+	EmbedView(view uintptr) (EmbeddedView, error)
+	// PlaceViews shows the embedded views of the surface where the
+	// content's last frame shows them, in the order it painted them, and
+	// hides the others.
+	PlaceViews(views []ViewPlacement)
 }
 
 // GlassSurface is a Surface that draws the system's glass under its
@@ -260,11 +251,10 @@ type StackScreen struct {
 }
 
 // PluginViewSurface is a Surface that holds native views of plugins' native
-// code, as it does web views: under it, where its frames leave holes. The
-// WebView of one has no page: only its place, its keyboard and Close do
-// anything.
+// code under it, where its frames leave holes.
 type PluginViewSurface interface {
-	NewPluginView(viewType string, args []byte, h WindowHandler) (WebView, error)
+	NewPluginView(viewType string, args []byte, h WindowHandler) (EmbeddedView, error)
+	PlaceViews(views []ViewPlacement)
 }
 
 // IdleSurface is a Surface that can give back memory once frames stop.
@@ -535,16 +525,14 @@ const (
 	// or, for one that outlives them (Android's EGL context), lets go of
 	// what draws into the old ones and attaches it to the new ones.
 	SurfaceRenew
-	// WebViewPress reports that Button went down at X, Y on a web view
-	// the content shows there (Surface.PlaceWebViews), which takes the
+	// ViewPress reports that Button went down at X, Y on an embedded view
+	// the content shows there (ViewSurface.PlaceViews), which takes the
 	// press and what follows: the content notes it, as popovers close for
 	// a press outside them, but handles none of it.
-	WebViewPress
-	// WebViewTabOut reports that Tab moved the keyboard out of WebView
-	// past its page's last element, or Shift+Tab (Mods) past its first:
-	// the surface has the keyboard again, and the content moves the focus
-	// on from the web view's element.
-	WebViewTabOut
+	ViewPress
+	// ViewTabOut reports that Tab moved the keyboard out of EmbeddedView
+	// past its last element, or Shift+Tab (Mods) past its first.
+	ViewTabOut
 	// SurfaceLowMemory reports that the system is short of memory: the
 	// content lets go of what it can make again.
 	SurfaceLowMemory
@@ -560,13 +548,9 @@ const (
 	// of StackSurface.SetStack, with its back button or a swipe: To is how
 	// many screens stay.
 	SurfaceStackPopped
-	// WebViewKey reports Key with Mods, pressed in the page of WebView,
-	// which has the keyboard, and which the page left unhandled: it did
-	// not cancel it, type it into an editable element or compose with it,
-	// and it is neither Tab nor a modifier key on its own. The content
-	// takes it as if the web view's element had the focus, and the
-	// keyboard stays with the page.
-	WebViewKey
+	// ViewKey reports Key with Mods, pressed in EmbeddedView, which has
+	// the keyboard, and which it left unhandled.
+	ViewKey
 	// TouchDown, TouchMove, TouchUp and TouchCancel report a finger on a
 	// touchscreen landing, moving, lifting or taken by the system (as for
 	// an edge's gesture, where no TouchUp follows) at X, Y, with Pressure
@@ -658,8 +642,8 @@ type SurfaceEvent struct {
 	// TouchDown, TouchMove, TouchUp and TouchCancel.
 	ID     uint64
 	Action AccessActionKind
-	// WebView is WebViewTabOut's and WebViewKey's.
-	WebView WebView
+	// View is ViewTabOut's and ViewKey's.
+	View EmbeddedView
 	// Canceled marks a PointerUp of a finger the system took away, as a second
 	// finger or its own gesture does: it clicks nothing and throws nothing.
 	Canceled bool

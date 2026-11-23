@@ -78,18 +78,3 @@ func TestMenuSwatchRow(t *testing.T) {
 		}
 	})
 }
-
-// TestContextMenuSwatchRow builds the row in a page's context menu too,
-// its swatches telling the window.
-func TestContextMenuSwatchRow(t *testing.T) {
-	load()
-	registerMenuTarget()
-	if theBackend == nil {
-		theBackend = &Backend{}
-		defer func() { theBackend = nil }()
-	}
-	withPool(func() {
-		c := &contextFill{was: map[int]*platform.MenuItem{}}
-		checkSwatchRow(t, c.app(paletteItem()), "mygoContextItemClicked:")
-	})
-}

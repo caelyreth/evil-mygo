@@ -458,43 +458,6 @@ func TestWindowStatePixelCapture(t *testing.T) {
 	}
 }
 
-func TestFileDrop(t *testing.T) {
-	w, fw := readyWindow(t, WindowOptions{})
-	drops := make(chan *FileDropEvent, 1)
-	w.OnFileDrop(func(e *FileDropEvent) { drops <- e })
-
-	fw.Dropped = []string{"/tmp/a.txt", "/tmp/b"}
-	page(fw, `{"t":"drop","x":10.4,"y":20}`)
-	select {
-	case e := <-drops:
-		if len(e.Paths) != 2 || e.Paths[0] != "/tmp/a.txt" || e.X != 10 || e.Y != 20 {
-			t.Errorf("drop = %+v", e)
-		}
-	case <-time.After(wait.Guard):
-		t.Fatal("OnFileDrop was not called")
-	}
-	// about:blank is the app's own page: it gets the paths too.
-	m := received(t, fw, func(m map[string]any) bool { return m["t"] == "event" && m["n"] == "mygo:file-drop" })
-	if p := m["p"].(map[string]any); p["x"] != float64(10) || len(p["paths"].([]any)) != 2 {
-		t.Errorf("page event = %v", m)
-	}
-
-	// A drop without files (text, or a page posting on its own) is ignored.
-	page(fw, `{"t":"drop","x":1,"y":2}`)
-	select {
-	case e := <-drops:
-		t.Errorf("unexpected drop %+v", e)
-	case <-time.After(50 * time.Millisecond):
-	}
-
-	defer func() {
-		if recover() == nil {
-			t.Error("NewEvent accepted a reserved name")
-		}
-	}()
-	NewEvent[int]("mygo:file-drop")
-}
-
 func TestWindowExtras(t *testing.T) {
 	w, fw := testWindow(t, WindowOptions{SkipTaskbar: true, AutoHideMenuBar: true})
 	if !fw.Opts.SkipTaskbar {
@@ -529,22 +492,5 @@ func TestWindowExtras(t *testing.T) {
 	}
 	if err := w.SetIcon([]byte("not a png")); err == nil {
 		t.Error("SetIcon accepted a bad image")
-	}
-}
-
-func TestPrintToPDFOptions(t *testing.T) {
-	w, fw := testWindow(t, WindowOptions{})
-	pdf, err := w.Page().PrintToPDF(PDFOptions{})
-	if err != nil || string(pdf) != "%PDF-1.4 fake" {
-		t.Fatalf("PrintToPDF = %q, %v", pdf, err)
-	}
-	want := platform.PDFOptions{PageWidth: 8.5, PageHeight: 11, MarginTop: 0.4, MarginRight: 0.4, MarginBottom: 0.4, MarginLeft: 0.4}
-	if got := onMainValue(func() platform.PDFOptions { return fw.PDF }); got != want {
-		t.Errorf("defaults = %+v, want %+v", got, want)
-	}
-	w.Page().PrintToPDF(PDFOptions{PageSize: PageA4, Landscape: true, Margins: &Margins{}, Background: true})
-	want = platform.PDFOptions{Landscape: true, PageWidth: 8.27, PageHeight: 11.69, Background: true}
-	if got := onMainValue(func() platform.PDFOptions { return fw.PDF }); got != want {
-		t.Errorf("options = %+v, want %+v", got, want)
 	}
 }

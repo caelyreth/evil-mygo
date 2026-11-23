@@ -9,21 +9,17 @@ package e2e
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"image"
 	"image/color"
 	"image/draw"
 	"image/png"
-	"io"
 	"maps"
 	"math"
-	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"runtime"
 	"slices"
 	"strconv"
@@ -34,76 +30,8 @@ import (
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/internal/wait"
-	"github.com/egoist/mygo/plugins/glass"
 	"github.com/egoist/mygo/ui"
 )
-
-type Greeter struct{}
-
-func (Greeter) Greet(name string) string { return "Hello, " + name + "!" }
-
-func (Greeter) Divide(a, b float64) (float64, error) {
-	if b == 0 {
-		return 0, errors.New("division by zero")
-	}
-	return a / b, nil
-}
-
-func (Greeter) WindowID(ctx context.Context) int { return mygo.CallerWindow(ctx).ID() }
-
-// Probe counts calls, to tell whether a forged call ran.
-type Probe struct{ n atomic.Int32 }
-
-func (p *Probe) Touch() { p.n.Add(1) }
-
-var probe = &Probe{}
-
-type Tick struct {
-	N int `json:"n"`
-}
-
-// Streams streams numbers through channels.
-type Streams struct{ stopped chan error }
-
-// Count sends 0 to n-1.
-func (Streams) Count(n int, ch *mygo.Channel[int]) error {
-	for i := range n {
-		if err := ch.Send(i); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// Forever sends numbers until the page stops it.
-func (s *Streams) Forever(ctx context.Context, ch *mygo.Channel[int]) error {
-	for i := 0; ; i++ {
-		if err := ch.Send(i); err != nil {
-			s.stopped <- ctx.Err()
-			return err
-		}
-	}
-}
-
-var streams = &Streams{stopped: make(chan error, 1)}
-
-var ticked = mygo.NewEvent[Tick]("ticked")
-
-const page = `<!doctype html><html><head><title>E2E</title></head>
-<body style="margin:0;background:#1e90ff"><h1 id="h">MyGo</h1>
-<script>
-window.results = [];
-mygo.on('ticked', (t) => results.push('tick' + t.n));
-window.run = async () => {
-  results.push(await mygo.call('Greeter.Greet', 'e2e'));
-  results.push(await mygo.call('Greeter.Divide', 10, 4));
-  try { await mygo.call('Greeter.Divide', 1, 0) } catch (e) { results.push(e.name + ':' + e.message) }
-  results.push(await mygo.call('Greeter.WindowID') === mygo.windowId);
-  const r = await fetch('/echo', { method: 'POST', body: 'ping' });
-  results.push(r.status + ':' + await r.text());
-  return results;
-};
-</script></body></html>`
 
 func TestMain(m *testing.M) {
 	if os.Getenv("MYGO_E2E") == "" {
@@ -114,10 +42,6 @@ func TestMain(m *testing.M) {
 		clipboardPeer(mode)
 		return
 	}
-	if os.Getenv("MYGO_E2E_FAKE_PORTAL") == "1" {
-		fakePortal()
-		return
-	}
 	if os.Getenv("MYGO_E2E_QUIT_DURING_DIALOG") == "1" {
 		quitDuringDialog()
 		return
@@ -126,88 +50,19 @@ func TestMain(m *testing.M) {
 		beforeRun(mygo.ThemeSource(s))
 		return
 	}
-	if os.Getenv("MYGO_E2E_COOKIES_WHILE_OPENING") == "1" {
-		cookiesWhileOpening()
-		return
-	}
-	if os.Getenv("MYGO_E2E_WEBVIEW_OFF_MAIN") == "1" {
-		webViewOffMain()
-		return
-	}
-	if os.Getenv("MYGO_E2E_COOKIE_VIEW") == "1" {
-		cookieViewApp()
-		return
-	}
 	if os.Getenv("MYGO_E2E_PROGRAM_NAME") == "1" {
 		programName()
 		return
-	}
-	mygo.Bind(Greeter{}, probe, streams, Bench{})
-	mux := http.NewServeMux()
-	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/html")
-		io.WriteString(w, page)
-	})
-	mux.HandleFunc("/report.bin", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/octet-stream")
-		w.Header().Set("Content-Disposition", `attachment; filename="report.bin"`)
-		io.WriteString(w, "binary report")
-	})
-	mux.HandleFunc("/capture", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/html")
-		io.WriteString(w, capturePage)
-	})
-	mux.HandleFunc("/pip", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/html")
-		io.WriteString(w, pipPage)
-	})
-	mux.HandleFunc("/session/", sessionPage)
-	mux.HandleFunc("/cross-origin-frame", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/html")
-		io.WriteString(w, crossOriginFramePage)
-	})
-	mux.HandleFunc("POST /echo", func(w http.ResponseWriter, r *http.Request) {
-		b, _ := io.ReadAll(r.Body)
-		fmt.Fprintf(w, "echo:%s", b)
-	})
-	useBench(mux)
-	useSchemeStreams(mux)
-	if err := mygo.Protocol.Handle("app", mux); err != nil {
-		panic(err)
-	}
-	// Another scheme, so another origin than app:// (TestSchemeCORS).
-	assets := http.NewServeMux()
-	assets.HandleFunc("GET /data", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("X-Count", "3")
-		io.WriteString(w, "asset data")
-	})
-	assets.HandleFunc("POST /data", func(w http.ResponseWriter, r *http.Request) {
-		b, _ := io.ReadAll(r.Body)
-		fmt.Fprintf(w, "posted:%s", b)
-	})
-	// An iframe's document of another host, which loads its script and
-	// fetches through the scheme (TestSchemeCrossOriginFrame).
-	assets.HandleFunc("GET /frame.html", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/html")
-		io.WriteString(w, `<!doctype html><script>parent.postMessage("inline", "*")</script><script src="/frame.js" onerror="parent.postMessage('no script', '*')"></script>`)
-	})
-	assets.HandleFunc("GET /frame.js", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/javascript")
-		io.WriteString(w, `fetch("/data").then(r => r.text()).then(t => parent.postMessage("script, " + t, "*"), e => parent.postMessage("fetch failed: " + e, "*"))`)
-	})
-	if err := mygo.Protocol.Handle("assets", assets); err != nil {
-		panic(err)
 	}
 	mygo.App.OnWindowAllClosed(func() {})
 	// A window requested from a goroutine before Run waits for the app to
 	// be ready (TestEarlyWindow).
 	go func() {
-		earlyWindow <- mygo.NewWindow(mygo.WindowOptions{Hidden: true, Title: "early", Page: firstPages()})
+		earlyWindow <- mygo.NewWindow(mygo.WindowOptions{Hidden: true, Title: "early", Content: ui.View(func(c *ui.Context) { ui.Text(c, "early") })})
 	}()
 	code := 1
 	mygo.App.WhenReady(func() {
 		go func() {
-			warmUp()
 			code = m.Run()
 			mygo.App.Quit()
 		}()
@@ -217,39 +72,6 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 	os.Exit(code)
-}
-
-// warmUp shows a page once before the tests, so that the first test to
-// show one does not pay for starting the webview: WebView2 starts its
-// browser, GPU and renderer processes with the first page, which took a
-// slow runner over ten seconds.
-func warmUp() {
-	start := time.Now()
-	w := mygo.NewWindow(mygo.WindowOptions{Hidden: true, Title: "warm-up", Page: firstPages()})
-	defer w.Destroy()
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
-	defer cancel()
-	if _, err := w.Page().EvalContext(ctx, "1"); err != nil {
-		fmt.Printf("e2e: the webview did not start in %v: %v\n", time.Since(start).Round(time.Millisecond), err)
-	} else if d := time.Since(start); d > 3*time.Second {
-		fmt.Printf("e2e: the webview took %v to start\n", d.Round(time.Millisecond))
-	}
-}
-
-// firstPages are the options of the pages TestMain shows first, the one of
-// which that comes first decides the arguments of WebView2's browser:
-// with MYGO_E2E_UNTHROTTLED, those of ThrottlingOff
-// (TestBackgroundThrottling), and with MYGO_E2E_AUTOPLAY, AutoplayAllow's
-// (TestAutoplay).
-func firstPages() mygo.PageOptions {
-	var o mygo.PageOptions
-	if os.Getenv("MYGO_E2E_UNTHROTTLED") != "" {
-		o.BackgroundThrottling = mygo.ThrottlingOff
-	}
-	if os.Getenv("MYGO_E2E_AUTOPLAY") != "" {
-		o.Autoplay = mygo.AutoplayAllow
-	}
-	return o
 }
 
 // quitDuringDialog is a helper process for TestQuitDuringDialog: it quits
@@ -322,8 +144,6 @@ func beforeRun(source mygo.ThemeSource) {
 		{Label: "New Window", Click: func(*mygo.MenuItem, *mygo.Window) { clicked <- struct{}{} }},
 	}))
 	fmt.Println("locale:", mygo.App.Locale() != "")
-	// Asked before the first window, which may then show native UI.
-	fmt.Println("webview:", mygo.WebViewAvailable())
 	mygo.Power.IsOnBattery()
 	styled := gtkCSSBeforeRun()
 	for _, c := range beforeRunCalls {
@@ -371,7 +191,7 @@ func TestBeforeRun(t *testing.T) {
 			t.Errorf("%s: %v:\n%s", source, err, out)
 			continue
 		}
-		wants := []string{"locale: true\n", "webview: true\n", fmt.Sprintf("dark: %v\n", source == mygo.ThemeDark), "gtk css: true\n"}
+		wants := []string{"locale: true\n", fmt.Sprintf("dark: %v\n", source == mygo.ThemeDark), "gtk css: true\n"}
 		for _, c := range beforeRunCalls {
 			wants = append(wants, c.name+": mygo: "+c.name+" called before ")
 		}
@@ -384,38 +204,6 @@ func TestBeforeRun(t *testing.T) {
 			}
 		}
 	}
-}
-
-// TestIframeCannotCall: the message handler is reachable from iframes, but
-// only the page's bridge may call Go.
-func TestIframeCannotCall(t *testing.T) {
-	w := newWindow(t, mygo.WindowOptions{Hidden: true})
-	forged := `{"t":"call","id":1,"k":"x","m":"Probe.Touch","a":[]}`
-	frame := `<script>
-const h = window.webkit && webkit.messageHandlers && webkit.messageHandlers.mygo;
-if (h) h.postMessage(` + "`" + forged + "`" + `);
-parent.postMessage(h ? "posted" : "no handler", "*");
-</script>`
-	src, _ := json.Marshal(frame)
-	w.Page().LoadHTML(`<p>main</p><script>
-addEventListener("message", (e) => { window.frameResult = e.data });
-const f = document.createElement("iframe");
-f.src = "data:text/html," + encodeURIComponent(`+string(src)+`);
-document.body.append(f);
-</script>`, "app://localhost/")
-	waitFor(t, w, "window.frameResult")
-	result, _ := mygo.EvalAs[string](w.Page(), "window.frameResult")
-	if result != "posted" {
-		t.Skipf("the iframe had no message handler (%q)", result)
-	}
-	time.Sleep(200 * time.Millisecond)
-	if n := probe.n.Load(); n != 0 {
-		t.Fatalf("a call forged by an iframe ran %d times", n)
-	}
-	if _, err := w.Page().Eval("mygo.call('Probe.Touch')"); err != nil || probe.n.Load() != 1 {
-		t.Errorf("the page's own call: %v, count %d", err, probe.n.Load())
-	}
-	probe.n.Store(0)
 }
 
 func TestPopupMenu(t *testing.T) {
@@ -443,9 +231,7 @@ func TestPopupMenu(t *testing.T) {
 	if n := popup(func() { menu.Popup(nil) }); n != 0 {
 		t.Errorf("popup without a window: %d menus shown", n)
 	}
-	w := newWindow(t, mygo.WindowOptions{Width: 300, Height: 200})
-	w.Page().LoadHTML("<p>menu</p>", "")
-	waitFor(t, w, "document.readyState === 'complete'")
+	w := newWindow(t, mygo.WindowOptions{Width: 300, Height: 200, Content: ui.View(func(c *ui.Context) { ui.Text(c, "menu") })})
 	if n := popup(func() { menu.PopupAt(w, 20, 20) }); n != 1 {
 		t.Errorf("PopupAt: %d menus shown", n)
 	}
@@ -498,62 +284,6 @@ func TestEarlyWindow(t *testing.T) {
 	}
 }
 
-// waitFor polls the page until expr is truthy. Until a page being loaded
-// commits, expr runs in the previous one, such as the empty document a new
-// window starts with, which is complete already: wait for something of the
-// page itself. It waits up to wait.Guard for the page to answer at all
-// (WebView2 creates a window's webview asynchronously, and evaluating
-// waits for it), then up to wait.Guard again for expr.
-func waitFor(t testing.TB, w *mygo.Window, expr string) {
-	t.Helper()
-	waitForPage(t, w.Page(), expr)
-}
-
-// waitForPage is waitFor for a page, as a web view's.
-func waitForPage(t testing.TB, p *mygo.Page, expr string) {
-	t.Helper()
-	check := "!!(" + expr + ")"
-	start := time.Now()
-	first, cancel := context.WithTimeout(t.Context(), wait.Guard)
-	v, err := p.EvalContext(first, check)
-	late := err != nil && first.Err() != nil
-	cancel()
-	answered := time.Since(start)
-	if late {
-		t.Fatalf("waiting for %s: the page did not answer in %v: %v; %s", expr, answered.Round(time.Millisecond), err, pageState(p))
-	}
-	ctx := wait.Context(t)
-	for v != true {
-		select {
-		case <-ctx.Done():
-			msg := fmt.Sprintf("%s never became true, %v after the page first answered (in %v)", expr, wait.Guard, answered.Round(time.Millisecond))
-			if err != nil {
-				msg += "; the last check failed: " + err.Error()
-			}
-			t.Fatalf("%s; %s", msg, pageState(p))
-		case <-time.After(20 * time.Millisecond):
-		}
-		v, err = p.EvalContext(ctx, check)
-	}
-}
-
-// pageState describes where a page is, for failures: what the webview
-// reports, and what the page itself says, if it answers.
-func pageState(p *mygo.Page) string {
-	s := fmt.Sprintf("the webview is at %q (loading: %v)", p.URL(), p.IsLoading())
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	v, err := p.EvalContext(ctx, "[location.href, document.title, document.readyState]")
-	if err != nil {
-		return s + ", and the page did not answer: " + err.Error()
-	}
-	a, _ := v.([]any)
-	if len(a) != 3 {
-		return fmt.Sprintf("%s, and the page answered %v", s, v)
-	}
-	return fmt.Sprintf("%s; location.href %q, document.title %q, document.readyState %q", s, a[0], a[1], a[2])
-}
-
 func newWindow(t *testing.T, opts mygo.WindowOptions) *mygo.Window {
 	t.Helper()
 	// Registered first, it runs last, with the test's own cleanups and
@@ -565,210 +295,10 @@ func newWindow(t *testing.T, opts mygo.WindowOptions) *mygo.Window {
 	return w
 }
 
-func TestIPCAndProtocol(t *testing.T) {
-	w := newWindow(t, mygo.WindowOptions{Title: "IPC", Width: 400, Height: 300})
-	var dom atomic.Bool
-	w.Page().OnDOMReady(func() { dom.Store(true) })
-	if err := w.Page().LoadURL("app://localhost/"); err != nil {
-		t.Fatal(err)
-	}
-	waitFor(t, w, "window.run")
-	got, err := mygo.EvalAs[[]any](w.Page(), "run()")
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := "[Hello, e2e! 2.5 CallError:division by zero true 200:echo:ping]"
-	if fmt.Sprint(got) != want {
-		t.Errorf("results = %v, want %v", got, want)
-	}
-	if !dom.Load() {
-		t.Error("OnDOMReady not called")
-	}
-	for i := 1; i <= 3; i++ {
-		if err := ticked.Emit(w, Tick{N: i}); err != nil {
-			t.Fatal(err)
-		}
-	}
-	waitFor(t, w, "results.includes('tick3')")
-	ticks, _ := mygo.EvalAs[string](w.Page(), "results.filter(r => String(r).startsWith('tick')).join(',')")
-	if ticks != "tick1,tick2,tick3" {
-		t.Errorf("events arrived as %q", ticks)
-	}
-	if title := w.Title(); title != "E2E" {
-		t.Errorf("window title should follow the page, got %q", title)
-	}
-	if u := w.Page().URL(); u != "app://localhost/" {
-		t.Errorf("URL = %q", u)
-	}
-}
-
-// TestUserAgentSuffix: PageOptions.UserAgentSuffix appends to the user agent
-// of the page's web view, its own or the one UserAgent sets, instead of
-// replacing it as UserAgent does.
-func TestUserAgentSuffix(t *testing.T) {
-	const suffix = "MyApp/1.2"
-	check := func(name, want string, opts mygo.PageOptions) {
-		t.Helper()
-		opts.UserAgentSuffix = " " + suffix + " "
-		w := newWindow(t, mygo.WindowOptions{Hidden: true, URL: "app://localhost/", Page: opts})
-		waitFor(t, w, "document.readyState === 'complete'")
-		ua, err := mygo.EvalAs[string](w.Page(), "navigator.userAgent")
-		if err != nil {
-			t.Fatalf("%s: %v", name, err)
-		}
-		if !strings.HasSuffix(ua, " "+suffix) {
-			t.Errorf("%s: navigator.userAgent = %q, want the suffix %q", name, ua, suffix)
-		}
-		if want != "" && ua != want {
-			t.Errorf("%s: navigator.userAgent = %q, want %q", name, ua, want)
-		}
-		if got := w.Page().UserAgent(); !strings.HasSuffix(got, " "+suffix) {
-			t.Errorf("%s: Page.UserAgent() = %q, want the suffix %q", name, got, suffix)
-		}
-	}
-	check("default user agent", "", mygo.PageOptions{})
-	check("UserAgent", "MyAgent/2 "+suffix, mygo.PageOptions{UserAgent: "MyAgent/2"})
-}
-
-func TestChannels(t *testing.T) {
-	w := newWindow(t, mygo.WindowOptions{Hidden: true})
-	if err := w.Page().LoadURL("app://localhost/"); err != nil {
-		t.Fatal(err)
-	}
-	waitFor(t, w, "window.run")
-	start := time.Now()
-	got, err := mygo.EvalAs[string](w.Page(), `(async () => {
-		const ch = mygo.channel();
-		const done = mygo.call("Streams.Count", 100000, ch);
-		let n = 0, sum = 0;
-		for await (const v of ch) {
-			if (v !== n++) throw new Error("out of order: " + v);
-			sum += v;
-		}
-		await done;
-		return n + ":" + sum;
-	})()`)
-	if err != nil || got != "100000:4999950000" {
-		t.Fatalf("streamed %q, %v", got, err)
-	}
-	t.Logf("100000 values in %v", time.Since(start))
-
-	// Leaving the loop stops the method: Send fails, the context is canceled.
-	got, err = mygo.EvalAs[string](w.Page(), `(async () => {
-		const ch = mygo.channel();
-		const done = mygo.call("Streams.Forever", ch);
-		for await (const v of ch) if (v === 50000) break;
-		return await done.then(() => "resolved", (e) => e.message);
-	})()`)
-	if err != nil || got != mygo.ErrChannelClosed.Error() {
-		t.Errorf("stopped stream: %q, %v", got, err)
-	}
-	select {
-	case err := <-streams.stopped:
-		if !errors.Is(err, context.Canceled) {
-			t.Errorf("context of the stopped call: %v", err)
-		}
-	case <-time.After(wait.Guard):
-		t.Fatal("the method did not stop")
-	}
-}
-
-// TestReloadLoadHTML checks that reloading a page LoadHTML loaded, by the
-// app or the page, loads the HTML again, where the web view would load its
-// URL: a blank page, or what its base URL serves.
-func TestReloadLoadHTML(t *testing.T) {
-	w := newWindow(t, mygo.WindowOptions{Hidden: true})
-	reloads := []struct {
-		name   string
-		reload func()
-	}{
-		{"Reload", w.Page().Reload},
-		{"location.reload()", func() { w.Page().Eval("setTimeout(() => location.reload())") }},
-	}
-	for _, base := range []string{"", "about:blank", "app://localhost/"} {
-		w.Page().LoadHTML(fmt.Sprintf("<p id=html data-base=%q>html</p>", base), base)
-		shown := fmt.Sprintf("document.getElementById('html')?.dataset.base === %q", base)
-		for _, r := range reloads {
-			t.Logf("base URL %q, %s", base, r.name)
-			waitFor(t, w, shown)
-			if _, err := w.Page().Eval("window.before = true"); err != nil {
-				t.Fatal(err)
-			}
-			r.reload()
-			waitFor(t, w, "!window.before && "+shown)
-		}
-	}
-}
-
-func TestEvalForms(t *testing.T) {
-	w := newWindow(t, mygo.WindowOptions{Hidden: true})
-	w.Page().LoadHTML("<p>eval</p>", "")
-	waitFor(t, w, "document.querySelector('p')")
-	cases := []struct{ code, want string }{
-		{"1 + 1", "2"},
-		{"document.querySelector('p').textContent;", "eval"},
-		{"const xs = [1, 2]; return xs.map(x => x * 3)", "[3 6]"},
-		{"new Promise(r => setTimeout(() => r({ok: true}), 10))", "map[ok:true]"},
-		{"undefined", "<nil>"},
-	}
-	for _, c := range cases {
-		v, err := w.Page().Eval(c.code)
-		if err != nil || fmt.Sprint(v) != c.want {
-			t.Errorf("Eval(%q) = %v, %v; want %s", c.code, v, err, c.want)
-		}
-	}
-	var evalErr *mygo.EvalError
-	if _, err := w.Page().Eval("throw new Error('boom')"); !errors.As(err, &evalErr) || evalErr.Message != "boom" {
-		t.Errorf("Eval(throw) = %v", err)
-	}
-}
-
-// TestThemePreferencesReachThePage checks the whole path from the desktop
-// to a real page: the accent color and the settings of accessibility as
-// mygo-runtime's preferences and the CSS variables of :root, which the
-// page reads. Which accent a CI desktop has is unknown, so the page is
-// compared with Go, not fixed.
-func TestThemePreferencesReachThePage(t *testing.T) {
-	w := newWindow(t, mygo.WindowOptions{Hidden: true})
-	w.Page().LoadHTML("<p>preferences</p>", "")
-	read := func(name string) string {
-		t.Helper()
-		v, err := mygo.EvalAs[string](w.Page(), `getComputedStyle(document.documentElement).getPropertyValue("`+name+`").trim()`)
-		if err != nil {
-			t.Fatalf("reading %s: %v; %s", name, err, pageState(w.Page()))
-		}
-		return v
-	}
-	waitFor(t, w, `getComputedStyle(document.documentElement).getPropertyValue("--mygo-text-scale").trim()`)
-	p := mygo.Theme.Preferences()
-	if got, want := read("--mygo-text-scale"), fmt.Sprint(p.TextScale); got != want {
-		t.Errorf("--mygo-text-scale = %q, want %q", got, want)
-	}
-	want, err := json.Marshal(p)
-	if err != nil {
-		t.Fatal(err)
-	}
-	got, err := mygo.EvalAs[string](w.Page(), `JSON.stringify(window.mygo.preferences)`)
-	if err != nil || got != string(want) {
-		t.Errorf("mygo.preferences = %s, %v, want %s", got, err, want)
-	}
-	accent := ""
-	if a := p.Accent; a.A != 0 {
-		accent = fmt.Sprintf("#%02x%02x%02x", a.R, a.G, a.B)
-	}
-	if got := read("--mygo-accent"); got != accent {
-		t.Errorf("--mygo-accent = %q, want %q", got, accent)
-	}
-}
-
 func TestVibrancy(t *testing.T) {
 	for _, material := range []mygo.Vibrancy{mygo.VibrancySidebar, mygo.VibrancyMica, "no-such-material"} {
-		w := newWindow(t, mygo.WindowOptions{Width: 300, Height: 200, Vibrancy: material, Transparent: true})
-		w.Page().LoadHTML("<p>vibrancy</p>", "")
-		waitFor(t, w, "document.readyState === 'complete'")
-		if attached, ok := webViewAttached(w); ok && !attached {
-			t.Errorf("vibrancy %q: the page is not in the window", material)
-		}
+		newWindow(t, mygo.WindowOptions{Width: 300, Height: 200, Vibrancy: material, Transparent: true,
+			Content: ui.View(func(c *ui.Context) { ui.Text(c, "vibrancy") })})
 	}
 }
 
@@ -893,88 +423,6 @@ func TestGlassWithoutTransparent(t *testing.T) {
 	wantClear("transparent glass", tr)
 	tr.SetVibrancy(mygo.VibrancyNone)
 	wantClear("transparent, no material", tr)
-}
-
-// TestNativeGlassOverWebView puts a toolbar of the system's glass over a
-// web view: NSGlassEffectView sits under the content and above the web
-// view, with the toolbar's frame, where it samples the page.
-func TestNativeGlassOverWebView(t *testing.T) {
-	if !nativeGlassSupported() {
-		t.Skip("the system has no Liquid Glass, or reduces transparency")
-	}
-	var view *mygo.WebView
-	var clicks atomic.Int32
-	var show atomic.Bool
-	show.Store(true)
-	w := newWindow(t, mygo.WindowOptions{Width: 400, Height: 300, Content: ui.View(func(c *ui.Context) {
-		c.Root().Background(ui.Transparent)
-		ui.Box(c).Fill().Children(func() {
-			if view != nil {
-				ui.WebView(c, view).Fill()
-			}
-			if show.Load() {
-				ui.Row(c).Absolute().Top(0).Left(0).Right(0).Height(60).Radius(18).Padding(0, 16).AlignItems(ui.Center).Material(glass.Glass{Native: true, Tint: ui.RGBA(255, 0, 0, 0.5)}).Children(func() {
-					if ui.Button(c, "On glass").Width(100).Clicked() {
-						clicks.Add(1)
-					}
-				})
-			}
-		})
-	})})
-	v, err := w.NewWebView(mygo.WebViewOptions{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	w.Update(func() { view = v })
-	v.Page().LoadHTML(`<body style="margin:0;height:3000px;background:#ff0000"><script>requestAnimationFrame(() => requestAnimationFrame(() => { window.ready = true }))</script></body>`, "")
-	waitForPage(t, v.Page(), "window.ready")
-	eventually(t, "the system's glass", func() bool { class, _, _, _ := nativeGlass(w); return class != "" })
-	class, frame, style, ok := nativeGlass(w)
-	if !ok || class != "NSGlassEffectView" {
-		t.Fatalf("the system's glass is %q, not NSGlassEffectView", class)
-	}
-	if style != 0 {
-		t.Errorf("glass style is %d, not regular", style)
-	}
-	if r, g, b, a := nativeGlassTint(w); math.Abs(r-1) > 0.02 || math.Abs(g) > 0.02 || math.Abs(b) > 0.02 || math.Abs(a-0.5) > 0.02 {
-		t.Errorf("glass tint is %v, %v, %v, %v; want red at half alpha", r, g, b, a)
-	}
-	// The toolbar is 60 DIPs at the top of the content, whose height the
-	// title bar leaves.
-	h := float64(w.ContentBounds().Height)
-	want := [4]float64{0, h - 60, 400, 60}
-	for i := range want {
-		if math.Abs(frame[i]-want[i]) > 1 {
-			t.Errorf("glass frame is %v, want %v", frame, want)
-			break
-		}
-	}
-	// The glass is under the content, which takes the pointer: its button
-	// works through it. TestGlass may have left another app in front.
-	activateApp()
-	w.Show()
-	if _, ok := appActive(); ok {
-		eventually(t, "the app in front", func() bool { active, _ := appActive(); return active })
-	}
-	w.Focus()
-	eventually(t, "the glass window focused", w.IsFocused)
-	if !click(w, 66, 30) {
-		t.Skip("click automation not available")
-	}
-	// The first click after another app was in front may only activate the
-	// app; the next one is the button's.
-	if clicks.Load() == 0 {
-		click(w, 66, 30)
-	}
-	eventually(t, "the click on the glass", func() bool { return clicks.Load() == 1 })
-	// The page is under the glass, and the glass is under the content: the
-	// web view takes the pointer where the page shows.
-	if class := hitView(w, 200, 250); !strings.Contains(class, "WebView") {
-		t.Errorf("the view at the page is %q, not the web view", class)
-	}
-	// The glass of an element that goes away is removed, not only hidden.
-	w.Update(func() { show.Store(false) })
-	eventually(t, "the glass removed", func() bool { class, _, _, ok := nativeGlass(w); return !ok || class == "" })
 }
 
 // TestRoundedOpaqueWindow rounds a frameless window that is not
@@ -1176,18 +624,8 @@ func TestTrafficLightPosition(t *testing.T) {
 		})
 	}
 	placed("in a new window")
-	w.Page().LoadHTML("<title>Traffic lights</title>", "")
-	eventually(t, "the page's title", func() bool { return w.Title() == "Traffic lights" })
-	placed("once the window takes the page's title")
-	// The title bar leaves as much room below the lights as above them, and
-	// the page hears where they end.
-	v, _ := mygo.EvalAs[[]float64](w.Page(), `(() => {
-		const s = getComputedStyle(document.documentElement);
-		return ["height", "controls-bottom"].map((k) => parseFloat(s.getPropertyValue("--mygo-titlebar-" + k)) || 0);
-	})()`)
-	if len(v) != 2 || v[1] == 0 || v[1] != v[0]-19 {
-		t.Errorf("title bar height and controls bottom %v, want the lights to end 19 above its bottom", v)
-	}
+	w.SetTitle("Traffic lights")
+	placed("after SetTitle")
 	defer mygo.Theme.SetSource(mygo.Theme.Source())
 	if mygo.Theme.IsDark() {
 		mygo.Theme.SetSource(mygo.ThemeLight)
@@ -1200,14 +638,18 @@ func TestTrafficLightPosition(t *testing.T) {
 }
 
 // GTK gives frameless windows no resize borders, so the outer pixels of
-// the page resize them instead, as the borders do on macOS and Windows.
+// the content resize them instead, as the borders do on macOS and Windows.
 func TestFramelessResizeEdges(t *testing.T) {
-	w := newWindow(t, mygo.WindowOptions{Frameless: true, X: 60, Y: 60, Width: 320, Height: 240})
+	var pressed atomic.Int32
+	w := newWindow(t, mygo.WindowOptions{Frameless: true, X: 60, Y: 60, Width: 320, Height: 240,
+		Content: ui.View(func(c *ui.Context) {
+			if ui.Box(c).Fill().Clicked() {
+				pressed.Add(1)
+			}
+		})})
 	if _, ok := resizeCursor(w); !ok {
 		t.Skip("frameless windows keep native resize borders on this platform")
 	}
-	w.Page().LoadHTML(`<body style="margin:0;height:100vh" onmousedown="window.pressed=(window.pressed||0)+1"></body>`, "")
-	waitFor(t, w, "document.readyState === 'complete'")
 	cursor := func(want string) {
 		t.Helper()
 		eventually(t, fmt.Sprintf("the cursor %q", want), func() bool { c, _ := resizeCursor(w); return c == want })
@@ -1239,13 +681,12 @@ func TestFramelessResizeEdges(t *testing.T) {
 		return r.Width == b.Width-30 && r.Height == b.Height-20
 	})
 
-	// Elsewhere the page gets the mouse and shows its own cursor; it saw
-	// none of the presses on the edges.
+	// Elsewhere the content gets the mouse; it saw none of the presses on the edges.
 	movePointer(b.X+100, b.Y+100)
 	cursor("")
 	pressButton(true)
 	pressButton(false)
-	waitFor(t, w, "window.pressed === 1")
+	eventually(t, "the content click", func() bool { return pressed.Load() == 1 })
 }
 
 // A window without a caption that is maximized, minimized and restored
@@ -1317,21 +758,6 @@ func TestCaptionlessContentSize(t *testing.T) {
 	}
 }
 
-func TestDockedDevTools(t *testing.T) {
-	w := newWindow(t, mygo.WindowOptions{Title: "DevTools", Width: 800, Height: 600, Page: mygo.PageOptions{DevTools: mygo.DevToolsEnabled}})
-	w.Page().LoadHTML("<p>inspect me</p>", "")
-	waitFor(t, w, "document.readyState === 'complete'")
-	if !dockDevTools(w) {
-		t.Skip("docking the inspector is not automated here")
-	}
-	defer w.Page().CloseDevTools()
-	eventually(t, "the inspector to open", w.Page().IsDevToolsOpened)
-	// Docked anywhere else in the window, it breaks the title bar.
-	if place := dockedDevToolsPlace(w); place != "content" {
-		t.Errorf("docked inspector place = %q, want %q", place, "content")
-	}
-}
-
 // A minimized window is still visible, as Show and Hide set it, on every
 // platform (#1542): AppKit's isVisible is false for a window in the Dock.
 func TestMinimizedWindowIsVisible(t *testing.T) {
@@ -1392,106 +818,41 @@ func TestWindowGeometryAndState(t *testing.T) {
 	if o := w.Opacity(); o < 0.49 || o > 0.51 {
 		t.Errorf("opacity = %v", o)
 	}
-	w.Page().SetZoomFactor(1.5)
-	if z := w.Page().ZoomFactor(); z != 1.5 {
-		t.Errorf("zoom = %v", z)
-	}
 }
 
-// ProcessID is the page's web content process on macOS and WebView2's
-// browser process on Windows, never the app's own; Linux has none.
-func TestPageProcessID(t *testing.T) {
-	w := newWindow(t, mygo.WindowOptions{Width: 300, Height: 200})
-	w.Page().LoadHTML(`<p>process</p>`, "")
-	waitFor(t, w, "document.readyState === 'complete'")
-	pid := w.Page().ProcessID()
-	if runtime.GOOS == "linux" {
-		if pid != 0 {
-			t.Errorf("ProcessID = %d on Linux, want 0", pid)
-		}
-		return
-	}
-	if pid <= 0 || pid == os.Getpid() {
-		t.Errorf("ProcessID = %d, want another process than the app's (%d)", pid, os.Getpid())
-	}
-}
-
-// gpuPage draws on a canvas with 2D and WebGL contexts and loads a second
-// of silence in an audio element, which WebKit does in its GPU process,
-// starting it.
-const gpuPage = `<canvas id=c width=64 height=64></canvas><script>
-const g = c.getContext('2d'); g.fillStyle = 'red'; g.fillRect(0, 0, 64, 64);
-const gl = document.createElement('canvas').getContext('webgl'); if (gl) gl.clear(gl.COLOR_BUFFER_BIT);
-const n = 8000, wav = new Uint8Array(44 + n).fill(128), v = new DataView(wav.buffer);
-const tag = (at, s) => [...s].forEach((ch, i) => v.setUint8(at + i, ch.charCodeAt(0)));
-tag(0, 'RIFF'); v.setUint32(4, 36 + n, true); tag(8, 'WAVEfmt '); v.setUint32(16, 16, true);
-v.setUint16(20, 1, true); v.setUint16(22, 1, true); v.setUint32(24, 8000, true); v.setUint32(28, 8000, true);
-v.setUint16(32, 1, true); v.setUint16(34, 8, true); tag(36, 'data'); v.setUint32(40, n, true);
-const a = new Audio(URL.createObjectURL(new Blob([wav], {type: 'audio/wav'}))); a.load(); document.body.append(a);
-</script>`
-
-// GPUProcessID is WebKit's GPU process on macOS (com.apple.WebKit.GPU) and
-// WebView2's GPU process on Windows, one of WebView2's processes, neither
-// the app's own nor ProcessID's; Linux has none.
-func TestPageGPUProcessID(t *testing.T) {
-	w := newWindow(t, mygo.WindowOptions{Width: 300, Height: 200})
-	w.Page().LoadHTML(gpuPage, "")
-	waitFor(t, w, "document.readyState === 'complete'")
-	if runtime.GOOS == "linux" {
-		if pid := w.Page().GPUProcessID(); pid != 0 {
-			t.Errorf("GPUProcessID = %d on Linux, want 0", pid)
-		}
-		return
-	}
-	var pid int
-	wait.Until(t, "a GPU process", func() bool { pid = w.Page().GPUProcessID(); return pid != 0 })
-	if pid < 0 || pid == os.Getpid() || pid == w.Page().ProcessID() {
-		t.Errorf("GPUProcessID = %d, want another process than the app's (%d) and ProcessID's (%d)", pid, os.Getpid(), w.Page().ProcessID())
-	}
-	switch runtime.GOOS {
-	case "darwin":
-		out, err := exec.Command("ps", "-o", "comm=", "-p", strconv.Itoa(pid)).Output()
-		if err != nil || !strings.Contains(string(out), "com.apple.WebKit.GPU") {
-			t.Errorf("GPUProcessID %d is %q (%v), want com.apple.WebKit.GPU", pid, strings.TrimSpace(string(out)), err)
-		}
-	case "windows":
-		if procs := webViewProcesses(); !slices.Contains(procs, pid) {
-			t.Errorf("GPUProcessID %d is none of WebView2's processes %v", pid, procs)
-		}
-	}
-}
-
-// ContentBounds is where the page is on the screen: inside Bounds, below
+// ContentBounds is where the content is on the screen: inside Bounds, below
 // the title bar and borders of a window manager's frame and below a menu
-// bar. SetContentBounds puts the page there.
+// bar. SetContentBounds puts the content there.
 func TestContentBounds(t *testing.T) {
 	mygo.App.SetMenu(mygo.NewMenu([]*mygo.MenuItem{{Label: "App", Submenu: []*mygo.MenuItem{{Label: "Item"}}}}))
 	defer mygo.App.SetMenu(nil)
-	w := newWindow(t, mygo.WindowOptions{Width: 400, Height: 300, X: 120, Y: 140})
-	w.Page().LoadHTML(`<body style="margin:0;height:100vh" onmousedown="window.at=[event.clientX,event.clientY]"></body>`, "")
-	waitFor(t, w, "document.readyState === 'complete'")
+	var at [2]float32
+	var clicked atomic.Bool
+	w := newWindow(t, mygo.WindowOptions{Width: 400, Height: 300, X: 120, Y: 140,
+		Content: ui.View(func(c *ui.Context) {
+			ui.Box(c).Fill().ObserveInput(func(ev ui.InputEvent) {
+				if ev.Kind == ui.InputPointerDown {
+					at = [2]float32{ev.X, ev.Y}
+					clicked.Store(true)
+				}
+			})
+		})})
 	check := func(what string) {
 		t.Helper()
 		b, c := w.Bounds(), w.ContentBounds()
 		if c.X < b.X || c.Y < b.Y || c.X+c.Width > b.X+b.Width || c.Y+c.Height > b.Y+b.Height {
 			t.Fatalf("%s: content %+v not inside the window %+v", what, c, b)
 		}
-		page := func() [2]int {
-			got, _ := mygo.EvalAs[[2]int](w.Page(), "[innerWidth, innerHeight]")
-			return got
-		}
-		eventually(t, what+": the page as large as the content", func() bool { return page() == [2]int{c.Width, c.Height} })
-		// A press at the content's top-left corner lands there in the page.
 		if !movePointer(c.X+3, c.Y+2) {
 			return
 		}
+		clicked.Store(false)
 		pressButton(true)
 		pressButton(false)
-		waitFor(t, w, "window.at")
-		if at, _ := mygo.EvalAs[[2]int](w.Page(), "window.at"); at != [2]int{3, 2} {
-			t.Errorf("%s: a press at the content's (3, 2), content %+v in the window %+v, reached the page at %v", what, c, b, at)
+		eventually(t, what+": pointer down", clicked.Load)
+		if at != [2]float32{3, 2} {
+			t.Errorf("%s: a press at the content's (3, 2), content %+v in the window %+v, reached %v", what, c, b, at)
 		}
-		w.Page().Eval("window.at = undefined")
 	}
 	check("a new window")
 	want := mygo.Rectangle{X: 200, Y: 180, Width: 360, Height: 240}
@@ -1504,38 +865,17 @@ func TestContentBounds(t *testing.T) {
 // smaller ones too: GTK keeps such windows at least as large as their
 // default size.
 func TestResizeFixedWindow(t *testing.T) {
-	w := newWindow(t, mygo.WindowOptions{Width: 500, Height: 400, UseContentSize: true, DisableResize: true})
-	w.Page().LoadHTML("<p>fixed</p>", "")
+	w := newWindow(t, mygo.WindowOptions{Width: 500, Height: 400, UseContentSize: true, DisableResize: true,
+		Content: ui.View(func(c *ui.Context) { ui.Text(c, "fixed") })})
 	for _, size := range [][2]int{{360, 240}, {540, 420}} {
 		w.SetContentSize(size[0], size[1])
-		eventually(t, fmt.Sprintf("a %dx%d page", size[0], size[1]), func() bool {
-			got, _ := mygo.EvalAs[[2]int](w.Page(), "[innerWidth, innerHeight]")
-			return got == size
+		eventually(t, fmt.Sprintf("a %dx%d content size", size[0], size[1]), func() bool {
+			cw, ch := w.ContentSize()
+			return [2]int{cw, ch} == size
 		})
 	}
 	if w.IsResizable() {
 		t.Error("the window became resizable")
-	}
-}
-
-// A page whose Content Security Policy runs only its own scripts still
-// talks to Go: the bridge and the messages it receives are not the page's.
-func TestStrictCSP(t *testing.T) {
-	w := newWindow(t, mygo.WindowOptions{Width: 300, Height: 200})
-	w.Page().LoadHTML(`<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'nonce-e2e'">
-<script nonce="e2e">
-window.results = [];
-(async () => {
-  results.push(await mygo.call("Greeter.Greet", "csp"));
-  const values = [];
-  await mygo.call("Streams.Count", 3, mygo.channel((v) => values.push(v)));
-  results.push(values.join(","));
-})().catch((e) => results.push("error: " + e.message));
-</script>`, "")
-	waitFor(t, w, "window.results && results.length === 2")
-	got, err := mygo.EvalAs[[]string](w.Page(), "results")
-	if err != nil || fmt.Sprint(got) != "[Hello, csp! 0,1,2]" {
-		t.Errorf("results = %q, %v", got, err)
 	}
 }
 
@@ -1797,19 +1137,14 @@ func TestWindowOnEveryDisplay(t *testing.T) {
 // GTK made them at least 200x200, their natural size with only a web view,
 // and asked for their previous size again from an early report of it.
 func TestSmallFixedWindow(t *testing.T) {
-	w := newWindow(t, mygo.WindowOptions{Width: 400, Height: 300, UseContentSize: true, DisableResize: true})
-	w.Page().LoadHTML("<p>small</p>", "")
+	w := newWindow(t, mygo.WindowOptions{Width: 400, Height: 300, UseContentSize: true, DisableResize: true,
+		Content: ui.View(func(c *ui.Context) { ui.Text(c, "small") })})
 	for _, size := range [][2]int{{300, 150}, {300, 100}, {280, 80}} {
 		w.SetContentSize(size[0], size[1])
-		page := func() [2]int {
-			got, _ := mygo.EvalAs[[2]int](w.Page(), "[innerWidth, innerHeight]")
-			return got
-		}
-		eventually(t, fmt.Sprintf("a %dx%d page", size[0], size[1]), func() bool { return page() == size })
 		time.Sleep(300 * time.Millisecond) // and it stays so
 		width, height := w.ContentSize()
-		if got := page(); got != size || width != size[0] || height != size[1] {
-			t.Errorf("asked for %v: the page is %v, the content size %dx%d", size, got, width, height)
+		if width != size[0] || height != size[1] {
+			t.Errorf("asked for %v: the content size %dx%d", size, width, height)
 		}
 	}
 }
@@ -1819,16 +1154,12 @@ func TestResizeBelowMinimum(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("GTK keeps windows within their minimum size")
 	}
-	w := newWindow(t, mygo.WindowOptions{Width: 400, Height: 300, MinWidth: 320, MinHeight: 240, UseContentSize: true})
-	w.Page().LoadHTML("<p>minimum</p>", "")
+	w := newWindow(t, mygo.WindowOptions{Width: 400, Height: 300, MinWidth: 320, MinHeight: 240, UseContentSize: true,
+		Content: ui.View(func(c *ui.Context) { ui.Text(c, "minimum") })})
 	w.SetContentSize(200, 100)
 	if width, height := w.ContentSize(); width != 320 || height != 240 {
 		t.Errorf("content size = %dx%d, want the minimum", width, height)
 	}
-	eventually(t, "a 320x240 page", func() bool {
-		got, _ := mygo.EvalAs[[2]int](w.Page(), "[innerWidth, innerHeight]")
-		return got == [2]int{320, 240}
-	})
 	w.SetContentSize(320, 200) // the window already has the size GTK gives
 	if width, height := w.ContentSize(); width != 320 || height != 240 {
 		t.Errorf("content size = %dx%d, want the minimum", width, height)
@@ -1978,94 +1309,6 @@ func TestHideInFrame(t *testing.T) {
 // TestFileDrop drops files with synthetic DOM events, the platform side
 // being played by a test hook, and checks that the page's own drag and
 // drop is undisturbed.
-func TestFileDrop(t *testing.T) {
-	w := newWindow(t, mygo.WindowOptions{Title: "Drop", Width: 400, Height: 300})
-	drops := make(chan *mygo.FileDropEvent, 4)
-	w.OnFileDrop(func(e *mygo.FileDropEvent) { drops <- e })
-	w.Page().LoadHTML(`<body style="margin:0;height:300px"><div id=zone style="height:100px"></div><div id=item draggable=true>item</div><script>
-window.log = [];
-mygo.on("mygo:file-drop", (p) => log.push("event:" + p.paths.join(",") + "@" + p.x + "," + p.y));
-zone.addEventListener("dragover", (e) => { e.preventDefault(); log.push("zone:dragover"); });
-zone.addEventListener("drop", (e) => { e.preventDefault(); log.push("zone:drop:" + [...e.dataTransfer.files].map((f) => f.name)); });
-document.addEventListener("dragover", (e) => log.push("document:dragover:" + e.defaultPrevented));
-item.addEventListener("dragstart", () => log.push("item:dragstart"));
-// Dispatches a drag event carrying a file at x, y and reports whether it
-// was canceled.
-window.drag = (target, type, x, y) => {
-  const dt = new DataTransfer();
-  dt.items.add(new File(["hi"], "dropped.txt"));
-  return !target.dispatchEvent(new DragEvent(type, { dataTransfer: dt, bubbles: true, cancelable: true, clientX: x, clientY: y }));
-};
-</script></body>`, "")
-	waitFor(t, w, "window.drag")
-	expectDrop := func(want bool, what string) *mygo.FileDropEvent {
-		t.Helper()
-		select {
-		case e := <-drops:
-			if !want {
-				t.Errorf("%s: unexpected OnFileDrop %+v", what, e)
-			}
-			return e
-		case <-time.After(time.Second):
-			if want {
-				t.Fatalf("%s: OnFileDrop was not called", what)
-			}
-		}
-		return nil
-	}
-	eval := func(js string) any {
-		t.Helper()
-		v, err := w.Page().Eval(js)
-		if err != nil {
-			t.Fatalf("%s: %v", js, err)
-		}
-		return v
-	}
-	if !setDroppedFiles(w, nil) {
-		t.Skip("no drop hook on this platform")
-	}
-
-	// Dropped on the page's drop zone: the page handles it as usual, and Go
-	// gets the path.
-	path := filepath.Join(t.TempDir(), "dropped.txt")
-	setDroppedFiles(w, []string{path})
-	eval(`[drag(zone, "dragover", 20, 30), drag(zone, "drop", 20, 30)]`)
-	if e := expectDrop(true, "drop zone"); len(e.Paths) != 1 || e.Paths[0] != path || e.X != 20 || e.Y != 30 {
-		t.Errorf("drop zone: %+v", e)
-	}
-	waitFor(t, w, `log.includes("event:`+strings.ReplaceAll(path, `\`, `\\`)+`@20,30")`)
-	if got := eval(`log.slice(0, 3).join(" ")`); got != "zone:dragover document:dragover:true zone:drop:dropped.txt" {
-		t.Errorf("the page's drag and drop: %v", got)
-	}
-
-	// Elsewhere, the page's listeners see the events untouched, and the
-	// bridge then accepts the files instead of letting the engine open them.
-	setDroppedFiles(w, []string{path})
-	if canceled := eval(`(log.length = 0, drag(document.body, "dragover", 50, 200))`); canceled != true {
-		t.Error("an unhandled file drag was not accepted")
-	}
-	if got := eval(`log.join(" ")`); got != "document:dragover:false" {
-		t.Errorf("the page saw %v", got)
-	}
-	if canceled := eval(`drag(document.body, "drop", 50, 200)`); canceled != true {
-		t.Error("an unhandled file drop was not canceled")
-	}
-	expectDrop(true, "unhandled area")
-
-	// A drag that starts in the page is left alone.
-	setDroppedFiles(w, []string{path})
-	eval(`item.dispatchEvent(new DragEvent("dragstart", { dataTransfer: new DataTransfer(), bubbles: true }))`)
-	if canceled := eval(`drag(document.body, "dragover", 50, 200)`); canceled != false {
-		t.Error("an in-page drag was accepted by the bridge")
-	}
-	if canceled := eval(`drag(document.body, "drop", 50, 200)`); canceled != false {
-		t.Error("an in-page drop was canceled by the bridge")
-	}
-	expectDrop(false, "in-page drag")
-	eval(`item.dispatchEvent(new DragEvent("dragend", { bubbles: true }))`)
-	setDroppedFiles(w, nil)
-}
-
 // TestWindowExtras runs the taskbar and Dock features on the real backends.
 func TestWindowExtras(t *testing.T) {
 	w := newWindow(t, mygo.WindowOptions{Title: "Extras", Width: 300, Height: 200, SkipTaskbar: true})
@@ -2312,264 +1555,6 @@ func TestDockMenu(t *testing.T) {
 	}
 }
 
-func TestPrintToPDF(t *testing.T) {
-	w := newWindow(t, mygo.WindowOptions{Title: "PDF", Width: 400, Height: 300})
-	w.Page().LoadHTML(`<style>p + p { page-break-before: always }</style><p>one</p><p>two</p><p>three</p>`, "")
-	waitFor(t, w, `document.readyState === "complete" && document.querySelectorAll("p").length === 3`)
-	pages := regexp.MustCompile(`/Type\s*/Page[^s]`)
-	mediaBox := regexp.MustCompile(`/MediaBox\s*\[\s*0\s+0\s+([\d.]+)\s+([\d.]+)`)
-	for _, landscape := range []bool{false, true} {
-		pdf, err := w.Page().PrintToPDF(mygo.PDFOptions{PageSize: mygo.PageA4, Landscape: landscape})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if !bytes.HasPrefix(pdf, []byte("%PDF-")) {
-			t.Fatalf("not a PDF: %.20q", pdf)
-		}
-		if n := len(pages.FindAll(pdf, -1)); n != 3 {
-			t.Errorf("landscape=%v: %d pages, want 3", landscape, n)
-		}
-		m := mediaBox.FindSubmatch(pdf)
-		if m == nil {
-			t.Fatal("no page size in the PDF")
-		}
-		width, _ := strconv.ParseFloat(string(m[1]), 64)
-		height, _ := strconv.ParseFloat(string(m[2]), 64)
-		want := [2]float64{595, 842} // A4 in points
-		if landscape {
-			want = [2]float64{842, 595}
-		}
-		if math.Abs(width-want[0]) > 2 || math.Abs(height-want[1]) > 2 {
-			t.Errorf("landscape=%v: page size %vx%v, want %v", landscape, width, height, want)
-		}
-	}
-}
-
-// The app's pages may fetch another custom scheme, which is another
-// origin than theirs (on Windows, http://<scheme>.localhost), as they fetch
-// their own; other sites may not.
-func TestSchemeCORS(t *testing.T) {
-	w := newWindow(t, mygo.WindowOptions{Width: 300, Height: 200})
-	if err := w.Page().LoadURL("app://localhost/"); err != nil {
-		t.Fatal(err)
-	}
-	origin, data := "app://localhost", "assets://localhost/data"
-	if runtime.GOOS == "windows" { // how WebView2 serves custom schemes
-		origin, data = "http://app.localhost", "http://assets.localhost/data"
-	}
-	// The origin too: right after LoadURL, the previous document may still
-	// be the one that is complete, and its requests end with it.
-	waitFor(t, w, `location.origin === "`+origin+`" && document.readyState === "complete"`)
-	get := `const r = await fetch("` + data + `"); return (await r.text()) + "|" + r.headers.get("X-Count")`
-	if got, err := mygo.EvalAs[string](w.Page(), get); err != nil || got != "asset data|3" {
-		t.Errorf("GET from the app: %q, %v", got, err)
-	}
-	// A JSON body makes the request go through a preflight.
-	post := `const r = await fetch("` + data + `", {method: "POST", headers: {"Content-Type": "application/json"}, body: '{"n":1}'}); return r.text()`
-	if got, err := mygo.EvalAs[string](w.Page(), post); err != nil || got != `posted:{"n":1}` {
-		t.Errorf("POST from the app: %q, %v", got, err)
-	}
-
-	other := newWindow(t, mygo.WindowOptions{Width: 300, Height: 200})
-	other.Page().LoadHTML("<p>another site</p>", "https://example.com/")
-	waitFor(t, other, `document.readyState === "complete" && location.origin === "https://example.com"`)
-	blocked := `try { await fetch("` + data + `"); return "read" } catch (e) { return "blocked" }`
-	if got, err := mygo.EvalAs[string](other.Page(), blocked); err != nil || got != "blocked" {
-		t.Errorf("another site: %q, %v", got, err)
-	}
-}
-
-// crossOriginFramePage shows an iframe of the assets scheme's demo host,
-// another origin than the page's, and keeps what it posts.
-const crossOriginFramePage = `<!doctype html>
-<script>
-window.posted = [];
-addEventListener("message", e => posted.push(e.data));
-</script>
-<iframe></iframe>
-<script>
-// On Windows, WebView2 serves assets://demo/ at http://demo.assets.localhost/.
-document.querySelector("iframe").src = location.protocol === "http:" ? "http://demo.assets.localhost/frame.html" : "assets://demo/frame.html";
-</script>`
-
-// An iframe of another custom scheme's host, another origin than the
-// page's, loads its scripts and fetches through the scheme, not only its
-// document (#1912): WebView2's older filters reach only the main frame and
-// its same-origin iframes.
-func TestSchemeCrossOriginFrame(t *testing.T) {
-	w := newWindow(t, mygo.WindowOptions{Width: 300, Height: 200})
-	if err := w.Page().LoadURL("app://localhost/cross-origin-frame"); err != nil {
-		t.Fatal(err)
-	}
-	waitFor(t, w, `window.posted && posted.length === 2`)
-	if got := mustEval(t, w, `posted.join(" | ")`); got != "inline | script, asset data" {
-		t.Errorf("the iframe posted %q, want %q", got, "inline | script, asset data")
-	}
-}
-
-func TestPermissions(t *testing.T) {
-	w := newWindow(t, mygo.WindowOptions{Title: "Permissions", Width: 300, Height: 200})
-	// A secure context: notifications are not for opaque origins.
-	if err := w.Page().LoadURL("app://localhost/"); err != nil {
-		t.Fatal(err)
-	}
-	origin := "app://localhost"
-	if runtime.GOOS == "windows" {
-		origin = "http://app.localhost" // how WebView2 serves custom schemes
-	}
-	waitFor(t, w, `location.origin === "`+origin+`" && document.readyState === "complete"`)
-	// The app's own pages are secure contexts with a real origin, which
-	// secure-context APIs (camera, Web Crypto) and storage need.
-	if got := mustEval(t, w, `[window.isSecureContext, typeof crypto.subtle].join(" ")`); got != "true object" {
-		t.Errorf("%s: %v", origin, got)
-	}
-	if ok, _ := mygo.EvalAs[bool](w.Page(), `typeof Notification !== "undefined" && !!Notification.requestPermission`); !ok {
-		t.Skip("the engine has no Notification API")
-	}
-	asked := make(chan mygo.PermissionRequest, 4)
-	w.Page().SetPermissionHandler(func(req mygo.PermissionRequest) bool {
-		asked <- req
-		return true
-	})
-	got, err := mygo.EvalAs[string](w.Page(), `Notification.requestPermission()`)
-	if err != nil {
-		t.Fatal(err)
-	}
-	select {
-	case req := <-asked:
-		if len(req.Permissions) != 1 || req.Permissions[0] != mygo.PermissionNotifications {
-			t.Errorf("request = %+v", req)
-		}
-		if got != "granted" {
-			t.Errorf("the page got %q", got)
-		}
-	case <-time.After(3 * time.Second):
-		t.Skipf("the engine decided alone (%q)", got)
-	}
-}
-
-func mustEval(t *testing.T, w *mygo.Window, js string) any {
-	t.Helper()
-	v, err := w.Page().Eval(js)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return v
-}
-
-func TestDownloads(t *testing.T) {
-	w := newWindow(t, mygo.WindowOptions{Title: "Downloads", Width: 300, Height: 200})
-	if err := w.Page().LoadURL("app://localhost/"); err != nil {
-		t.Fatal(err)
-	}
-	waitFor(t, w, `window.run`)
-	dir := t.TempDir()
-	started := make(chan *mygo.DownloadEvent, 2)
-	done := make(chan *mygo.Download, 2)
-	w.Page().OnWillDownload(func(e *mygo.DownloadEvent) {
-		if e.Path == "" || filepath.Base(e.Path) != e.SuggestedName {
-			t.Errorf("default path %q for %q", e.Path, e.SuggestedName)
-		}
-		e.Path = filepath.Join(dir, e.SuggestedName)
-		started <- e
-	})
-	w.Page().OnDownloadDone(func(d *mygo.Download) { done <- d })
-	check := func(what, name, content string) {
-		t.Helper()
-		select {
-		case e := <-started:
-			if e.SuggestedName != name {
-				t.Errorf("%s: suggested name %q, want %q", what, e.SuggestedName, name)
-			}
-		case <-time.After(wait.Guard):
-			t.Fatalf("%s: OnWillDownload was not called", what)
-		}
-		select {
-		case d := <-done:
-			if d.Err != nil {
-				t.Fatalf("%s: %v", what, d.Err)
-			}
-			if b, err := os.ReadFile(d.Path); err != nil || string(b) != content {
-				t.Errorf("%s: saved %q, %v", what, b, err)
-			}
-		case <-time.After(wait.Guard):
-			t.Fatalf("%s: OnDownloadDone was not called", what)
-		}
-	}
-	// A link with the download attribute.
-	mustEval(t, w, `(() => { const a = document.createElement("a"); a.href = "data:text/csv,a%2Cb"; a.download = "report.csv"; document.body.append(a); a.click(); return true })()`)
-	check("download link", "report.csv", "a,b")
-	// A response sent as an attachment.
-	mustEval(t, w, `(location.href = "report.bin", true)`)
-	check("attachment", "report.bin", "binary report")
-}
-
-func TestClearBrowsingData(t *testing.T) {
-	w := newWindow(t, mygo.WindowOptions{Title: "Data", Width: 300, Height: 200})
-	if err := w.Page().LoadURL("app://localhost/"); err != nil {
-		t.Fatal(err)
-	}
-	waitFor(t, w, `window.run`)
-	observer := newWindow(t, mygo.WindowOptions{Hidden: true})
-	if err := observer.Page().LoadURL("app://localhost/"); err != nil {
-		t.Fatal(err)
-	}
-	waitFor(t, observer, `window.run`)
-	mustEval(t, observer, `(() => {
-		localStorage.getItem("token");
-		window.stored = false;
-		addEventListener("storage", e => {
-			if (e.key === "token" && e.newValue === "secret") window.stored = true;
-		});
-		return true;
-	})()`)
-	// Eval waits for JavaScript, not for the storage process to apply its
-	// writes. Observe the write from another page before asking to delete it.
-	mustEval(t, w, `(localStorage.removeItem("token"), localStorage.setItem("token", "secret"), window.oldPage = true)`)
-	waitFor(t, observer, `window.stored`)
-	if err := mygo.App.ClearBrowsingData(); err != nil {
-		t.Fatal(err)
-	}
-	w.Page().Reload()
-	waitFor(t, w, `window.run && !window.oldPage`)
-	if got := mustEval(t, w, `localStorage.getItem("token")`); got != nil {
-		t.Errorf("after ClearBrowsingData the token is %v", got)
-	}
-}
-
-func TestFindInPage(t *testing.T) {
-	w := newWindow(t, mygo.WindowOptions{Title: "Find", Width: 400, Height: 300})
-	w.Page().LoadHTML(`<p>MyGo is a framework. mygo apps are small.</p><p style="display:none">mygo hidden</p><p>Say mygo</p>`, "")
-	waitFor(t, w, `document.readyState === "complete" && document.querySelectorAll("p").length === 3`)
-	find := func(text string, opts mygo.FindOptions) mygo.FindResult {
-		t.Helper()
-		res, err := w.Page().FindInPage(text, opts)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return res
-	}
-	if res := find("mygo", mygo.FindOptions{}); res != (mygo.FindResult{Matches: 3, Active: 1}) {
-		t.Errorf("find = %+v, want 3 visible matches", res)
-	}
-	if res := find("mygo", mygo.FindOptions{FindNext: true}); res.Active != 2 {
-		t.Errorf("next = %+v", res)
-	}
-	if res := find("mygo", mygo.FindOptions{FindNext: true, Backward: true}); res.Active != 1 {
-		t.Errorf("previous = %+v", res)
-	}
-	if res := find("mygo", mygo.FindOptions{FindNext: true, Backward: true}); res.Active != 3 {
-		t.Errorf("previous wraps around: %+v", res)
-	}
-	if res := find("MyGo", mygo.FindOptions{MatchCase: true}); res.Matches != 1 {
-		t.Errorf("match case = %+v", res)
-	}
-	if res := find("nothing", mygo.FindOptions{}); res != (mygo.FindResult{}) {
-		t.Errorf("no match = %+v", res)
-	}
-	w.Page().StopFindInPage()
-}
-
 func TestGlobalShortcut(t *testing.T) {
 	pressed := make(chan struct{}, 1)
 	if err := mygo.GlobalShortcut.Register("Ctrl+Shift+K", func() { pressed <- struct{}{} }); err != nil {
@@ -2676,9 +1661,9 @@ func TestCloseEvents(t *testing.T) {
 }
 
 func TestCapturePage(t *testing.T) {
-	w := newWindow(t, mygo.WindowOptions{Width: 320, Height: 240})
-	w.Page().LoadHTML(`<body style="margin:0;background:rgb(255,0,0)"></body>`, "")
-	waitFor(t, w, "document.readyState === 'complete'")
+	w := newWindow(t, mygo.WindowOptions{Width: 320, Height: 240, Content: ui.View(func(c *ui.Context) {
+		c.Root().Background(ui.RGB(255, 0, 0))
+	})})
 	time.Sleep(200 * time.Millisecond)
 	png, err := w.CapturePage()
 	if err != nil {
@@ -2689,85 +1674,6 @@ func TestCapturePage(t *testing.T) {
 	}
 	if out := os.Getenv("MYGO_E2E_SNAPSHOT"); out != "" {
 		_ = os.WriteFile(out, png, 0o644)
-	}
-}
-
-// callEnd is how a call of pageCalls ended.
-type callEnd struct {
-	name string
-	err  error
-}
-
-// pageCalls makes the calls that wait for a page's answer, each on a
-// goroutine of its own, and tells how they end.
-func pageCalls(w *mygo.Window) <-chan callEnd {
-	ended := make(chan callEnd, 3)
-	call := func(name string, fn func() error) {
-		go func() { ended <- callEnd{name, fn()} }()
-	}
-	call("Eval", func() error { _, err := w.Page().Eval("1"); return err })
-	call("CapturePage", func() error { _, err := w.CapturePage(); return err })
-	call("PrintToPDF", func() error { _, err := w.Page().PrintToPDF(mygo.PDFOptions{}); return err })
-	return ended
-}
-
-// waitCalls waits for the calls of pageCalls to end, and returns their
-// errors by name. A slow runner takes seconds to create a webview, and a
-// window may ask for its webview again.
-func waitCalls(t *testing.T, ended <-chan callEnd, what string) map[string]error {
-	t.Helper()
-	got := map[string]error{}
-	for range 3 {
-		select {
-		case e := <-ended:
-			got[e.name] = e.err
-		case <-time.After(time.Minute):
-			t.Fatalf("%s: only these calls ended: %v", what, got)
-		}
-	}
-	return got
-}
-
-// TestCallsEndWithTheWindow: calls on a new window's page, which on
-// Windows wait for WebView2 to create its webview, end when the window is
-// destroyed.
-func TestCallsEndWithTheWindow(t *testing.T) {
-	w := mygo.NewWindow(mygo.WindowOptions{Hidden: true})
-	ended := pageCalls(w)
-	time.Sleep(20 * time.Millisecond)
-	mygo.RunOnMain(func() {}) // the calls reached the window
-	w.Destroy()
-	waitCalls(t, ended, "after Destroy")
-}
-
-// TestWebViewFails: WebView2 may fail to create a window's webview, as it
-// does under load. The window asks again, and once it gives up, the calls
-// waiting for the webview fail with the reason, as do later ones.
-func TestWebViewFails(t *testing.T) {
-	if !failWebViews(1) {
-		t.Skip("only WebView2 creates webviews after their windows")
-	}
-	t.Cleanup(func() { failWebViews(0) })
-	const reason = "creating the WebView2 controller"
-	w := newWindow(t, mygo.WindowOptions{Hidden: true})
-	got := waitCalls(t, pageCalls(w), "after a failure")
-	for name, err := range got {
-		if err != nil && strings.Contains(err.Error(), reason) {
-			t.Errorf("after a failure, %s: %v", name, err)
-		}
-	}
-	if got["Eval"] != nil {
-		t.Errorf("after a failure, Eval: %v", got["Eval"])
-	}
-
-	failWebViews(1 << 10)
-	w = newWindow(t, mygo.WindowOptions{Hidden: true})
-	for _, when := range []string{"waiting", "later"} {
-		for name, err := range waitCalls(t, pageCalls(w), when) {
-			if err == nil || !strings.Contains(err.Error(), reason) {
-				t.Errorf("%s, %s: %v", when, name, err)
-			}
-		}
 	}
 }
 
@@ -2796,128 +1702,8 @@ func TestMenuAndClipboard(t *testing.T) {
 	}
 }
 
-func TestWindowOpenHandler(t *testing.T) {
-	w := newWindow(t, mygo.WindowOptions{Hidden: true})
-	opened := make(chan string, 1)
-	w.Page().SetWindowOpenHandler(func(req mygo.WindowOpenRequest) *mygo.WindowOptions {
-		opened <- req.URL
-		return nil
-	})
-	w.Page().LoadHTML(`<a id="l" href="https://example.com/x" target="_blank">x</a>`, "https://example.com/")
-	waitFor(t, w, "document.getElementById('l')")
-	if _, err := w.Page().Eval("window.open('https://example.com/popup')"); err != nil {
-		t.Fatal(err)
-	}
-	select {
-	case u := <-opened:
-		if u != "https://example.com/popup" {
-			t.Errorf("opened %q", u)
-		}
-	case <-time.After(wait.Guard):
-		t.Fatal("window open handler not called")
-	}
-}
-
-// userInitiatedPage opens a window and navigates from a timer its script
-// starts as it loads, without a user's gesture, and has three things to
-// click that do the same: a button calling window.open(), a
-// target="_blank" link, and a button setting location.href.
-const userInitiatedPage = `<!doctype html><body style="margin:0">
-<button style="position:absolute;left:0;top:0;width:200px;height:100px" onclick="window.open('https://example.com/clicked')">open</button>
-<a href="https://example.com/link" target="_blank" style="position:absolute;left:0;top:100px;width:200px;height:100px;display:block">link</a>
-<button style="position:absolute;left:200px;top:0;width:200px;height:100px" onclick="location.href = 'https://example.com/went'">go</button>
-<script>setTimeout(() => { window.open('https://example.com/timer'); location.href = 'https://example.com/moved' }, 0)</script>
-</body>`
-
-// TestUserInitiated checks that WindowOpenRequest.UserInitiated and
-// NavigateEvent.UserInitiated are false for what a page's script does on
-// its own, and, where the tests can click a page, true for what a click
-// does, its handler's window.open() and location.href included.
-func TestUserInitiated(t *testing.T) {
-	w := newWindow(t, mygo.WindowOptions{Width: 400, Height: 300})
-	opens := make(chan mygo.WindowOpenRequest, 4)
-	w.Page().SetWindowOpenHandler(func(req mygo.WindowOpenRequest) *mygo.WindowOptions {
-		opens <- req
-		return nil
-	})
-	type navigation struct {
-		url  string
-		user bool
-	}
-	navs := make(chan navigation, 4)
-	w.Page().OnWillNavigate(func(e *mygo.NavigateEvent) {
-		navs <- navigation{e.URL, e.UserInitiated}
-		e.PreventDefault() // the page stays
-	})
-	opened := func(url string, user bool) {
-		t.Helper()
-		select {
-		case req := <-opens:
-			if req.URL != url || req.UserInitiated != user {
-				t.Errorf("window open request %q, UserInitiated %v; want %q, %v", req.URL, req.UserInitiated, url, user)
-			}
-		case <-time.After(wait.Guard):
-			t.Fatalf("the window open handler was not asked about %s", url)
-		}
-	}
-	navigated := func(url string, user bool) {
-		t.Helper()
-		select {
-		case n := <-navs:
-			if n.url != url || n.user != user {
-				t.Errorf("navigation to %q, UserInitiated %v; want %q, %v", n.url, n.user, url, user)
-			}
-		case <-time.After(wait.Guard):
-			t.Fatalf("OnWillNavigate was not told about %s", url)
-		}
-	}
-	w.Page().LoadHTML(userInitiatedPage, "https://example.com/")
-	if runtime.GOOS != "linux" {
-		// WebKitGTK blocks a window.open() without a user's gesture
-		// itself, before asking the app.
-		opened("https://example.com/timer", false)
-	}
-	navigated("https://example.com/moved", false)
-
-	// A user clicks the window of the app in front (see TestClick).
-	w.Focus()
-	eventually(t, "the window focused", w.IsFocused)
-	if !clickPage(w, 100, 50) {
-		t.Skip("clicking a page is not automated on this platform")
-	}
-	opened("https://example.com/clicked", true)
-	clickPage(w, 100, 150)
-	opened("https://example.com/link", true)
-	clickPage(w, 300, 50)
-	navigated("https://example.com/went", true)
-}
-
-// TestSrcdocIframes checks that srcdoc iframes load in a page whose
-// OnWillNavigate cancels every navigation it is asked about, as it is
-// asked about the main frame's alone: on Linux before WebKitGTK 2.56,
-// which tells no navigation's frame, it was asked about theirs, named or
-// not, and they stayed blank (mainFrameNavigation).
-func TestSrcdocIframes(t *testing.T) {
-	w := newWindow(t, mygo.WindowOptions{Hidden: true})
-	var srcdoc atomic.Bool
-	w.Page().OnWillNavigate(func(e *mygo.NavigateEvent) {
-		if e.URL == "about:srcdoc" {
-			srcdoc.Store(true)
-		}
-		e.PreventDefault()
-	})
-	w.Page().LoadHTML(`<iframe id=a srcdoc="<p id=x>unnamed</p>"></iframe><iframe id=b name=named srcdoc="<p id=x>named</p>"></iframe>`, "https://example.com/")
-	for _, id := range []string{"a", "b"} {
-		waitFor(t, w, `document.getElementById("`+id+`").contentDocument?.getElementById("x")`)
-	}
-	if srcdoc.Load() {
-		t.Error("OnWillNavigate was asked about an iframe's about:srcdoc")
-	}
-}
-
 func TestMenuActivation(t *testing.T) {
-	w := newWindow(t, mygo.WindowOptions{Width: 400, Height: 300})
-	w.Page().LoadHTML("<p>menus</p>", "")
+	w := newWindow(t, mygo.WindowOptions{Width: 400, Height: 300, Content: ui.View(func(c *ui.Context) { ui.Text(c, "menus") })})
 	clicks := make(chan string, 4)
 	menu := mygo.NewMenu([]*mygo.MenuItem{
 		{Role: mygo.RoleAppMenu},
@@ -3030,8 +1816,7 @@ func TestMenuActivationWindow(t *testing.T) {
 }
 
 func TestAutoHideMenuBar(t *testing.T) {
-	w := newWindow(t, mygo.WindowOptions{Width: 400, Height: 300, AutoHideMenuBar: true})
-	w.Page().LoadHTML("<p>menu bar</p>", "")
+	w := newWindow(t, mygo.WindowOptions{Width: 400, Height: 300, AutoHideMenuBar: true, Content: ui.View(func(c *ui.Context) { ui.Text(c, "menu bar") })})
 	clicks := make(chan string, 4)
 	menu := mygo.NewMenu([]*mygo.MenuItem{
 		{Label: "Test", Submenu: []*mygo.MenuItem{
@@ -3081,60 +1866,16 @@ func TestAutoHideMenuBar(t *testing.T) {
 	}
 }
 
-// A hidden title bar leaves the window controls over the page, which hears
-// the room they take in CSS variables, and they work as the system's do.
+// A hidden title bar leaves the window controls over the content, and they work as the system's do.
 func TestHiddenTitleBar(t *testing.T) {
 	w := newWindow(t, mygo.WindowOptions{X: 80, Y: 80, Width: 480, Height: 320,
-		TitleBarStyle: mygo.TitleBarHidden, TitleBarHeight: 40})
+		TitleBarStyle: mygo.TitleBarHidden, TitleBarHeight: 40,
+		Content: ui.View(func(c *ui.Context) { ui.Text(c, "hidden title bar") })})
 	closing := make(chan struct{}, 1)
 	w.OnClose(func(e *mygo.CloseEvent) {
 		e.PreventDefault()
 		closing <- struct{}{}
 	})
-	w.Page().LoadHTML("<p>hidden title bar</p>", "")
-	waitFor(t, w, "document.querySelector('p')")
-	room := func(win *mygo.Window) (r [4]string) {
-		v, _ := mygo.EvalAs[[]string](win.Page(), `(() => {
-			const s = getComputedStyle(document.documentElement);
-			return ["height", "inset-left", "inset-right", "controls-bottom"].map((k) => s.getPropertyValue("--mygo-titlebar-" + k).trim());
-		})()`)
-		copy(r[:], v)
-		return r
-	}
-	shown := room(w)
-	switch runtime.GOOS {
-	case "windows":
-		if shown != [4]string{"40px", "0px", "138px", "40px"} {
-			t.Errorf("room = %q, want the title bar's height and three buttons 46 wide at the right, as high as it", shown)
-		}
-	case "linux":
-		if shown[0] != "40px" {
-			t.Errorf("room = %q, want the title bar's height", shown)
-		}
-		if shown[3] != "0px" && shown[3] != shown[0] {
-			t.Errorf("room = %q, want the bars as high as the title bar", shown)
-		}
-		if shown[1] == "0px" && shown[2] == "0px" {
-			t.Log("the desktop's button layout names no buttons")
-		}
-	case "darwin":
-		if shown[0] == "0px" || shown[1] == "0px" || shown[2] != "0px" || shown[3] == "0px" {
-			t.Errorf("room = %q, want the traffic lights at the left of the title bar", shown)
-		}
-		height, _ := strconv.ParseFloat(strings.TrimSuffix(shown[0], "px"), 64)
-		bottom, _ := strconv.ParseFloat(strings.TrimSuffix(shown[3], "px"), 64)
-		if bottom > height {
-			t.Errorf("room = %q, want the traffic lights to end within the title bar", shown)
-		}
-	}
-
-	// The page of a window with its title bar hears nothing.
-	plain := newWindow(t, mygo.WindowOptions{Width: 300, Height: 200})
-	plain.Page().LoadHTML("<p>title bar</p>", "")
-	waitFor(t, plain, "document.querySelector('p')")
-	if r := room(plain); r != ([4]string{}) {
-		t.Errorf("a window with its title bar: room = %q", r)
-	}
 
 	// Without any non-client area at its top, a window that is not maximized
 	// gets no snap layouts over its maximize button on Windows 11, and
@@ -3161,32 +1902,14 @@ func TestHiddenTitleBar(t *testing.T) {
 			}
 		}
 	}
-
-	// Full screen hides the controls, and the page gets their room back.
-	if runtime.GOOS != "windows" {
-		return // no window manager under Xvfb; the macOS animation is slow
-	}
-	w.SetFullScreen(true)
-	eventually(t, "no room for the controls in full screen", func() bool { return room(w) == [4]string{"0px", "0px", "0px", "0px"} })
-	w.SetFullScreen(false)
-	eventually(t, "the room of the controls back", func() bool { return room(w) == shown })
 }
 
 // HideWindowButtons keeps a hidden title bar without its window controls,
-// which the page draws itself: it hears no room for them, and the window
-// keeps the rest of the title bar, its resizing top edge on Windows.
+// while keeping the rest of the title bar and its resizing top edge on Windows.
 func TestHiddenWindowButtons(t *testing.T) {
 	w := newWindow(t, mygo.WindowOptions{X: 80, Y: 80, Width: 480, Height: 320,
-		TitleBarStyle: mygo.TitleBarHidden, TitleBarHeight: 40, HideWindowButtons: true})
-	w.Page().LoadHTML("<p>no window buttons</p>", "")
-	waitFor(t, w, "document.querySelector('p')")
-	v, _ := mygo.EvalAs[[]string](w.Page(), `(() => {
-		const s = getComputedStyle(document.documentElement);
-		return ["height", "inset-left", "inset-right"].map((k) => s.getPropertyValue("--mygo-titlebar-" + k).trim());
-	})()`)
-	if slices.ContainsFunc(v, func(s string) bool { return s != "" && s != "0px" }) {
-		t.Errorf("room = %q, want none", v)
-	}
+		TitleBarStyle: mygo.TitleBarHidden, TitleBarHeight: 40, HideWindowButtons: true,
+		Content: ui.View(func(c *ui.Context) { ui.Text(c, "no window buttons") })})
 	if names, ok := titleButtons(w); ok && len(names) > 0 {
 		t.Errorf("buttons = %q, want none", names)
 	}
@@ -3207,116 +1930,62 @@ func expectClick(t *testing.T, clicks chan string, want string) {
 	}
 }
 
-func TestJavaScriptAlert(t *testing.T) {
-	w := newWindow(t, mygo.WindowOptions{Width: 400, Height: 300})
-	w.Page().LoadHTML("<p>alert</p>", "")
-	waitFor(t, w, "document.querySelector('p')")
-	if _, ok := endSheet(w); !ok {
-		t.Skip("dialog automation not available on this platform")
-	}
-	// alert() blocks the page until the sheet is dismissed, and WebKit
-	// often answers the Eval that schedules it only after the timer ran:
-	// dismiss the sheet without waiting for the Eval.
-	evaluated := make(chan error, 1)
-	go func() {
-		_, err := w.Page().Eval("setTimeout(() => { alert('hello'); window.alertDone = true }, 0)")
-		evaluated <- err
-	}()
-	// The sheet takes a while: beginSheetModalForWindow: animates it in
-	// before it returns, and the main thread runs nothing else meanwhile.
-	eventually(t, "the alert sheet", func() bool {
-		ok, _ := endSheet(w)
-		return ok
-	})
-	eventually(t, "the Eval to return after the alert was dismissed", func() bool { return len(evaluated) > 0 })
-	if err := <-evaluated; err != nil {
-		t.Fatal(err)
-	}
-	waitFor(t, w, "window.alertDone")
-}
-
-func TestWindowOpenAllowed(t *testing.T) {
-	w := newWindow(t, mygo.WindowOptions{Width: 400, Height: 300})
-	created := make(chan *mygo.Window, 1)
-	off := mygo.App.OnWindowCreated(func(c *mygo.Window) { created <- c })
-	defer off()
-	w.Page().SetWindowOpenHandler(func(req mygo.WindowOpenRequest) *mygo.WindowOptions {
-		return &mygo.WindowOptions{Width: 320, Height: 240}
-	})
-	if err := w.Page().LoadURL("app://localhost/"); err != nil {
-		t.Fatal(err)
-	}
-	waitFor(t, w, "window.run")
-	if _, err := w.Page().Eval("void window.open('app://localhost/?child=1')"); err != nil {
-		t.Fatal(err)
-	}
-	var child *mygo.Window
-	select {
-	case child = <-created:
-	case <-time.After(wait.Guard):
-		t.Fatal("child window not created")
-	}
-	defer child.Destroy()
-	waitFor(t, child, "window.run && location.search === '?child=1'")
-	// The child has its own bridge: calls identify the child window.
-	same, err := mygo.EvalAs[bool](child.Page(), "mygo.call('Greeter.WindowID').then(id => id === mygo.windowId)")
-	if err != nil || !same {
-		t.Errorf("call from child: %v, %v", same, err)
-	}
-	if id, _ := mygo.EvalAs[int](child.Page(), "mygo.windowId"); id != child.ID() {
-		t.Errorf("child bridge reports window %d, want %d", id, child.ID())
-	}
-	// On Linux new windows are independent pages (see Page.SetWindowOpenHandler).
-	if opener, _ := mygo.EvalAs[bool](child.Page(), "window.opener !== null"); !opener && (runtime.GOOS == "darwin" || runtime.GOOS == "windows") {
-		t.Error("window.opener is not set")
-	}
-}
-
-// TestClick is a regression test: clicking the page used to crash on macOS.
+// TestClick checks clicks on native UI and dragging a frameless window.
 func TestClick(t *testing.T) {
-	w := newWindow(t, mygo.WindowOptions{Width: 400, Height: 300})
-	w.Page().LoadHTML(`<body style="margin:0"><button id="b" style="width:200px;height:100px" onclick="window.clicked=(window.clicked||0)+1">x</button></body>`, "")
-	waitFor(t, w, "document.getElementById('b')")
-	// A user clicks the window of the app in front. A click in a window
-	// that is not key yet, or of an app another app took the foreground
-	// from, is a first click, which WebKit does not give the page.
+	var clicked atomic.Int32
+	w := newWindow(t, mygo.WindowOptions{Width: 400, Height: 300,
+		Content: ui.View(func(c *ui.Context) {
+			if ui.Box(c).Size(200, 100).Clicked() {
+				clicked.Add(1)
+			}
+		})})
 	w.Focus()
 	eventually(t, "the window focused", w.IsFocused)
 	if !click(w, 50, 50) {
 		t.Skip("click automation not available on this platform")
 	}
 	click(w, 60, 40)
-	waitFor(t, w, "window.clicked === 2")
+	eventually(t, "two clicks", func() bool { return clicked.Load() == 2 })
 
 	// Clicking a drag region of a frameless window starts a native drag.
-	f := newWindow(t, mygo.WindowOptions{Width: 400, Height: 300, Frameless: true})
-	f.Page().LoadHTML(`<body style="margin:0"><div id="bar" style="--app-region:drag;height:40px" onmousedown="window.pressed=true"></div></body>`, "")
-	waitFor(t, f, "document.getElementById('bar')")
+	var pressed atomic.Bool
+	f := newWindow(t, mygo.WindowOptions{Width: 400, Height: 300, Frameless: true,
+		Content: ui.View(func(c *ui.Context) {
+			ui.Box(c).Fill().Height(40).DragWindow().ObserveInput(func(ev ui.InputEvent) {
+				if ev.Kind == ui.InputPointerDown {
+					pressed.Store(true)
+				}
+			})
+		})})
 	f.Focus()
 	eventually(t, "the frameless window focused", f.IsFocused)
 	click(f, 100, 20)
-	waitFor(t, f, "window.pressed === true")
+	eventually(t, "the drag press", pressed.Load)
 	if !f.IsVisible() {
 		t.Error("frameless window disappeared after a drag click")
 	}
 }
 
-// TestFirstClick clicks a page once in a window that is not key: the click
-// makes it key and reaches the page, as it does native UI.
+// TestFirstClick clicks native UI once in a window that is not key: the click
+// makes it key and reaches the content.
 func TestFirstClick(t *testing.T) {
-	w := newWindow(t, mygo.WindowOptions{Width: 400, Height: 300})
-	w.Page().LoadHTML(`<body style="margin:0"><button id="b" style="width:200px;height:100px" onclick="window.clicked=(window.clicked||0)+1">x</button></body>`, "")
-	waitFor(t, w, "document.getElementById('b')")
+	var clicked atomic.Int32
+	w := newWindow(t, mygo.WindowOptions{Width: 400, Height: 300,
+		Content: ui.View(func(c *ui.Context) {
+			if ui.Box(c).Size(200, 100).Clicked() {
+				clicked.Add(1)
+			}
+		})})
 	other := newWindow(t, mygo.WindowOptions{Width: 200, Height: 150, X: 600, Y: 400})
 	other.Focus()
 	eventually(t, "the other window focused", other.IsFocused)
 	if w.IsFocused() {
-		t.Skip("the page's window stayed key")
+		t.Skip("the window stayed key")
 	}
 	if !appClick(w, 50, 50) {
 		t.Skip("click automation not available on this platform")
 	}
-	waitFor(t, w, "window.clicked === 1")
+	eventually(t, "the first click", func() bool { return clicked.Load() == 1 })
 }
 
 // deviceScale returns the device pixels per DIP of the display w shows on.
@@ -4177,9 +2846,6 @@ func TestContentWindow(t *testing.T) {
 	w := newWindow(t, mygo.WindowOptions{Title: "Content", Width: 400, Height: 300, Content: ui.View(view)})
 	eventually(t, "a frame", func() bool { return frames.Load() > 0 })
 
-	if w.Page() != nil {
-		t.Error("a window showing Content has a page")
-	}
 	data, err := w.CapturePage()
 	if err != nil {
 		t.Fatal(err)

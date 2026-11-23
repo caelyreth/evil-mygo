@@ -851,7 +851,7 @@ func (rt *engine) accessElement(t *platform.AccessTree, e *node, parent int, scr
 		if v := rt.host.platformWebView(e.webView); v != nil {
 			b := e.contentBox()
 			t.Nodes = append(t.Nodes, platform.AccessNode{
-				ID: e.id ^ pageNodeID, Parent: parent, Role: platform.RoleGroup, WebView: v,
+				ID: e.id ^ pageNodeID, Parent: parent, Role: platform.RoleGroup, View: v,
 				Bounds: platform.RectF{X: float64(b.X), Y: float64(b.Y), W: float64(b.W), H: float64(b.H)},
 			})
 		}

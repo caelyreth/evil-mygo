@@ -60,7 +60,6 @@ type Backend struct {
 	nextID  int
 	reqs    map[int]func(wire.Reader)
 	nextReq int
-	schemes map[int]*schemeRequest
 	tabs    map[int]*tabBar
 	notes   map[string]bool
 	// shown lists the windows on screen, the one in front last.
@@ -94,7 +93,6 @@ func New() *Backend {
 		notify:  make(chan struct{}, 1),
 		windows: map[int]*window{},
 		reqs:    map[int]func(wire.Reader){},
-		schemes: map[int]*schemeRequest{},
 		tabs:    map[int]*tabBar{},
 		notes:   map[string]bool{},
 	}
@@ -411,7 +409,6 @@ func (b *Backend) Theme() platform.Theme                 { return theme{b: b} }
 func (b *Backend) Power() platform.Power                 { return power{b: b} }
 func (b *Backend) Secrets() platform.Secrets             { return secrets{b: b} }
 func (b *Backend) NotificationsSupported() bool          { return true }
-func (b *Backend) WebViewAvailable() bool                { return true }
 func (b *Backend) ReplaceFile(target, repl string) error { return os.Rename(repl, target) }
 
 func (b *Backend) ShowNotification(n *platform.Notification, done func(error)) {

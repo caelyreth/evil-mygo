@@ -101,7 +101,7 @@ type headless struct {
 	// tabbedInto the web view Tab gave the keyboard last, from its end
 	// when tabbedBack.
 	webViews   []placedWebView
-	tabbedInto NativeWebView
+	tabbedInto embeddedView
 	tabbedBack bool
 
 	// invalidated asks for a frame built anew, as a window's Changed.
@@ -271,8 +271,8 @@ func (h *headless) placeWebViews(views []placedWebView) {
 }
 func (h *headless) nativeGlass() bool                              { return false }
 func (h *headless) placeGlass([]platform.GlassPlacement)           {}
-func (h *headless) tabIntoWebView(v NativeWebView, back bool)      { h.tabbedInto, h.tabbedBack = v, back }
-func (h *headless) platformWebView(NativeWebView) platform.WebView { return nil }
+func (h *headless) tabIntoWebView(v embeddedView, back bool)       { h.tabbedInto, h.tabbedBack = v, back }
+func (h *headless) platformWebView(embeddedView) platform.EmbeddedView { return nil }
 func (h *headless) image() *image.RGBA {
 	if !h.drawn && h.last != nil {
 		h.img.Render(h.last)
@@ -473,7 +473,7 @@ func (t *Tester) send(ev platform.SurfaceEvent) {
 			ev.Pointer = platform.PointerTouch // TouchDown
 		}
 		ev.Mods |= t.mods
-	case platform.PointerScroll, platform.PointerZoom, platform.PointerLeave, platform.WebViewPress:
+	case platform.PointerScroll, platform.PointerZoom, platform.PointerLeave, platform.ViewPress:
 		ev.Mods |= t.mods
 	case platform.SurfaceBlur:
 		t.mods = 0
@@ -715,7 +715,7 @@ func (t *Tester) targetLabelCenter(n *labelNode, button int) (float32, float32, 
 	}
 	// Native pages take the pointer before UI hit testing, even inside
 	// IgnoreInput: the system gives the press to their view.
-	if page := t.WebViewAt(x, y); page != nil {
+	if page := t.embeddedViewAt(x, y); page != nil {
 		for _, id := range named {
 			if t.rt.states[id].webView == page {
 				return x, y, nil
@@ -962,10 +962,10 @@ func (t *Tester) CancelPress() {
 	t.send(platform.SurfaceEvent{Kind: platform.PointerCancel})
 }
 
-// WebViewAt returns the web view (WebView) that takes the pointer at
+// embeddedViewAt returns the embedded view that takes the pointer at
 // (x, y), as the window shows it: where the last frame showed it and
 // painted nothing over it that takes the pointer; nil for none.
-func (t *Tester) WebViewAt(x, y float32) NativeWebView {
+func (t *Tester) embeddedViewAt(x, y float32) embeddedView {
 	for _, v := range slices.Backward(t.h.webViews) {
 		if p := v.placement(nil); p.At(float64(x), float64(y)) {
 			return v.v
@@ -974,14 +974,14 @@ func (t *Tester) WebViewAt(x, y float32) NativeWebView {
 	return nil
 }
 
-// webViewPress presses button at (x, y) on the web view taking the
+// webViewPress presses button at (x, y) on the embedded view taking the
 // pointer there, as the platform would, which the content only hears of,
 // and reports whether one took it.
 func (t *Tester) webViewPress(x, y float32, button int, mods platform.Modifiers) bool {
-	if t.WebViewAt(x, y) == nil {
+	if t.embeddedViewAt(x, y) == nil {
 		return false
 	}
-	t.send(platform.SurfaceEvent{Kind: platform.WebViewPress, X: float64(x), Y: float64(y), Button: button, Mods: mods})
+	t.send(platform.SurfaceEvent{Kind: platform.ViewPress, X: float64(x), Y: float64(y), Button: button, Mods: mods})
 	return true
 }
 

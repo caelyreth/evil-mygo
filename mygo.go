@@ -1,43 +1,13 @@
 // Package mygo is a desktop application framework written in pure Go,
-// without cgo. Each window shows a web page, in the system webview
-// (WKWebView on macOS, WebKitGTK on Linux, WebView2 on Windows), or native
-// UI that MyGo draws itself, written in Go with package
-// [github.com/egoist/mygo/ui]; one app can have windows of both kinds.
-//
-// A window with a web page shows the app's frontend, which calls the Go
-// services the app binds through a TypeScript client that `mygo generate`
-// writes. The app opens its windows once it is ready:
-//
-//	type Greeter struct{}
-//
-//	// Greet returns a greeting.
-//	func (Greeter) Greet(name string) string { return "Hello, " + name }
-//
-//	func main() {
-//		mygo.Bind(Greeter{})
-//		mygo.App.WhenReady(func() {
-//			mygo.NewWindow(mygo.WindowOptions{Title: "Hello", URL: "/"})
-//		})
-//		if err := mygo.App.Run(); err != nil {
-//			log.Fatal(err)
-//		}
-//	}
-//
-// The frontend then calls `await Greeter.greet("Ada")`. Go reaches pages
-// with typed events declared with NewEvent.
-//
-// A window of native UI takes a view, a function of the app's state that
-// builds its interface each frame, in place of a URL, and needs no
-// bindings:
+// without cgo. Windows render native UI that MyGo draws itself, written in
+// Go with package [github.com/egoist/mygo/ui]:
 //
 //	mygo.NewWindow(mygo.WindowOptions{Title: "Counter", Content: ui.View(app.view)})
 //
-// The rest of the package covers the desktop, for windows of both kinds: App
-// (the lifecycle, deep links, file associations, the Dock), Window and its
-// Page, NewMenu and NewTray, Dialog, NewNotification, Clipboard, Shell,
-// Screen, Theme, Power, GlobalShortcut, Protocol (custom URL schemes served
-// by an http.Handler) and Updater. The guides in the repository's docs
-// directory show how they fit together.
+// The rest of the package covers the desktop: App (lifecycle, deep links,
+// file associations, the Dock), Window, NewMenu and NewTray, Dialog,
+// NewNotification, Clipboard, Shell, Screen, Theme, Power, GlobalShortcut,
+// and Updater.
 //
 // # Threading
 //

@@ -57,8 +57,8 @@ var devWindows struct {
 // the frame the previous build's had, and records what the code asked
 // for. Only top-level windows without a StateKey take part: not child
 // windows, panels, flyouts or windows the host made. Main thread only.
-func (w *Window) restoreDevWindow(p *platform.WindowOptions, native uintptr) {
-	if devWindowsFile == "" || w.stateKey != "" || w.parent != nil || w.panel || p.Flyout != nil || native != 0 || !launchedByDev() {
+func (w *Window) restoreDevWindow(p *platform.WindowOptions) {
+	if devWindowsFile == "" || w.stateKey != "" || w.parent != nil || w.panel || p.Flyout != nil || !launchedByDev() {
 		return
 	}
 	if !devWindows.loaded {

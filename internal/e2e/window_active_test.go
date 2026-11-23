@@ -10,45 +10,40 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-// inactiveMark is true in a page whose window is drawn inactive.
-const inactiveMark = "document.documentElement.hasAttribute('data-mygo-window-inactive') && !mygo.windowActive"
-
-// TestWindowActive switches the keyboard between two windows, a page and
-// native UI, and checks that each is drawn active while it has it, and
-// that a window stays active while its focusable flyout has it.
+// TestWindowActive switches the keyboard between two native UI windows,
+// and checks that each is drawn active while it has it, and that a window
+// stays active while its focusable flyout has it.
 func TestWindowActive(t *testing.T) {
-	w := newWindow(t, mygo.WindowOptions{Width: 300, Height: 200, X: 40, Y: 40})
-	w.Page().LoadHTML(`<body>page</body>`, "")
-	waitFor(t, w, "document.body")
-	var active atomic.Bool
+	var firstActive, secondActive atomic.Bool
+	w := newWindow(t, mygo.WindowOptions{Width: 300, Height: 200, X: 40, Y: 40, Content: ui.View(func(c *ui.Context) {
+		firstActive.Store(c.WindowActive())
+		ui.Text(c, "first")
+	})})
 	native := newWindow(t, mygo.WindowOptions{Width: 300, Height: 200, X: 400, Y: 40, Content: ui.View(func(c *ui.Context) {
-		active.Store(c.WindowActive())
-		ui.Text(c, "native")
+		secondActive.Store(c.WindowActive())
+		ui.Text(c, "second")
 	})})
 
 	native.Focus()
-	eventually(t, "the native UI's window focused", func() bool { return mygo.FocusedWindow() == native })
-	waitFor(t, w, inactiveMark)
-	eventually(t, "the native UI drawn active", active.Load)
+	eventually(t, "the second window focused", func() bool { return mygo.FocusedWindow() == native })
+	eventually(t, "the first window drawn inactive", func() bool { return !firstActive.Load() })
+	eventually(t, "the second window drawn active", secondActive.Load)
 
 	w.Focus()
-	eventually(t, "the page's window focused", func() bool { return mygo.FocusedWindow() == w })
-	waitFor(t, w, "!document.documentElement.hasAttribute('data-mygo-window-inactive') && mygo.windowActive")
-	eventually(t, "the native UI drawn inactive", func() bool { return !active.Load() })
+	eventually(t, "the first window focused", func() bool { return mygo.FocusedWindow() == w })
+	eventually(t, "the first window drawn active", firstActive.Load)
+	eventually(t, "the second window drawn inactive", func() bool { return !secondActive.Load() })
 
-	// The page's window keeps its look while its flyout has the keyboard.
-	if _, err := w.Page().Eval(`window.marks = 0; new MutationObserver(() => window.marks++).observe(document.documentElement, {attributes: true, attributeFilter: ['data-mygo-window-inactive']}); true`); err != nil {
-		t.Fatal(err)
-	}
-	fl := mygo.NewFlyout(mygo.FlyoutOptions{Parent: w, Anchor: mygo.Rectangle{X: 10, Y: 10}, Width: 200, Height: 120, Focusable: true})
+	// The first window keeps its active appearance while its flyout has the keyboard.
+	fl := mygo.NewFlyout(mygo.FlyoutOptions{Parent: w, Anchor: mygo.Rectangle{X: 10, Y: 10}, Width: 200, Height: 120, Focusable: true,
+		Content: ui.View(func(c *ui.Context) { ui.Text(c, "flyout") })})
 	defer fl.Destroy()
 	eventually(t, "the flyout focused", func() bool { return mygo.FocusedWindow() == fl })
-	// Once what the focus change sent the page, which comes before a
-	// second script, has run.
-	_, _ = w.Page().Eval("1")
-	waitFor(t, w, "window.marks === 0 && mygo.windowActive")
-	if active.Load() {
-		t.Error("the native UI drawn active while another window's flyout has the keyboard")
+	if !firstActive.Load() {
+		t.Error("the parent window drawn inactive while its flyout has the keyboard")
+	}
+	if secondActive.Load() {
+		t.Error("the other window drawn active while another window's flyout has the keyboard")
 	}
 }
 

@@ -13,7 +13,7 @@ func init() { viewhost.Embed = embed }
 // by the view, which takes it out of them. Main thread only.
 var gone = map[uintptr][]func(){}
 
-func embed(s platform.Surface, view uintptr, onGone func()) platform.WebView {
+func embed(s platform.Surface, view uintptr, onGone func()) platform.EmbeddedView {
 	vs, ok := s.(platform.ViewSurface)
 	if !ok {
 		return nil

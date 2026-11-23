@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/egoist/mygo/i18n"
-	"github.com/egoist/mygo/internal/bridge"
 	"github.com/egoist/mygo/internal/l10n"
 	"github.com/egoist/mygo/internal/platform"
 	"github.com/egoist/mygo/ui"
@@ -350,57 +349,6 @@ func TestRegion(t *testing.T) {
 	}
 	if got := heard.get(); len(got) != 8 {
 		t.Errorf("listeners heard %d changes, want 8: %+v", len(got), got)
-	}
-}
-
-// pageLocale returns the language the bridge configuration of the scripts
-// of a page's document start tells it.
-func pageLocale(t *testing.T, scripts []platform.UserScript) (locale, dir string) {
-	t.Helper()
-	for _, s := range scripts {
-		if i := strings.Index(s.Source, `"locale":"`); i >= 0 && strings.Contains(s.Source, "__MYGO_CONFIG__") {
-			rest := s.Source[i+len(`"locale":"`):]
-			locale = rest[:strings.IndexByte(rest, '"')]
-			j := strings.Index(s.Source, `"dir":"`)
-			rest = s.Source[j+len(`"dir":"`):]
-			return locale, rest[:strings.IndexByte(rest, '"')]
-		}
-	}
-	t.Fatal("no bridge in the scripts")
-	return "", ""
-}
-
-func TestPagesLocale(t *testing.T) {
-	localeTest(t, []string{"en", "ar", "de"}, "en-US")
-	_, fw := readyWindow(t, WindowOptions{Page: PageOptions{PreloadScript: "window.preloaded = 1"}})
-	if l, d := pageLocale(t, fw.UserScripts()); l != "en" || d != "ltr" {
-		t.Errorf("the page starts with %q %q", l, d)
-	}
-	fw.ClearScripts()
-	App.SetLocale("ar-EG")
-	onMain(func() {})
-	scripts := fw.UserScripts()
-	if l, d := pageLocale(t, scripts); l != "ar" || d != "rtl" {
-		t.Errorf("a page loaded later starts with %q %q", l, d)
-	}
-	onMain(func() {
-		if !fb.UIRightToLeft {
-			t.Error("the backend lays its widgets out left to right in Arabic")
-		}
-	})
-	if !slices.ContainsFunc(scripts, func(s platform.UserScript) bool { return s.Source == "window.preloaded = 1" }) {
-		t.Error("the preload script was lost")
-	}
-	evaled := strings.Join(fw.Scripts(), "\n")
-	if !strings.Contains(evaled, bridge.LocaleEvent) || !strings.Contains(evaled, `"locale":"ar","dir":"rtl"`) {
-		t.Errorf("the page heard %q", evaled)
-	}
-	// A language the app shows already tells the page nothing.
-	fw.ClearScripts()
-	App.SetLocale("ar")
-	onMain(func() {})
-	if s := strings.Join(fw.Scripts(), "\n"); strings.Contains(s, bridge.LocaleEvent) {
-		t.Errorf("the page heard %q", s)
 	}
 }
 

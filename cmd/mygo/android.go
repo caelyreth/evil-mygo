@@ -159,13 +159,6 @@ func (t *androidToolchain) buildGo(ctx context.Context, c, dc *Config, tk *task,
 	ldflags += extraLDFlags()
 	flags := []string{"-trimpath", "-buildmode=c-shared", "-ldflags", ldflags}
 	flags = append(flags, productionTags(opts.debug)...)
-	overlay, err := writeOverlay(filepath.Join(opts.work, "overlay-android.json"), opts.overlay)
-	if err != nil {
-		return err
-	}
-	if overlay != "" {
-		flags = append(flags, "-overlay", overlay)
-	}
 	out := filepath.Join(jniLibs, abi, "libmygoapp.so")
 	if err := os.MkdirAll(filepath.Dir(out), 0o755); err != nil {
 		return err

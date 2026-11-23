@@ -25,14 +25,10 @@ import (
 )
 
 func runDev(args []string) error {
-	flags := newFlags("dev", "[flags] [dir]", `Develops the app with live reload. It writes the TypeScript client of a
-frontend, runs devCommand from mygo.json (such as a Vite dev server),
-waits for devUrl to answer, then builds a development app, which loads
-devUrl in place of its built frontend, and launches it. Without devUrl,
-the app serves frontendDist from disk. The development app is "<name> Dev" with the
-identifier "<identifier>.dev", in .mygo/dev: a real bundle on macOS, and
-on Windows an executable with the icon, manifest and version information
-that mygo build embeds.
+	flags := newFlags("dev", "[flags] [dir]", `Develops the app with live reload. It builds a development app, which is
+"<name> Dev" with the identifier "<identifier>.dev", in .mygo/dev: a real
+bundle on macOS, and on Windows an executable with the icon, manifest and
+version information that mygo build embeds.
 
 On macOS it signs the development app with an Apple Development identity
 of the user's keychains, as Xcode signs Debug builds. Its signature stays
@@ -41,12 +37,12 @@ such as Accessibility, Screen Recording or reading its Keychain items; ad
 hoc signatures, which it falls back to without one, change with every
 build. -sign signs with another identity; -sign - signs ad hoc.
 
-Changes to the Go code, mygo.json or mygo.config.ts, the icon, the
-resources or the catalogs of messages rebuild the app, regenerate the
-TypeScript client and the accessors of the catalogs, and relaunch it. A build that fails to compile keeps the previous one running; the next
-change tries again. Frontend changes are left to the dev server. Quitting the app ends mygo dev.
-Each build's windows come back where the previous build's were, unless
-their code asks for another position or size.
+Changes to the Go code, mygo.json, the icon, the resources or the catalogs
+of messages rebuild the app, regenerate the accessors of the catalogs, and
+relaunch it. A build that fails to compile keeps the previous one running;
+the next change tries again. Quitting the app ends mygo dev. Each build's
+windows come back where the previous build's were, unless their code asks
+for another position or size.
 
 On a terminal, type r and Enter to rebuild and restart the app, c to clear
 the console, q to quit, h for help.
@@ -60,7 +56,6 @@ With -lang, the app runs in that language, a BCP 47 tag such as de or
 zh-Hant, or a pseudo locale: en-XA (accented and longer text) or ar-XB
 (right to left), which test layouts without translations. It does not
 keep it: the app's own setting is left as it is.`)
-	skipDevCommand := flags.Bool("skip-dev-command", false, "do not run devCommand")
 	sign := flags.String("sign", "", `macOS signing identity for the development app (default: an Apple Development identity, which keeps permissions and Keychain access across builds, else "-", ad hoc)`)
 	web := flags.Bool("web", false, "develop the app in browsers")
 	port := flags.Int("port", 5174, "with -web, the port to serve the app at, or the next free one")
@@ -118,7 +113,6 @@ keep it: the app's own setting is left as it is.`)
 		// The app reads it as it starts, over the language it keeps.
 		s.env = append(s.env, "MYGO_LOCALE="+locale)
 	}
-	var server atomic.Pointer[exec.Cmd] // the dev command
 	go func() {
 		// Ctrl+C again does not wait for the app to quit.
 		<-ctx.Done()
@@ -126,103 +120,13 @@ keep it: the app's own setting is left as it is.`)
 		signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
 		<-sig
 		s.killLive()
-		kill(server.Load())
 		con.interrupted()
 		os.Exit(130)
 	}()
 
 	con.startBanner("dev")
-	// The accessors of the catalogs and the TypeScript client come first:
-	// the app and the frontend import them.
 	if err := generateI18n(c); err != nil {
 		return err
-	}
-	if err := writeClient(ctx, c, false); err != nil {
-		if ctx.Err() != nil {
-			return nil
-		}
-		return err
-	}
-	var starting *task
-	var exited chan error // the dev command's
-	var quitting atomic.Bool
-	if c.DevCommand != "" && !*skipDevCommand {
-		starting = con.start("Starting the dev server")
-		cmd := shellCommand(c.root, c.DevCommand)
-		out, errOut := labeledOutput(cmd, "web")
-		if err := cmd.Start(); err != nil {
-			starting.fail()
-			return err
-		}
-		server.Store(cmd)
-		// Stopping the command makes script runners complain; that is
-		// noise.
-		context.AfterFunc(ctx, func() {
-			quitting.Store(true)
-			out.close()
-			errOut.close()
-		})
-		defer func() {
-			quitting.Store(true)
-			out.close()
-			errOut.close()
-			terminate(cmd)
-		}()
-		exited = make(chan error, 1)
-		go func() {
-			err := waited(cmd.Wait())
-			out.flush()
-			errOut.flush()
-			exited <- err
-		}()
-	}
-	switch {
-	case c.DevURL != "":
-		if starting == nil {
-			starting = con.start("Waiting for the dev server")
-		}
-		starting.set(c.DevURL)
-		wait, cancel := context.WithTimeout(ctx, 30*time.Second)
-		err := waitForURL(wait, c.DevURL, exited)
-		cancel()
-		if errors.Is(err, context.Canceled) {
-			starting.stop()
-			return nil
-		}
-		if err := starting.end(err, "Dev server ready at "+cyan(c.DevURL)); err != nil {
-			return err
-		}
-		devURL := c.DevURL
-		if s.device != nil {
-			if devURL, err = s.device.reachDevURL(devURL); err != nil {
-				return err
-			}
-		}
-		s.env = append(s.env, "MYGO_DEV_URL="+devURL)
-	case starting != nil:
-		starting.done("Started " + c.DevCommand)
-	}
-	if exited != nil {
-		// From now on, the dev server exiting is news, unless Ctrl+C,
-		// which it gets too, stopped it.
-		go func() {
-			err := <-exited
-			select {
-			case <-ctx.Done():
-				return
-			case <-time.After(250 * time.Millisecond):
-			}
-			if !quitting.Load() {
-				msg := "The dev server exited"
-				if err != nil {
-					msg += " (" + err.Error() + ")"
-				}
-				warnf("%s", msg)
-			}
-		}()
-	}
-	if c.DevURL == "" && c.FrontendDist != "" && s.device == nil {
-		s.env = append(s.env, "MYGO_FRONTEND_DIST="+c.path(c.FrontendDist))
 	}
 	return s.run(ctx, c)
 }
@@ -712,16 +616,6 @@ func (s *devSession) buildAndLaunch(ctx context.Context, t *task, running [32]by
 		return nil, sum, errUnchanged
 	}
 
-	if c.Bindings != "" {
-		t.set("generating the TypeScript client")
-		changed, err := generateBindings(c, bin)
-		if err != nil {
-			return nil, sum, err
-		}
-		if changed {
-			logf("Wrote %s", cyan(relPathTo(c.root, c.path(c.Bindings))))
-		}
-	}
 	exe := filepath.Join(dir, name)
 	if runtime.GOOS == "darwin" {
 		t.set("signing")

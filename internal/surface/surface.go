@@ -90,9 +90,9 @@ type Conn struct {
 	// panels of the menus package ui draws in flyouts (ui.FlyoutMenus).
 	// It is nil where the window opens none.
 	Flyout func(spec FlyoutSpec, content Content) Flyout
-	// PlaceWebViews shows the window's web views where the content's last
-	// frame shows them (Surface.PlaceWebViews).
-	PlaceWebViews func(views []platform.WebViewPlacement)
+	// PlaceViews shows the window's embedded views where the content's
+	// last frame shows them.
+	PlaceViews func(views []platform.ViewPlacement)
 	// ContentSize, set by a window that takes its content's size
 	// (mygo.FlyoutOptions.FitContent), nil in others, hears the size
 	// the content takes, in DIPs, as a frame laid out at the window's
@@ -169,10 +169,14 @@ type Flyout interface {
 	OnClose(fn func())
 }
 
-// WebView is a web view a window made for its content to show
-// (*mygo.WebView, of Window.NewWebView), which package ui places.
-type WebView interface {
-	// SurfaceWebView returns the web view's native side when it is of the
-	// window of conn and not destroyed, else nil. Main thread only.
-	SurfaceWebView(conn *Conn) platform.WebView
+// EmbeddedView is an embedded platform or plugin view which package ui
+// places.
+type EmbeddedView interface {
+	// SurfaceView returns the view's native side when it is of the window
+	// of conn and not destroyed, else nil. Main thread only.
+	SurfaceView(conn *Conn) platform.EmbeddedView
 }
+
+// DevLaunched tells that mygo dev launched the app, which restarts it as the code
+// changes: package ui then keeps what its windows show across restarts.
+var DevLaunched bool

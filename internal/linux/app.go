@@ -16,8 +16,7 @@ import (
 	"github.com/egoist/mygo/internal/platform"
 )
 
-// Backend is the Linux (GTK 3 + WebKitGTK) implementation of
-// platform.Backend.
+// Backend is the Linux (GTK 3) implementation of platform.Backend.
 type Backend struct {
 	h       platform.AppHandler
 	name    string
@@ -26,30 +25,19 @@ type Backend struct {
 	windows map[int]*window
 	// flyouts are the flyouts that show on Wayland, in the order they
 	// showed: each popup's parent is the one before or a toplevel.
-	flyouts   []*window
-	byWebView map[ptr]*window
-	// webViews are the web views under surfaces (webview.go), by id.
-	webViews map[int]*window
-	nextID   int
+	flyouts []*window
+	nextID  int
 	// frames are the window manager's frames seen last around a decorated
 	// window in its normal state that the user cannot resize and one they
 	// can, which windows that have not shown yet expect (see
 	// window.frameExtents).
 	frames [2]extents
 
-	appMenu *platform.Menu
-	// stores are the web contexts of sessions (session.go); schemes,
-	// below, the custom schemes registered on the default web context.
-	stores []*dataStore
-	// languages are those SetLanguages told, which the web context
-	// takes as the first web view is made (webLanguages).
-	languages    []string
-	webLanguages bool
-	schemes      map[string]bool
-	signaled     atomic.Bool
-	quitLoops    []ptr
-	popups       []ptr // context menus being shown
-	modals       []modal
+	appMenu   *platform.Menu
+	signaled  atomic.Bool
+	quitLoops []ptr
+	popups    []ptr // context menus being shown
+	modals    []modal
 	trays        map[int]*tray
 	nextTray     int
 	grabs        map[int]grab    // global shortcuts on X11
@@ -93,15 +81,12 @@ var theBackend *Backend
 // programs still start (and report a clear error) on machines without GTK.
 func New() *Backend {
 	return &Backend{
-		windows:   map[int]*window{},
-		byWebView: map[ptr]*window{},
-		webViews:  map[int]*window{},
-		schemes:   map[string]bool{},
-		trays:     map[int]*tray{},
+		windows: map[int]*window{},
+		trays:   map[int]*tray{},
 	}
 }
 
-func (b *Backend) Name() string { return "linux/webkitgtk" }
+func (b *Backend) Name() string { return "linux" }
 
 // windowManager reports an X11 window manager, which places windows once
 // they show; Wayland compositors do not tell where windows are.
@@ -122,9 +107,6 @@ func (b *Backend) Init(h platform.AppHandler, opts platform.AppOptions) error {
 	theBackend = b
 	if err := load(); err != nil {
 		return err
-	}
-	if disableDMABUF(opts.DMABUFRenderer, os.Getenv, "/") {
-		_ = os.Setenv("WEBKIT_DISABLE_DMABUF_RENDERER", "1")
 	}
 	// The program is its executable, by whichever name started it, as a
 	// link in /usr/bin of another name (linux.command): GTK names the class
@@ -266,9 +248,6 @@ func initCallbacks() {
 		initWindowCallbacks()
 		initFlyoutCallbacks()
 		initSurfaceCallbacks()
-		initDownloadCallbacks()
-		initAuthCallbacks()
-		initContextMenuCallbacks()
 		initMenuCallbacks()
 		initSystemCallbacks()
 		initClipboardCallbacks()
@@ -364,22 +343,6 @@ func (a appController) ShowAboutPanel(o platform.AboutPanelOptions) {
 }
 
 func (a appController) Package() (platform.PackageInfo, bool) { return platform.PackageInfo{}, false }
-
-func (a appController) ClearBrowsingData(store platform.DataStore, types platform.SiteData, done func(error)) {
-	// Web views of earlier runs kept their data on disk: WebKitGTK clears
-	// it, loaded for that when no window has shown a web page yet.
-	if webKit() != nil {
-		done(nil) // no web view kept any data
-		return
-	}
-	manager := webkitWebContextGetWebsiteDataManager(webContext(store))
-	id := pending.add(func(source, res ptr) {
-		var gerr ptr
-		webkitWebsiteDataManagerClearFinish(source, res, &gerr)
-		done(gErr(gerr))
-	})
-	webkitWebsiteDataManagerClear(manager, websiteDataTypes(types), 0, 0, cbAsyncReady, id)
-}
 
 func (a appController) AddRecentDocument(path string) error {
 	uri := fileURI(path)

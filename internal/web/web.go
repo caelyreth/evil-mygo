@@ -218,7 +218,6 @@ func (*Backend) NewTray(string, platform.TrayHandler) (platform.Tray, error) {
 func (*Backend) RegisterHotkey(int, string, string) error { return errUnsupported }
 func (*Backend) UnregisterHotkey(int)                     {}
 func (*Backend) NotificationsSupported() bool             { return false }
-func (*Backend) WebViewAvailable() bool                   { return false }
 func (*Backend) RemoveNotification(string)                {}
 func (*Backend) RemoveAllNotifications()                  {}
 
@@ -250,12 +249,6 @@ func (app) SetOpenAtLogin(bool, string, string, string) error { return errUnsupp
 func (app) OpenAtLogin(string, string, string) bool           { return false }
 func (app) OpenedAtLogin() bool                               { return false }
 func (app) SetDockMenu(*platform.Menu)                        {}
-func (app) ClearBrowsingData(_ platform.DataStore, _ platform.SiteData, done func(error)) {
-	done(errUnsupported)
-}
-func (app) NewDataStore(platform.DataStoreOptions) (platform.DataStore, error) {
-	return nil, errUnsupported
-}
 
 // PreferredLanguages returns the browser's languages, navigator.languages.
 func (app) PreferredLanguages() []string {

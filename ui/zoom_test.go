@@ -278,13 +278,13 @@ func TestZoomSetByTheView(t *testing.T) {
 // menus' places.
 func TestZoomTellsTheWindowsCoordinates(t *testing.T) {
 	value := "Ada"
-	page := &testWebView{"page"}
+	page := &testEmbeddedView{"page"}
 	view := func(c *context) {
 		coreColumn(c).Padding(10).Gap(10).Children(func() {
 			coreTextInput(c, &value).Width(120).Label("Name").AutoFocus()
 			coreRow(c).Padding(8).Children(func() { coreText(c, "Report") }).ContextMenu(func(m *Menu) { m.Item("Open") })
 			coreBox(c).Size(30, 20).MaximizeButton()
-			coreWebView(c, page).Size(100, 40).Children(func() {
+			coreEmbeddedView(c, page).Size(100, 40).Children(func() {
 				coreText(c, "Badge").Absolute().Top(4).Left(4)
 			})
 		})
@@ -301,7 +301,7 @@ func TestZoomTellsTheWindowsCoordinates(t *testing.T) {
 		}
 		field := accessNode(t, tt.h.access, platform.RoleTextField, "Name")
 		maxButton[int(z)] = tt.h.maxButton
-		webView[int(z)], _ = placed(tt, page)
+		webView[int(z)], _ = placedView(tt, page)
 		if err := tt.RightClick("Report"); err != nil {
 			t.Fatal(err)
 		}

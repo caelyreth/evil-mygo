@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/egoist/mygo/internal/platform"
+	"github.com/egoist/mygo/internal/surface"
 )
 
 var (
@@ -329,33 +330,46 @@ func TestZIndexAllocs(t *testing.T) {
 	}
 }
 
-// What a z-index raises over a web view covers it, and a web view raised
-// over its siblings, absolute ones too, is covered by none of them.
-func TestZIndexWebView(t *testing.T) {
-	page := &testWebView{"page"}
+type testEmbeddedView struct{ name string }
+
+func (*testEmbeddedView) SurfaceView(*surface.Conn) platform.EmbeddedView { return nil }
+
+func placedView(tt *Tester, v embeddedView) (placedWebView, bool) {
+	for _, p := range tt.h.webViews {
+		if p.v == v {
+			return p, true
+		}
+	}
+	return placedWebView{}, false
+}
+
+// What a z-index raises over an embedded view covers it, and an embedded
+// view raised over its siblings, absolute ones too, is covered by none of them.
+func TestZIndexEmbeddedView(t *testing.T) {
+	var page embeddedView = &testEmbeddedView{"page"}
 	raiseView := false
 	tt := coreNewTester(func(c *context) {
 		coreBox(c).Size(100, 100).Children(func() {
 			coreButtonBase(c).Size(40, 40).Margin(0, 0, -40, 0).Label("badge").ZIndex(map[bool]int{false: 1}[raiseView])
-			coreWebView(c, page).Size(100, 100).ZIndex(map[bool]int{true: 1}[raiseView])
+			coreEmbeddedView(c, page).Size(100, 100).ZIndex(map[bool]int{true: 1}[raiseView])
 			coreButtonBase(c).Size(30, 30).Absolute().Top(60).Left(60).Label("corner")
 		})
 	}, 100, 100)
 	tt.Frame()
-	p, ok := placed(tt, page)
+	p, ok := placedView(tt, page)
 	if !ok || len(p.covers) != 2 || !p.covers[0].Contains(70, 70) || !p.covers[1].Contains(20, 20) {
-		t.Errorf("the badge raised over the web view, and the corner after it: covers %+v", p.covers)
+		t.Errorf("the badge raised over the embedded view, and the corner after it: covers %+v", p.covers)
 	}
-	if tt.WebViewAt(20, 20) != nil || tt.WebViewAt(50, 50) != page {
-		t.Error("the pointer goes to the web view under the badge raised over it")
+	if tt.embeddedViewAt(20, 20) != nil || tt.embeddedViewAt(50, 50) != page {
+		t.Error("the pointer goes to the embedded view under the badge raised over it")
 	}
 	raiseView = true
 	tt.Frame()
-	if p, _ := placed(tt, page); len(p.covers) != 0 {
-		t.Errorf("the web view raised over the badge: covers %+v", p.covers)
+	if p, _ := placedView(tt, page); len(p.covers) != 0 {
+		t.Errorf("the embedded view raised over the badge: covers %+v", p.covers)
 	}
-	if tt.WebViewAt(20, 20) != page || tt.WebViewAt(70, 70) != page {
-		t.Error("the pointer misses the web view raised over the badge and the corner")
+	if tt.embeddedViewAt(20, 20) != page || tt.embeddedViewAt(70, 70) != page {
+		t.Error("the pointer misses the embedded view raised over the badge and the corner")
 	}
 }
 

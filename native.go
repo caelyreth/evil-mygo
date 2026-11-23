@@ -85,11 +85,10 @@ func (p *NativePlugin) Call(ctx context.Context, method string, args, reply any)
 }
 
 // PluginView is a view of a plugin's native code, which a window's native UI
-// shows with ui.WebView, under what it paints over it, as it does a web view:
-// a map, a camera's preview, a video.
+// shows under what it paints over it: a map, a camera's preview, a video.
 type PluginView struct {
 	w    *Window
-	view platform.WebView
+	view platform.EmbeddedView
 	// ID names the view to the plugin's native code: pass it with the calls
 	// about the view.
 	ID int
@@ -135,9 +134,9 @@ func NewPluginView(w *Window, viewType string, args any) (*PluginView, error) {
 // Destroy closes the view.
 func (v *PluginView) Destroy() { onMain(v.view.Close) }
 
-// SurfaceWebView gives package ui the view to place, in its window's content
+// SurfaceView gives package ui the view to place, in its window's content
 // only. Main thread only.
-func (v *PluginView) SurfaceWebView(conn *surface.Conn) platform.WebView {
+func (v *PluginView) SurfaceView(conn *surface.Conn) platform.EmbeddedView {
 	if v == nil || conn.Window != v.w {
 		return nil
 	}

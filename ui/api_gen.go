@@ -1528,6 +1528,17 @@ func EditableText(c *Context, value *string) Element {
 	return wrapElement(_e)
 }
 
+func EmbeddedView(c *Context, v embeddedView) Element {
+	_ctx := c.build()
+	if _ctx == nil {
+		return Element{}
+	}
+	_ctx.rt.beginBuild()
+	_e := coreEmbeddedView(_ctx, v)
+	_ctx.rt.endBuild()
+	return wrapElement(_e)
+}
+
 // Field creates a field: label, above the control that fn builds, or
 // beside it in a Form. The label names the control for assistive
 // technology, unless the control names itself, as a check box with its own
@@ -3288,40 +3299,6 @@ func Video(c *Context, p *VideoPlayer) Element {
 // own state.
 func View(view func(c *Context)) *Content {
 	return coreView(func(c *context) { view(makeContext(c)) })
-}
-
-// WebView shows a web view, made with mygo.Window.NewWebView, in the
-// element's content box. A web view has no size of its own: the element
-// stretches across its container (AlignSelf(Stretch)), and takes the room
-// along it with Grow or a size:
-//
-//	ui.Row(c).Fill().Children(func() {
-//		sidebar(c)
-//		ui.WebView(c, app.docs).Grow(1)
-//	})
-//
-// The web view shows while a frame builds its element and hides when one
-// does not, keeping its page: a view switching tabs builds the web view
-// of the tab shown. The element paints a hole through the window's
-// content (the web view is under it, the system's own view), as rounded
-// as its Radius and cut by the scroll containers and clips around it, so
-// that what paints after it shows over the page: its children, popovers,
-// menus, dialogs, tooltips and toasts. The page takes the pointer where
-// it shows and nothing painted over it takes it, and the keyboard once
-// clicked, focused (mygo.WebView.Focus) or tabbed into: Tab stops at the
-// element. The keys the page leaves unhandled come to the native UI as if
-// the element had the focus, which the shortcuts around it and the
-// window's see. Its background and border paint around the page, which
-// its opacity fades, and assistive technology finds the page inside it.
-func WebView(c *Context, v NativeWebView) Element {
-	_ctx := c.build()
-	if _ctx == nil {
-		return Element{}
-	}
-	_ctx.rt.beginBuild()
-	_e := coreWebView(_ctx, v)
-	_ctx.rt.endBuild()
-	return wrapElement(_e)
 }
 
 // CheckItem creates an item, as Item does, that assistive technology sees

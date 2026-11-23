@@ -71,11 +71,7 @@ func installScript(c *Config) string {
 		"API":        "",
 		"TagPrefix":  "",
 		"PublicKey":  "",
-		"WebKit":     "",
 		"Updates":    "",
-	}
-	if c.Linux.webView() {
-		data["WebKit"] = "yes"
 	}
 	switch u := c.Updates; {
 	case u != nil && u.tagged():
@@ -355,12 +351,6 @@ linux() {
 	else
 		echo "Installed $app_name: open it from the applications menu"
 	fi
-{{- if .WebKit}}
-	if ! has_webkit; then
-		echo "$app_name needs WebKitGTK, which is not installed. Install it with:" >&2
-		echo "  $(webkit_install_command)" >&2
-	fi
-{{- end}}
 }
 {{- if .Updates}}
 
@@ -674,40 +664,6 @@ function run(argv) {
 EOF
 }
 {{- end}}
-
-# has_webkit fails when the system's library cache has no WebKitGTK, which
-# the app loads when it starts (4.1, else 4.0), with GTK, which it depends
-# on. It succeeds when it cannot tell, as without ldconfig (NixOS) or a
-# cache (musl).
-has_webkit() {
-	for ldconfig in "$(command -v ldconfig || true)" /sbin/ldconfig /usr/sbin/ldconfig; do
-		[ -n "$ldconfig" ] && [ -x "$ldconfig" ] || continue
-		"$ldconfig" -p >"$work/libs" 2>/dev/null || return 0
-		grep -qF libc.so.6 "$work/libs" || return 0
-		grep -qF -e libwebkit2gtk-4.1.so.0 -e libwebkit2gtk-4.0.so.37 "$work/libs"
-		return
-	done
-	return 0
-}
-
-webkit_install_command() {
-	distro=
-	for file in /etc/os-release /usr/lib/os-release; do
-		if [ -f "$file" ]; then
-			distro="$(. "$file" && echo "${ID:-} ${ID_LIKE:-}")" || true
-			break
-		fi
-	done
-	for id in $distro; do
-		case "$id" in
-		debian | ubuntu) echo "sudo apt install libwebkit2gtk-4.1-0" && return ;;
-		fedora) echo "sudo dnf install webkit2gtk4.1" && return ;;
-		arch) echo "sudo pacman -S webkit2gtk-4.1" && return ;;
-		opensuse* | suse) echo "sudo zypper install libwebkit2gtk-4_1-0" && return ;;
-		esac
-	done
-	echo "the package manager of your system (the library is libwebkit2gtk-4.1.so.0)"
-}
 
 uninstall() {
 	[ -d "$app_dir" ] || fail "$app_name is not installed in $app_dir"

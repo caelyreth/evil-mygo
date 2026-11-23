@@ -1141,34 +1141,6 @@ func NotificationsSupported() bool {
 	return onMainValue(func() bool { return backend().NotificationsSupported() })
 }
 
-// WebViewAvailable reports whether the system webview is there, and so
-// whether a window showing a web page can work: WKWebView on macOS,
-// WebKitGTK on Linux, the WebView2 Runtime on Windows. A window showing
-// native UI (WindowOptions.Content) needs none, so an app whose windows all
-// do runs without one, and this reports false in browsers, which show
-// native UI only.
-//
-// Ask before creating the first window showing a page, as NewWindow panics
-// when the platform has no webview. It may be called from any goroutine,
-// also in main before App.Run:
-//
-//	mygo.App.WhenReady(func() {
-//		if mygo.WebViewAvailable() {
-//			mygo.NewWindow(mygo.WindowOptions{URL: "/"})
-//		} else {
-//			mygo.NewWindow(mygo.WindowOptions{Content: ui.View(offlineView)})
-//		}
-//	})
-//
-// It looks for the runtime without starting it: on Windows for the
-// WebView2 Runtime or a WebView2Loader.dll next to the executable, on
-// Linux by loading WebKitGTK. A runtime that is there but broken still
-// reports true; the window then reports calls that need its page as
-// failed. Once a window showing a page started the runtime, it reports
-// whether that worked. A Windows app built with the tag mygo_nowebview,
-// which leaves WebView2 out, reports false.
-func WebViewAvailable() bool { return backend().WebViewAvailable() }
-
 // NewNotification creates a notification; call Show to display it.
 func NewNotification(opts NotificationOptions) *Notification {
 	id := opts.ID

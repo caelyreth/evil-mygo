@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"sync"
 
@@ -93,16 +92,6 @@ func loadCatalogs(c *Config) (*i18ngen.Catalog, i18ngen.Diagnostics, error) {
 	})
 }
 
-// i18nModule returns where the TypeScript module of the catalogs goes:
-// next to the client, named after the catalogs' directory, as
-// src/locales.ts, or "" for an app without a frontend.
-func i18nModule(c *Config) string {
-	if c.I18n == nil || c.Bindings == "" {
-		return ""
-	}
-	return filepath.Join(filepath.Dir(c.path(c.Bindings)), filepath.Base(c.path(c.I18n.Dir))+".ts")
-}
-
 // i18nOutput is what writeI18n did.
 type i18nOutput struct {
 	written  []string            // the files it wrote, relative to the root
@@ -110,9 +99,8 @@ type i18nOutput struct {
 	catalog  *i18ngen.Catalog    // the catalogs read
 }
 
-// writeI18n checks the catalogs of the app and writes their accessors,
-// the Go functions in the catalogs' directory and the TypeScript module,
-// where they changed. Errors of the catalogs fail it.
+// writeI18n checks the catalogs of the app and writes their Go accessors
+// in the catalogs' directory where they changed. Errors of the catalogs fail it.
 func writeI18n(c *Config) (*i18nOutput, error) {
 	out := &i18nOutput{}
 	if c.I18n == nil {
@@ -135,28 +123,12 @@ func writeI18n(c *Config) (*i18nOutput, error) {
 	if err != nil {
 		return nil, err
 	}
-	files := map[string][]byte{filepath.Join(dir, i18ngen.GoFile): src}
-	if mod := i18nModule(c); mod != "" {
-		ts, err := i18ngen.TS(cat)
-		if err != nil {
-			return nil, err
-		}
-		files[mod] = ts
-	}
-	for _, path := range slices.Sorted(func(yield func(string) bool) {
-		for p := range files {
-			if !yield(p) {
-				return
-			}
-		}
-	}) {
-		if old, err := os.ReadFile(path); err == nil && bytes.Equal(old, files[path]) {
-			continue
-		}
+	path := filepath.Join(dir, i18ngen.GoFile)
+	if old, err := os.ReadFile(path); err != nil || !bytes.Equal(old, src) {
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			return nil, err
 		}
-		if err := os.WriteFile(path, files[path], 0o644); err != nil {
+		if err := os.WriteFile(path, src, 0o644); err != nil {
 			return nil, err
 		}
 		out.written = append(out.written, relPathTo(c.root, path))

@@ -34,40 +34,15 @@ type QuitEvent struct {
 	SessionEnding bool
 }
 
-// NavigateEvent is passed to Page.OnWillNavigate listeners. Preventing it
-// cancels the navigation.
-type NavigateEvent struct {
-	Preventable
-	URL string
-	// UserInitiated is true when the navigation was triggered by a user
-	// gesture such as clicking a link, or a click whose handler sets
-	// location.href. It is false for a page's script navigating on its
-	// own, as from a timer.
-	UserInitiated bool
-}
-
-// TitleEvent is passed to Page.OnPageTitleUpdated listeners. Preventing
-// it keeps the native window title unchanged.
-type TitleEvent struct {
-	Preventable
-	Title string
-}
-
-// FileDropEvent is passed to Window.OnFileDrop listeners, and to the
-// page's onFileDrop listeners.
+// FileDropEvent is passed to Window.OnFileDrop listeners.
 type FileDropEvent struct {
 	// Paths of the dropped files and directories.
 	Paths []string `json:"paths"`
-	// X and Y are where the files were dropped, in CSS pixels from the
-	// top-left corner of the page's viewport, like a DOM event's clientX
-	// and clientY.
+	// X and Y are where the files were dropped, in DIPs from the top-left
+	// corner of the window's content area.
 	X int `json:"x"`
 	Y int `json:"y"`
 }
-
-// fileDropEvent is the name of the page event of dropped files. Names
-// starting with "mygo:" are MyGo's own.
-const fileDropEvent = "mygo:file-drop"
 
 // listeners is a goroutine safe list of event listeners of type F.
 type listeners[F any] struct {

@@ -3,15 +3,7 @@
 package linux
 
 import (
-	"bytes"
-	"cmp"
-	"errors"
-	"fmt"
-	"net/url"
-	"os"
 	"slices"
-	"strings"
-	"sync"
 	"unsafe"
 
 	"github.com/ebitengine/purego"
@@ -41,9 +33,7 @@ type window struct {
 	opts *platform.WindowOptions
 
 	win     ptr // GtkWindow
-	box     ptr // GtkBox holding the menu bar and the webview
-	web     ptr // WebKitWebView
-	ucm     ptr // WebKitUserContentManager
+	box     ptr // GtkBox holding the menu bar and the content surface
 	menubar ptr
 	accel   ptr
 	owner   int
@@ -51,21 +41,10 @@ type window struct {
 	// autoHideMenu shows the menu bar only while its menus are open;
 	// altAlone is an Alt press no other key or click has joined.
 	autoHideMenu, altAlone bool
-	// surface shows the content MyGo draws, in place of the web view.
+	// surface shows the content MyGo draws.
 	surface *surface
-	// webViews are the web views under the surface (webview.go), and host
-	// the window whose surface a web view is under; accessParent is the
-	// node of the content its page's accessible is in.
-	webViews     []*window
-	host         *window
-	accessParent ptr
-	// pageScale is how much the content scales a web view's page, which
-	// WebKit zooms by over the page's own zoom, and corners the radii,
-	// in its allocation's DIPs, its drawing is cut to (webview.go).
-	pageScale float64
-	corners   [4]float64
-	// controls are the title buttons over the page of a window with a
-	// hidden title bar (titlebar.go), in an overlay with the web view.
+	// controls are the title buttons over the surface of a window with a
+	// hidden title bar (titlebar.go), in an overlay with the surface.
 	controls *windowControls
 	// csd tells that GTK decorates a frameless window or one with a hidden
 	// title bar itself, with an empty title bar: it draws the shadow and
@@ -102,9 +81,6 @@ type window struct {
 	// hiding tells that the window hides once the frame that asked for
 	// that returns (Hide), unless it shows again first.
 	hiding bool
-	// tlsRetry is the page to load again once WebKit finished its load
-	// that failed with a certificate the app allowed (auth.go).
-	tlsRetry string
 	// requested holds bounds set with SetBounds until the window manager
 	// answers: GTK resizes and moves asynchronously. requestFrame is the
 	// window manager's frame they were asked for with, and requestInside
@@ -136,18 +112,8 @@ type window struct {
 	activationPrevious [2]int32
 	resizeIdle         uint32
 
-	// captureMuted tells, by platform.CaptureKind, the capture that
-	// SetCaptureState muted, until it stops, which SetAudioMuted mutes
-	// again. WebKit's own changes, which may be SetAudioMuted's on their
-	// way, don't change it.
-	captureMuted [3]bool
-
-	// dragged holds the paths of the files dragged over the page, dropped
-	// those of the files dropped on it, for DroppedFiles.
-	dragged, dropped []string
-
-	// The last button press on the page, used for window dragging and
-	// context menu positioning.
+	// The last button press, used for window dragging and context menu
+	// positioning.
 	press struct {
 		button     int32
 		rootX      float64
@@ -176,9 +142,6 @@ type window struct {
 
 func (b *Backend) window(data ptr) *window {
 	w := b.windows[int(data)]
-	if w == nil {
-		w = b.webViews[int(data)]
-	}
 	if w == nil || w.closed {
 		return nil
 	}
@@ -186,11 +149,6 @@ func (b *Backend) window(data ptr) *window {
 }
 
 func (b *Backend) NewWindow(o *platform.WindowOptions, h platform.WindowHandler) (platform.Window, error) {
-	if !o.Surface {
-		if err := webKit(); err != nil {
-			return nil, err
-		}
-	}
 	b.nextID++
 	w := &window{b: b, id: b.nextID, h: h, opts: o, autoHideMenu: o.AutoHideMenu}
 	data := ptr(w.id)
@@ -254,11 +212,7 @@ func (b *Backend) NewWindow(o *platform.WindowOptions, h platform.WindowHandler)
 	if w.hiddenTitleBar() && !o.HideWindowButtons {
 		w.newControls()
 	}
-	if o.Surface {
-		w.createSurface()
-	} else {
-		w.createWebView()
-	}
+	w.createSurface()
 	if w.controls != nil {
 		gtkContainerAdd(w.controls.overlay, w.contentWidget())
 	} else {
@@ -296,9 +250,6 @@ func (b *Backend) NewWindow(o *platform.WindowOptions, h platform.WindowHandler)
 	connectAfter(w.win, "map", cbWindowMap, data)
 
 	b.windows[w.id] = w
-	if w.web != 0 {
-		b.byWebView[w.web] = w
-	}
 	if (o.Frameless || w.hiddenTitleBar() && !b.compositorDecorates) && !w.csd && o.Flyout == nil && !w.layer && b.announceCSD != nil {
 		// GTK asks a Wayland compositor that speaks
 		// org_kde_kwin_server_decoration (KWin, COSMIC, Sway…) to decorate
@@ -324,93 +275,6 @@ func (b *Backend) NewWindow(o *platform.WindowOptions, h platform.WindowHandler)
 	return w, nil
 }
 
-func (w *window) createWebView() {
-	o := w.opts
-	data := ptr(w.id)
-	w.ucm = webkitUserContentManagerNew()
-	if !w.b.webLanguages {
-		// The first web view: WebKit just loaded.
-		w.b.webLanguages = true
-		w.b.applyWebLanguages()
-	}
-	w.web = w.newWebView()
-	webkitUserContentManagerRegisterHandler(w.ucm, cs("mygo"))
-	connect(w.ucm, "script-message-received::mygo", cbScriptMessage, data)
-	w.addUserScripts()
-
-	settings := webkitWebViewGetSettings(w.web)
-	webkitSettingsSetEnableDeveloperExtras(settings, o.DevTools)
-	webkitSettingsSetAllowFileAccessFromFileURLs(settings, true)
-	webkitSettingsSetJavascriptCanAccessClipboard(settings, true)
-	if o.UserAgent != "" {
-		webkitSettingsSetUserAgent(settings, cs(userAgentWithSuffix(o.UserAgent, o.UserAgentSuffix)))
-	} else if o.UserAgentSuffix != "" {
-		webkitSettingsSetUserAgentSuffix(settings, o.UserAgentSuffix)
-	}
-	if o.NoBackgroundThrottling {
-		disableBackgroundThrottling(settings)
-	}
-	if o.Zoom > 0 && o.Zoom != 1 {
-		webkitWebViewSetZoomLevel(w.web, o.Zoom)
-	}
-	if o.SwipeNavigation { // off by default
-		gObjectSetBool(settings, cs("enable-back-forward-navigation-gestures"), true, 0)
-	}
-	if !o.PinchZoom {
-		stopPinchZoom(w.web)
-	}
-	switch {
-	case o.Transparent:
-		webkitWebViewSetBackgroundColor(w.web, &gdkRGBA{})
-	case o.BackgroundColor != nil:
-		w.SetBackgroundColor(*o.BackgroundColor)
-	}
-
-	connect(w.web, "load-changed", cbLoadChanged, data)
-	connect(w.web, "load-failed", cbLoadFailed, data)
-	connect(w.web, "notify::title", cbTitle, data)
-	if webkitWebViewIsPlayingAudio != nil {
-		connect(w.web, "notify::is-playing-audio", cbPlayingAudio, data)
-	}
-	for kind, property := range captureProperties {
-		if webkitWebViewGetCaptureState[kind] != nil {
-			connect(w.web, "notify::"+property, cbCaptureState, data)
-		}
-	}
-	connect(w.web, "decide-policy", cbDecidePolicy, data)
-	connect(w.web, "create", cbCreate, data)
-	connect(w.web, "close", cbClose, data)
-	connect(w.web, "web-process-terminated", cbCrashed, data)
-	connect(w.web, "button-press-event", cbButtonPress, data)
-	if w.undecorated() {
-		connect(w.web, "motion-notify-event", cbMotion, data)
-	}
-	connect(w.web, "drag-data-received", cbDragData, data)
-	connect(w.web, "drag-drop", cbDragDrop, data)
-	connect(w.web, "permission-request", cbPermission, data)
-	connect(w.web, "context-menu", cbContextMenu, data)
-	w.connectAuth(data)
-	hookDownloads()
-}
-
-// zoomGesture is the GtkGestureZoom through which WebKitGTK magnifies the
-// page as a touchscreen's or a touchpad's pinch does, with no setting to
-// turn it off; WebKitGTK keeps it in its web view's data under this key
-// from 2.38 on.
-const zoomGesture = "wk-view-zoom-gesture"
-
-// stopPinchZoom keeps pinches from magnifying a web view's page: its zoom
-// gesture takes no more events. It does nothing on WebKitGTK older than
-// 2.38, whose zoom gesture can't be reached.
-func stopPinchZoom(web ptr) {
-	if gObjectGetData == nil || gtkEventControllerSetPropagationPhase == nil {
-		return
-	}
-	if g := gObjectGetData(web, cs(zoomGesture)); g != 0 {
-		gtkEventControllerSetPropagationPhase(g, 0) // GTK_PHASE_NONE
-	}
-}
-
 func (w *window) applyGeometry() {
 	g := gdkGeometry{MinWidth: w.minW, MinHeight: w.minH, MaxWidth: w.maxW, MaxHeight: w.maxH}
 	mask := int32(0)
@@ -433,12 +297,10 @@ func (w *window) cleanup() {
 	if w.closed {
 		return
 	}
-	w.closeWebViews()
 	w.closed = true
 	delete(w.b.windows, w.id)
 	w.leaveFlyout()
 	w.b.flyouts = slices.DeleteFunc(w.b.flyouts, func(x *window) bool { return x == w })
-	delete(w.b.byWebView, w.web)
 	dropOwner(w.owner)
 	if w.accel != 0 {
 		// The window gives up its own reference as GTK destroys it; this
@@ -451,11 +313,6 @@ func (w *window) cleanup() {
 	if w.surface != nil {
 		w.surface.destroy()
 	}
-	if w.ucm != 0 {
-		webkitUserContentManagerUnregisterHandler(w.ucm, cs("mygo"))
-		webkitUserContentManagerRemoveAllScripts(w.ucm)
-		gObjectUnref(w.ucm)
-	}
 	if w.press.event != 0 {
 		gdkEventFree(w.press.event)
 		w.press.event = 0
@@ -463,8 +320,7 @@ func (w *window) cleanup() {
 	w.releaseCursor()
 }
 
-func (w *window) Handle() uintptr        { return w.win }
-func (w *window) WebViewHandle() uintptr { return w.web }
+func (w *window) Handle() uintptr { return w.win }
 
 func (w *window) SetTitle(title string) { gtkWindowSetTitle(w.win, cs(title)) }
 func (w *window) Title() string         { return goStr(gtkWindowGetTitle(w.win)) }
@@ -786,12 +642,6 @@ func (w *window) Hide() {
 func (w *window) IsVisible() bool { return gtkWidgetGetVisible(w.win) && !w.hiding }
 
 func (w *window) Focus() {
-	if w.host != nil {
-		if !w.closed {
-			gtkWidgetGrabFocus(w.web)
-		}
-		return
-	}
 	if w.opts.Flyout != nil {
 		// A popup takes the keyboard only by its grab, as it shows.
 		w.showFlyout(w.flyout.Focusable)
@@ -865,12 +715,6 @@ func (w *window) SetIcon(png []byte) error {
 	return nil
 }
 
-func (w *window) DroppedFiles() []string {
-	paths := w.dropped
-	w.dropped = nil
-	return paths
-}
-
 func (w *window) Center() {
 	if w.layer {
 		w.centerLayer()
@@ -891,11 +735,7 @@ func (w *window) Center() {
 	}
 }
 
-func (w *window) SetBackgroundColor(c platform.Color) {
-	if w.web != 0 {
-		webkitWebViewSetBackgroundColor(w.web, &gdkRGBA{float64(c.R) / 255, float64(c.G) / 255, float64(c.B) / 255, float64(c.A) / 255})
-	}
-}
+func (w *window) SetBackgroundColor(platform.Color) {}
 
 func (w *window) SetOpacity(v float64)            { gtkWidgetSetOpacity(w.win, v) }
 func (w *window) Opacity() float64                { return gtkWidgetGetOpacity(w.win) }
@@ -936,7 +776,7 @@ func (w *window) applyInputShape(draw bool) {
 	if win == 0 {
 		return
 	}
-	loadWebViews() // binds the GDK and cairo region functions
+	loadInputRegion() // binds the GDK and cairo region functions
 	loadSurface()  // and gtk_widget_queue_draw, for a window without native UI
 	switch {
 	case w.ignoreMouse:
@@ -1188,10 +1028,6 @@ func (w *window) TitleBarDoubleClicked() {
 }
 
 func (w *window) Close() {
-	if w.host != nil {
-		w.closeWebView()
-		return
-	}
 	if !w.closed {
 		if s := w.surface; s != nil && s.drawing() {
 			// GTK uses the window once the frame returns: destroy it after,
@@ -1206,472 +1042,11 @@ func (w *window) Close() {
 	}
 }
 
-func (w *window) LoadURL(url string) {
-	w.programmatic = true
-	webkitWebViewLoadURI(w.web, cs(url))
-}
-
-func (w *window) LoadHTML(html, baseURL string) {
-	w.programmatic = true
-	webkitWebViewLoadHTML(w.web, cs(html), optCS(baseURL))
-}
-
-func (w *window) LoadFile(path, _ string) {
-	f := gFileNewForPath(cs(path))
-	uri := takeStr(gFileGetURI(f))
-	gObjectUnref(f)
-	w.LoadURL(uri)
-}
-
-func (w *window) Reload(ignoreCache bool) {
-	if ignoreCache {
-		webkitWebViewReloadBypassCache(w.web)
-	} else {
-		webkitWebViewReload(w.web)
-	}
-}
-
-func (w *window) StopLoading()       { webkitWebViewStopLoading(w.web) }
-func (w *window) GoBack()            { webkitWebViewGoBack(w.web) }
-func (w *window) GoForward()         { webkitWebViewGoForward(w.web) }
-func (w *window) CanGoBack() bool    { return webkitWebViewCanGoBack(w.web) }
-func (w *window) CanGoForward() bool { return webkitWebViewCanGoForward(w.web) }
-func (w *window) URL() string        { return goStr(webkitWebViewGetURI(w.web)) }
-func (w *window) IsLoading() bool    { return webkitWebViewIsLoading(w.web) }
-
-// addUserScripts adds the user scripts of the options to the content
-// manager, and the title bar's after them.
-func (w *window) addUserScripts() {
-	add := func(src string, frames, when int32) {
-		script := webkitUserScriptNew(cs(src), frames, when, 0, 0)
-		webkitUserContentManagerAddScript(w.ucm, script)
-		webkitUserScriptUnref(script)
-	}
-	for _, s := range w.opts.UserScripts {
-		frames, when := int32(1), int32(0) // top frame, document start
-		if s.AllFrames {
-			frames = 0
-		}
-		if s.AtDocumentEnd {
-			when = 1
-		}
-		add(s.Source, frames, when)
-	}
-	if w.controls != nil {
-		// After the bridge, which it tells; top frame, document start.
-		add(w.titleBarScript(), 1, 0)
-	}
-}
-
-// SetUserScripts replaces the user scripts, all of them, as the content
-// manager removes scripts one at a time only from WebKitGTK 2.32 on.
-func (w *window) SetUserScripts(scripts []platform.UserScript) {
-	if w.ucm == 0 || w.closed {
-		return
-	}
-	w.opts.UserScripts = scripts
-	webkitUserContentManagerRemoveAllScripts(w.ucm)
-	w.addUserScripts()
-}
-
-func (w *window) Eval(js string) {
-	if webkitWebViewEvaluateJavascript != nil {
-		// With its length, the script needs no NUL terminated copy.
-		webkitWebViewEvaluateJavascript(w.web, unsafe.StringData(js), len(js), nil, nil, 0, 0, 0)
-	} else if webkitWebViewRunJavascript != nil {
-		webkitWebViewRunJavascript(w.web, cs(js), 0, 0, 0)
-	}
-}
-
-func (w *window) CallAsyncFunction(body string, cb func(string, error)) {
-	if webkitWebViewCallAsyncJavascriptFunction == nil {
-		cb("", errors.New("mygo: Eval requires WebKitGTK 2.40 or later"))
-		return
-	}
-	id := pending.add(func(source, res ptr) {
-		var gerr ptr
-		v := webkitWebViewCallAsyncJavascriptFunctionFinish(source, res, &gerr)
-		if gerr != 0 {
-			cb("", gErr(gerr))
-			return
-		}
-		s := takeStr(jscValueToString(v))
-		gObjectUnref(v)
-		cb(s, nil)
-	})
-	webkitWebViewCallAsyncJavascriptFunction(w.web, unsafe.StringData(body), len(body), 0, nil, nil, 0, cbAsyncReady, id)
-}
-
-// SetZoom zooms the page, a web view's as the content scales it too.
-func (w *window) SetZoom(f float64) { webkitWebViewSetZoomLevel(w.web, f*cmp.Or(w.pageScale, 1)) }
-func (w *window) Zoom() float64     { return webkitWebViewGetZoomLevel(w.web) / cmp.Or(w.pageScale, 1) }
-
-func (w *window) SetUserAgent(ua string) {
-	settings := webkitWebViewGetSettings(w.web)
-	suffix := w.opts.UserAgentSuffix
-	if ua == "" {
-		// An empty one restores the default user agent, and the suffix
-		// appends to that.
-		if suffix != "" {
-			webkitSettingsSetUserAgentSuffix(settings, suffix)
-			return
-		}
-		webkitSettingsSetUserAgent(settings, nil)
-		return
-	}
-	webkitSettingsSetUserAgent(settings, cs(userAgentWithSuffix(ua, suffix)))
-}
-
-// backgroundFeatures are the WebKit features that slow down a page whose
-// web view is hidden: its timers fire at most once a second, and its CSS
-// animations stop.
-var backgroundFeatures = [...]string{"HiddenPageDOMTimerThrottling", "HiddenPageCSSAnimationSuspension"}
-
-// WebKitGTK's features API (2.42+), bound the first time a page asks for
-// it (webkitFeaturesOnce); webkitFeatures tells it is there.
-var (
-	webkitFeaturesOnce              sync.Once
-	webkitFeatures                  bool
-	webkitSettingsGetAllFeatures    func() ptr
-	webkitFeatureListGetLength      func(list ptr) uintptr
-	webkitFeatureListGet            func(list ptr, i uintptr) ptr
-	webkitFeatureListUnref          func(list ptr)
-	webkitFeatureGetIdentifier      func(f ptr) ptr
-	webkitSettingsSetFeatureEnabled func(settings, f ptr, enabled bool)
-)
-
-// eachBackgroundFeature calls fn with each of backgroundFeatures that
-// WebKitGTK has.
-func eachBackgroundFeature(fn func(f ptr)) {
-	webkitFeaturesOnce.Do(func() {
-		webkitFeatures = bind(libWebKit, &webkitSettingsGetAllFeatures, "webkit_settings_get_all_features") &&
-			bind(libWebKit, &webkitFeatureListGetLength, "webkit_feature_list_get_length") &&
-			bind(libWebKit, &webkitFeatureListGet, "webkit_feature_list_get") &&
-			bind(libWebKit, &webkitFeatureListUnref, "webkit_feature_list_unref") &&
-			bind(libWebKit, &webkitFeatureGetIdentifier, "webkit_feature_get_identifier") &&
-			bind(libWebKit, &webkitSettingsSetFeatureEnabled, "webkit_settings_set_feature_enabled")
-	})
-	if !webkitFeatures {
-		return
-	}
-	list := webkitSettingsGetAllFeatures()
-	defer webkitFeatureListUnref(list)
-	for i := range webkitFeatureListGetLength(list) {
-		f := webkitFeatureListGet(list, i)
-		if slices.Contains(backgroundFeatures[:], goStr(webkitFeatureGetIdentifier(f))) {
-			fn(f)
-		}
-	}
-}
-
-// disableBackgroundThrottling turns backgroundFeatures off in a web
-// view's settings (PageOptions.BackgroundThrottling). The page still
-// goes hidden with its window: it draws no frames, so that
-// requestAnimationFrame waits, but its timers keep their rate.
-func disableBackgroundThrottling(settings ptr) {
-	eachBackgroundFeature(func(f ptr) { webkitSettingsSetFeatureEnabled(settings, f, false) })
-}
-
-// userAgentWithSuffix appends the suffix the options set, after a space.
-func userAgentWithSuffix(ua, suffix string) string {
-	if suffix == "" {
-		return ua
-	}
-	return ua + " " + suffix
-}
-
-// webkitSettingsSetUserAgentSuffix appends suffix to the default user agent
-// of settings, after a space, as the other backends do. WebKitGTK's
-// application details would join a name and a version with "/", and give
-// a suffix without one WebKit's version.
-func webkitSettingsSetUserAgentSuffix(settings ptr, suffix string) {
-	webkitSettingsSetUserAgent(settings, nil)
-	ua := goStr(webkitSettingsGetUserAgent(settings))
-	webkitSettingsSetUserAgent(settings, cs(userAgentWithSuffix(ua, suffix)))
-}
-
-func (w *window) UserAgent() string {
-	return goStr(webkitSettingsGetUserAgent(webkitWebViewGetSettings(w.web)))
-}
-
-// ProcessID is 0: WebKitGTK has no public API for the web process of a
-// view (webkit_web_view_get_page_id is WebKit's own page identifier).
-func (w *window) ProcessID() int { return 0 }
-
-// GPUProcessID is 0: WebKitGTK has no API for its GPU process.
-func (w *window) GPUProcessID() int { return 0 }
-
-// IsAudible reports webkit_web_view_is_playing_audio, which
-// notify::is-playing-audio tells the changes of.
-func (w *window) IsAudible() bool {
-	return webkitWebViewIsPlayingAudio != nil && webkitWebViewIsPlayingAudio(w.web)
-}
-
-// SetAudioMuted mutes the web view (webkit_web_view_set_is_muted,
-// WebKitGTK 2.30+); older versions can't. webkit_web_view_set_is_muted
-// sets the page's muted state to the sound's alone, which unmutes its
-// capture too, so the capture that was muted (captureMuted) is muted
-// again.
-func (w *window) SetAudioMuted(v bool) {
-	if webkitWebViewSetIsMuted == nil {
-		return
-	}
-	webkitWebViewSetIsMuted(w.web, v)
-	for kind, muted := range w.captureMuted {
-		if muted {
-			w.SetCaptureState(platform.CaptureKind(kind), platform.CaptureMuted)
-		}
-	}
-}
-
-func (w *window) IsAudioMuted() bool {
-	return webkitWebViewGetIsMuted != nil && webkitWebViewGetIsMuted(w.web)
-}
-
-// captureProperties are the web view's properties of its capture, by
-// platform.CaptureKind (WebKitGTK 2.34+). Their values are
-// WebKitMediaCaptureState's, none, active and muted, as
-// platform.CaptureState's.
-var captureProperties = [...]string{"camera-capture-state", "microphone-capture-state", "display-capture-state"}
-
-// CaptureState reports webkit_web_view_get_camera_capture_state, or its
-// microphone or display sibling (WebKitGTK 2.34+), whose notify signals
-// tell the changes of; CaptureNone on older versions.
-func (w *window) CaptureState(kind platform.CaptureKind) platform.CaptureState {
-	if get := webkitWebViewGetCaptureState[kind]; get != nil {
-		return platform.CaptureState(get(w.web))
-	}
-	return platform.CaptureNone
-}
-
-// SetCaptureState calls webkit_web_view_set_camera_capture_state, or its
-// microphone or display sibling (WebKitGTK 2.34+), which do nothing while
-// the page captures no such device.
-func (w *window) SetCaptureState(kind platform.CaptureKind, state platform.CaptureState) {
-	set := webkitWebViewSetCaptureState[kind]
-	if set == nil || w.CaptureState(kind) == platform.CaptureNone {
-		return
-	}
-	w.captureMuted[kind] = state == platform.CaptureMuted
-	set(w.web, int32(state))
-}
-
-// TogglePictureInPicture does nothing: WebKitGTK has no picture in
-// picture.
-func (w *window) TogglePictureInPicture() {}
-
-// PictureInPictureActive is always false: WebKitGTK has no picture in
-// picture.
-func (w *window) PictureInPictureActive(cb func(bool)) { cb(false) }
-
-func (w *window) OpenDevTools() {
-	if w.opts.DevTools {
-		webkitWebInspectorShow(webkitWebViewGetInspector(w.web))
-	}
-}
-
-func (w *window) CloseDevTools() { webkitWebInspectorClose(webkitWebViewGetInspector(w.web)) }
-
-func (w *window) IsDevToolsOpened() bool {
-	return webkitWebInspectorGetWebView(webkitWebViewGetInspector(w.web)) != 0
-}
-
-func (w *window) CapturePage(cb func([]byte, error)) {
-	id := pending.add(func(source, res ptr) {
-		var gerr ptr
-		surface := webkitWebViewGetSnapshotFinish(source, res, &gerr)
-		if gerr != 0 {
-			cb(nil, gErr(gerr))
-			return
-		}
-		png, err := surfaceToPNG(surface)
-		cairoSurfaceDestroy(surface)
-		cb(png, err)
-	})
-	webkitWebViewGetSnapshot(w.web, 0, 0, 0, cbAsyncReady, id)
-}
-
-// webkitAutoplayAllow is WEBKIT_AUTOPLAY_ALLOW of WebKitAutoplayPolicy.
-const webkitAutoplayAllow = 0
-
-// useWithAutoplay takes a main-frame navigation with website policies
-// that let its page play audible media without a user gesture
-// (PageOptions.Autoplay), and reports whether it could: WebKitGTK decides
-// autoplay from the policies of the navigation, by default
-// WEBKIT_AUTOPLAY_ALLOW_WITHOUT_SOUND, and its
-// media-playback-requires-user-gesture setting, off by default, does not
-// lift them. WebKitGTK before 2.30 has no website policies.
-//
-// webkit_website_policies_new_with_policies is variadic, NULL-terminated
-// name/value pairs, and is bound for the one pair as g_object_set is:
-// x86-64 and arm64 Linux pass a variadic function's integer and pointer
-// arguments as a fixed one's, and purego zeroes AL, the count of vector
-// registers an x86-64 variadic callee reads.
-func (w *window) useWithAutoplay(decision ptr) bool {
-	if webkitPolicyDecisionUseWithPolicies == nil || webkitWebsitePoliciesNewWithPolicies == nil {
-		return false
-	}
-	policies := webkitWebsitePoliciesNewWithPolicies(cs("autoplay"), webkitAutoplayAllow, 0)
-	if policies == 0 {
-		return false
-	}
-	webkitPolicyDecisionUseWithPolicies(decision, policies)
-	gObjectUnref(policies)
-	return true
-}
-
-// decideResponse makes attachments, and what WebKit cannot show,
-// downloads. WebKit cannot download what a custom scheme serves, so the app
-// serves it again into a download.
-func (w *window) decideResponse(decision ptr) bool {
-	resp := webkitResponsePolicyDecisionGetResponse(decision)
-	uri := goStr(webkitURIResponseGetURI(resp))
-	disposition := ""
-	if h := webkitURIResponseGetHTTPHeaders(resp); h != 0 {
-		disposition = goStr(soupMessageHeadersGetOne(h, cs("Content-Disposition")))
-	}
-	attachment := strings.HasPrefix(strings.ToLower(strings.TrimSpace(disposition)), "attachment")
-	if !attachment && webkitResponsePolicyDecisionIsMIMETypeSupported(decision) {
-		return false
-	}
-	scheme, _, _ := strings.Cut(uri, ":")
-	if w.b.schemes[strings.ToLower(scheme)] {
-		webkitPolicyDecisionIgnore(decision)
-		w.h.SchemeDownload(uri)
-		return true
-	}
-	webkitPolicyDecisionDownload(decision)
-	return true
-}
-
-// printJobs holds the PrintToPDF operations running.
-var printJobs = map[ptr]*printJob{}
-
-type printJob struct {
-	err  error // from "failed", which "finished" follows
-	done func(err error)
-}
-
-// PrintToPDF prints to the "Print to File" printer of GTK, which writes
-// the PDF to a temporary file.
-func (w *window) PrintToPDF(o platform.PDFOptions, cb func([]byte, error)) {
-	// WebKitGTK crashes printing a web view that never loaded anything,
-	// whose URI is still NULL.
-	if webkitWebViewGetURI(w.web) == 0 {
-		cb(nil, errors.New("mygo: printing to PDF: the page has loaded nothing"))
-		return
-	}
-	f, err := os.CreateTemp("", "mygo-*.pdf")
-	if err != nil {
-		cb(nil, err)
-		return
-	}
-	path := f.Name()
-	f.Close()
-	settings := gtkPrintSettingsNew()
-	for k, v := range map[string]string{
-		"printer":            "Print to File",
-		"output-file-format": "pdf",
-		"output-uri":         (&url.URL{Scheme: "file", Path: path}).String(),
-	} {
-		gtkPrintSettingsSet(settings, cs(k), cs(v))
-	}
-	setup := gtkPageSetupNew()
-	const unitInch = 2 // GTK_UNIT_INCH
-	paper := gtkPaperSizeNewCustom(cs("mygo"), cs("MyGo"), o.PageWidth, o.PageHeight, unitInch)
-	gtkPageSetupSetPaperSize(setup, paper)
-	gtkPaperSizeFree(paper)
-	if o.Landscape {
-		gtkPageSetupSetOrientation(setup, 1) // GTK_PAGE_ORIENTATION_LANDSCAPE
-	}
-	gtkPageSetupSetTopMargin(setup, o.MarginTop, unitInch)
-	gtkPageSetupSetRightMargin(setup, o.MarginRight, unitInch)
-	gtkPageSetupSetBottomMargin(setup, o.MarginBottom, unitInch)
-	gtkPageSetupSetLeftMargin(setup, o.MarginLeft, unitInch)
-
-	web := webkitWebViewGetSettings(w.web)
-	backgrounds := webkitSettingsGetPrintBackgrounds(web)
-	webkitSettingsSetPrintBackgrounds(web, o.Background)
-	op := webkitPrintOperationNew(w.web)
-	webkitPrintOperationSetPrintSettings(op, settings)
-	webkitPrintOperationSetPageSetup(op, setup)
-	gObjectUnref(settings)
-	gObjectUnref(setup)
-	printJobs[op] = &printJob{done: func(err error) {
-		delete(printJobs, op)
-		webkitSettingsSetPrintBackgrounds(web, backgrounds)
-		gObjectUnref(op)
-		data, rerr := os.ReadFile(path)
-		os.Remove(path)
-		if err == nil && (rerr != nil || len(data) == 0) {
-			err = errors.New("mygo: printing to PDF produced no file")
-		}
-		if err != nil {
-			data = nil
-		}
-		cb(data, err)
-	}}
-	connect(op, "finished", cbPrintFinished, 0)
-	connect(op, "failed", cbPrintFailed, 0)
-	webkitPrintOperationPrint(op)
-}
-
-func (w *window) Print() {
-	op := webkitPrintOperationNew(w.web)
-	webkitPrintOperationRunDialog(op, w.win)
-	gObjectUnref(op)
-}
-
-// pending holds callbacks of asynchronous GIO operations by id.
-var pending = &asyncCalls{m: map[ptr]func(source, res ptr){}}
-
-type asyncCalls struct {
-	mu   sync.Mutex
-	next ptr
-	m    map[ptr]func(source, res ptr)
-}
-
-func (a *asyncCalls) add(fn func(source, res ptr)) ptr {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	a.next++
-	a.m[a.next] = fn
-	return a.next
-}
-
-func (a *asyncCalls) take(id ptr) func(source, res ptr) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	fn := a.m[id]
-	delete(a.m, id)
-	return fn
-}
-
-// surfaceToPNG encodes a cairo surface as PNG through a write callback.
-var pngBuffers = map[ptr]*bytes.Buffer{}
-
-func surfaceToPNG(surface ptr) ([]byte, error) {
-	key := ptr(len(pngBuffers) + 1)
-	for pngBuffers[key] != nil {
-		key++
-	}
-	buf := &bytes.Buffer{}
-	pngBuffers[key] = buf
-	defer delete(pngBuffers, key)
-	if status := cairoSurfaceWriteToPNGStream(surface, cbPNGWrite, key); status != 0 {
-		return nil, errors.New("mygo: cannot encode snapshot")
-	}
-	return buf.Bytes(), nil
-}
-
 // Signal handlers. data carries the window id.
 var (
 	cbDeleteEvent, cbDestroy, cbFocusIn, cbFocusOut, cbConfigure, cbWindowState ptr
-	cbScriptMessage, cbLoadChanged, cbLoadFailed, cbTitle, cbDecidePolicy       ptr
-	cbCreate, cbClose, cbCrashed, cbButtonPress, cbAsyncReady, cbPNGWrite       ptr
-	cbDragData, cbDragDrop, cbPrintFinished, cbPrintFailed, cbPermission        ptr
-	cbMotion, cbControlsAllocated, cbDecorationLayout, cbActivationResize       ptr
-	cbCloseLater, cbHideLater, cbPlayingAudio, cbCaptureState                   ptr
+	cbButtonPress, cbMotion, cbControlsAllocated, cbDecorationLayout          ptr
+	cbActivationResize, cbCloseLater, cbHideLater                               ptr
 	cbWindowRealize, cbWindowMap, cbWindowAllocated                             ptr
 )
 
@@ -1912,14 +1287,6 @@ func initWindowCallbacks() {
 		if w == nil {
 			return false
 		}
-		if w.host != nil {
-			// GdkEventButton: type 0, x 24, y 32, state 48, button 52.
-			if field[int32](event, 0) == 4 {
-				w.webViewPressed(field[float64](event, 24), field[float64](event, 32), field[uint32](event, 52), gdkMods(field[uint32](event, 48)))
-			}
-			// A web view's page drags the window it is in (StartDrag).
-			w = w.top()
-		}
 		w.altAlone = false
 		// GdkEventButton: time 20, button 52, x_root 64, y_root 72.
 		w.press.time = field[uint32](event, 20)
@@ -1959,212 +1326,4 @@ func initWindowCallbacks() {
 		dragging := w.checkDragStart(event)
 		return dragging || edge >= 0
 	})
-	// WebKit asks for the data of a drag while it moves over the page,
-	// before the drop; the uri-list of files gives their paths.
-	cbDragData = purego.NewCallback(func(widget, context ptr, x, y int32, sel ptr, info, time uint32, data ptr) {
-		if w := b().window(data); w != nil {
-			w.dragged = selectionPaths(sel)
-		}
-	})
-	// Runs before WebKit's own handler, which gets the drop to the page.
-	cbDragDrop = purego.NewCallback(func(widget, context ptr, x, y int32, time uint32, data ptr) bool {
-		if w := b().window(data); w != nil {
-			w.dropped, w.dragged = w.dragged, nil
-		}
-		return false
-	})
-	cbScriptMessage = purego.NewCallback(func(ucm, result, data ptr) {
-		if w := b().window(data); w != nil {
-			w.h.Message(takeStr(jscValueToString(webkitJavascriptResultGetJSValue(result))))
-		}
-	})
-	cbLoadChanged = purego.NewCallback(func(web ptr, event int32, data ptr) {
-		w := b().window(data)
-		if w == nil {
-			return
-		}
-		switch event {
-		case 0: // WEBKIT_LOAD_STARTED
-			w.h.NavigationStarted(w.URL())
-		case 2: // WEBKIT_LOAD_COMMITTED
-			w.h.NavigationCommitted(w.URL())
-		case 3: // WEBKIT_LOAD_FINISHED
-			w.h.LoadFinished()
-		}
-	})
-	cbLoadFailed = purego.NewCallback(func(web ptr, event int32, uri, gerr, data ptr) bool {
-		w := b().window(data)
-		if w == nil || gerr == 0 {
-			return false
-		}
-		code := field[int32](gerr, 4)
-		// Cancelled loads (302) and navigations stopped by policy (102)
-		// are not failures.
-		if code == 302 || code == 102 {
-			return false
-		}
-		w.h.LoadFailed(goStr(uri), int(code), goStr(field[ptr](gerr, 8)))
-		return false
-	})
-	cbTitle = purego.NewCallback(func(web, pspec, data ptr) {
-		if w := b().window(data); w != nil {
-			w.h.TitleChanged(goStr(webkitWebViewGetTitle(w.web)))
-		}
-	})
-	cbPlayingAudio = purego.NewCallback(func(web, pspec, data ptr) {
-		if w := b().window(data); w != nil {
-			w.h.AudibleChanged(webkitWebViewIsPlayingAudio(w.web))
-		}
-	})
-	// The notify signal of each of captureProperties, whose name is the
-	// second field of the GParamSpec.
-	cbCaptureState = purego.NewCallback(func(web, pspec, data ptr) {
-		w := b().window(data)
-		if w == nil {
-			return
-		}
-		kind := platform.CaptureKind(slices.Index(captureProperties[:], goStr(field[ptr](pspec, 8))))
-		if kind < 0 {
-			return
-		}
-		state := w.CaptureState(kind)
-		if state == platform.CaptureNone {
-			w.captureMuted[kind] = false
-		}
-		w.h.CaptureStateChanged(kind, state)
-	})
-	cbDecidePolicy = purego.NewCallback(func(web, decision ptr, kind int32, data ptr) bool {
-		w := b().window(data)
-		if w == nil {
-			return false
-		}
-		if kind == 2 { // WEBKIT_POLICY_DECISION_TYPE_RESPONSE
-			return w.decideResponse(decision)
-		}
-		if kind != 0 { // WEBKIT_POLICY_DECISION_TYPE_NAVIGATION_ACTION
-			return false
-		}
-		action := webkitNavigationPolicyDecisionGetNavigationAction(decision)
-		navType := webkitNavigationActionGetNavigationType(action)
-		uri := goStr(webkitURIRequestGetURI(webkitNavigationActionGetRequest(action)))
-		// WebKitNavigationType: link, form, back/forward, reload, …
-		nav := platform.Navigation{
-			URL:           uri,
-			IsMainFrame:   mainFrameNavigation(action, uri),
-			UserInitiated: webkitNavigationActionIsUserGesture(action) || navType == 0 || navType == 1,
-			Unasked:       navType == 2 || navType == 3,
-			Reload:        navType == 3,
-		}
-		if nav.IsMainFrame && w.programmatic {
-			w.programmatic = false
-			nav.Unasked = true
-		}
-		if w.h.WillNavigate(nav) {
-			if nav.IsMainFrame && w.opts.Autoplay && w.useWithAutoplay(decision) {
-				return true
-			}
-			webkitPolicyDecisionUse(decision)
-		} else {
-			webkitPolicyDecisionIgnore(decision)
-		}
-		return true
-	})
-	cbCreate = purego.NewCallback(func(web, action, data ptr) ptr {
-		w := b().window(data)
-		if w == nil {
-			return 0
-		}
-		// WebKitGTK makes a related view share the opener's user content
-		// manager, which would route the new window's IPC to the opener.
-		// Open an independent window instead; its page has no opener.
-		url := goStr(webkitURIRequestGetURI(webkitNavigationActionGetRequest(action)))
-		req := platform.NewWindowRequest{URL: url, UserInitiated: webkitNavigationActionIsUserGesture(action)}
-		if child, ok := w.h.NewWindow(req).(*window); ok && child != nil {
-			child.LoadURL(url)
-		}
-		return 0
-	})
-	cbClose = purego.NewCallback(func(web, data ptr) {
-		if w := b().window(data); w != nil {
-			w.h.ClosedByPage()
-		}
-	})
-	cbCrashed = purego.NewCallback(func(web ptr, reason int32, data ptr) {
-		if w := b().window(data); w != nil {
-			w.h.RenderProcessGone(map[int32]string{0: "crashed", 1: "exceeded memory limit", 2: "terminated by API"}[reason])
-		}
-	})
-	cbAsyncReady = purego.NewCallback(func(source, res, data ptr) {
-		if fn := pending.take(data); fn != nil {
-			fn(source, res)
-		}
-	})
-	// Camera, microphone, location and notifications; other requests get
-	// WebKit's default answer.
-	cbPermission = purego.NewCallback(func(web, req, data ptr) bool {
-		w := b().window(data)
-		if w == nil {
-			return false
-		}
-		var kinds []string
-		switch {
-		case gTypeCheckInstanceIsA(req, webkitUserMediaPermissionRequestGetType()):
-			if webkitUserMediaPermissionIsForVideoDevice(req) {
-				kinds = append(kinds, "camera")
-			}
-			if webkitUserMediaPermissionIsForAudioDevice(req) {
-				kinds = append(kinds, "microphone")
-			}
-		case gTypeCheckInstanceIsA(req, webkitGeolocationPermissionRequestGetType()):
-			kinds = []string{"geolocation"}
-		case gTypeCheckInstanceIsA(req, webkitNotificationPermissionRequestGetType()):
-			kinds = []string{"notifications"}
-		default:
-			return false
-		}
-		origin := goStr(webkitWebViewGetURI(web))
-		if u, err := url.Parse(origin); err == nil {
-			origin = (&url.URL{Scheme: u.Scheme, Host: u.Host}).String()
-		}
-		if w.h.PermissionRequested(kinds, origin) {
-			webkitPermissionRequestAllow(req)
-		} else {
-			webkitPermissionRequestDeny(req)
-		}
-		return true
-	})
-	cbPrintFinished = purego.NewCallback(func(op, data ptr) {
-		if job := printJobs[op]; job != nil {
-			job.done(job.err)
-		}
-	})
-	cbPrintFailed = purego.NewCallback(func(op, gerr, data ptr) {
-		if job := printJobs[op]; job != nil {
-			// GError: domain, code, then the message.
-			job.err = fmt.Errorf("mygo: printing to PDF: %s", goStr(*(*ptr)(unsafe.Add(*(*unsafe.Pointer)(unsafe.Pointer(&gerr)), 8))))
-		}
-	})
-	cbPNGWrite = purego.NewCallback(func(closure, data ptr, length uint32) int32 {
-		if buf := pngBuffers[closure]; buf != nil && length > 0 {
-			buf.Write(unsafe.Slice(*(**byte)(unsafe.Pointer(&data)), length))
-		}
-		return 0 // CAIRO_STATUS_SUCCESS
-	})
-}
-
-// mainFrameNavigation reports whether action navigates the main frame.
-// WebKitGTK 2.56+ says so through the action's target frame. Before it,
-// a navigation tells nothing of its frame (its frame name is the target
-// of a link to a new window, NULL for the rest, iframes included), and a
-// srcdoc document only ever shows in an iframe: the HTML Standard gives
-// about:srcdoc to no main frame, and WebKit loads one into the main
-// frame as an empty page. Other iframe navigations still reach
-// OnWillNavigate there.
-func mainFrameNavigation(action ptr, uri string) bool {
-	if webkitNavigationActionGetTargetFrameInfo != nil && webkitFrameInfoIsMainFrame != nil {
-		if f := webkitNavigationActionGetTargetFrameInfo(action); f != 0 {
-			return webkitFrameInfoIsMainFrame(f)
-		}
-	}
-	return uri != "about:srcdoc"
 }

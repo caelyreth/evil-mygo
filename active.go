@@ -71,8 +71,7 @@ func (w *Window) drawnActive(focused *Window) bool {
 	return false
 }
 
-// setActive draws w as active or not: its native UI, or its page and those
-// of its web views. Main thread only.
+// setActive draws w as active or not. Main thread only.
 func (w *Window) setActive(active bool) {
 	if w.active == active {
 		return
@@ -80,12 +79,5 @@ func (w *Window) setActive(active bool) {
 	w.active = active
 	if c := w.conn; c != nil && c.ActiveChanged != nil {
 		c.ActiveChanged()
-	}
-	w.sendActive()
-	windows.Lock()
-	views := slices.Clone(w.webViews)
-	windows.Unlock()
-	for _, v := range views {
-		v.sendActive()
 	}
 }

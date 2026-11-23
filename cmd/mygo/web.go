@@ -129,7 +129,7 @@ func webIcon(c *Config) ([]byte, error) {
 }
 
 // compileWeb compiles the app for browsers into out.
-func compileWeb(ctx context.Context, c *Config, t *task, out string, debug bool, overlay string) error {
+func compileWeb(ctx context.Context, c *Config, t *task, out string, debug bool) error {
 	ldflags := "-s -w"
 	if !debug {
 		ldflags += " -X github.com/egoist/mygo.production=1"
@@ -137,9 +137,6 @@ func compileWeb(ctx context.Context, c *Config, t *task, out string, debug bool,
 	ldflags += extraLDFlags()
 	flags := []string{"-trimpath", "-ldflags", ldflags}
 	flags = append(flags, productionTags(debug)...)
-	if overlay != "" {
-		flags = append(flags, "-overlay", overlay)
-	}
 	return goBuild(ctx, c, t, out, []string{"GOOS=js", "GOARCH=wasm"}, flags...)
 }
 
@@ -164,10 +161,7 @@ func buildWeb(c *Config, opts buildOptions) ([]string, error) {
 	}
 	wasm := filepath.Join(stage, "app.wasm")
 	t := con.start("Compiling " + webPlatform)
-	overlay, err := writeOverlay(filepath.Join(opts.work, "overlay.json"), opts.overlay)
-	if err == nil {
-		err = compileWeb(context.Background(), c, t, wasm, opts.debug, overlay)
-	}
+	err = compileWeb(context.Background(), c, t, wasm, opts.debug)
 	if err := t.end(err, "Compiled "+webPlatform); err != nil {
 		return nil, err
 	}
@@ -333,7 +327,7 @@ func (d *webDev) build(ctx context.Context, wasm, why string) bool {
 		}
 		c = c2
 		if icon, err = webIcon(c); err == nil {
-			err = compileWeb(ctx, c, t, wasm, true, "")
+			err = compileWeb(ctx, c, t, wasm, true)
 		}
 	}
 	var data []byte

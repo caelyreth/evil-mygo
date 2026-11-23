@@ -744,7 +744,6 @@ func (b *Backend) applyTheme() {
 	b.applyMenuTheme()
 	for _, w := range b.windows {
 		b.applyWindowTheme(w)
-		w.withWebView(func() { b.applyWebViewTheme(w) })
 	}
 }
 
@@ -763,32 +762,4 @@ func (b *Backend) applyWindowTheme(w *window) {
 	if w.menuShown() {
 		procRedrawWindow.Call(w.hwnd, 0, 0, rdwInvalidate|rdwFrame|rdwUpdateNow)
 	}
-}
-
-// applyWebViewTheme makes prefers-color-scheme follow an overridden
-// appearance; "system" leaves it to WebView2. The profile's
-// PreferredColorScheme holds from a document's start, where DevTools'
-// emulation, for runtimes without it, reaches a new document a moment
-// after it started: long enough for it to see the system's appearance.
-func (b *Backend) applyWebViewTheme(w *window) {
-	scheme, value := uintptr(0), "" // COREWEBVIEW2_PREFERRED_COLOR_SCHEME_AUTO
-	switch b.themeSource {
-	case "light":
-		scheme, value = 1, "light"
-	case "dark":
-		scheme, value = 2, "dark"
-	}
-	if wv13 := queryInterface(w.webview, &iidICoreWebView2_13); wv13 != 0 {
-		var profile uintptr
-		comCall(wv13, wv13GetProfile, uintptr(unsafe.Pointer(&profile)))
-		release(wv13)
-		if profile != 0 {
-			hr := comCall(profile, profilePutPreferredColorScheme, scheme)
-			release(profile)
-			if !failed(hr) {
-				return
-			}
-		}
-	}
-	w.devtools("Emulation.setEmulatedMedia", `{"features":[{"name":"prefers-color-scheme","value":"`+value+`"}]}`, nil)
 }

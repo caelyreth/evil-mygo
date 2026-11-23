@@ -27,7 +27,7 @@ func TestContentWindowInspector(t *testing.T) {
 		ui.Box(c).Fill().Background(ui.RGB(30, 144, 255))
 	}
 	w := newWindow(t, mygo.WindowOptions{Title: "Inspector", Width: 600, Height: 400, Content: ui.View(view),
-		Page: mygo.PageOptions{DevTools: mygo.DevToolsEnabled}})
+		DevTools: mygo.DevToolsEnabled})
 	eventually(t, "a frame", func() bool { return frames.Load() > 0 })
 	full := width.Load().(float32)
 	menu := mygo.NewMenu([]*mygo.MenuItem{{Label: "Test", Submenu: []*mygo.MenuItem{{Role: mygo.RoleToggleDevTools}}}})

@@ -25,47 +25,6 @@ func localeLanguages(t *testing.T, langs ...string) {
 	})
 }
 
-// localePage records the language the bridge has as the page starts, and
-// what its listeners hear of mygo:locale.
-const localePage = `<!doctype html><p>locale</p><script>
-window.started = mygo.locale + " " + mygo.dir;
-window.heard = [];
-mygo.on("mygo:locale", (p) => window.heard.push(p.locale + " " + p.dir));
-</script>`
-
-// TestLocaleAtDocumentStart checks, in a real web view, that a page loaded
-// after App.SetLocale starts in the new language, and that its listeners
-// hear of a language the page did not have only, not as it loads.
-func TestLocaleAtDocumentStart(t *testing.T) {
-	localeLanguages(t, "en", "ar", "ja")
-	// SetLanguages queues its update. Choose the initial language on the
-	// main thread after it, rather than reading the previous locale or
-	// assuming the user's preferred language is written left to right.
-	mygo.RunOnMain(func() { mygo.App.SetLocale("en") })
-	w := newWindow(t, mygo.WindowOptions{Hidden: true})
-	w.Page().LoadHTML(localePage, "app://localhost/")
-	waitFor(t, w, `window.started === "en ltr"`)
-
-	mygo.App.SetLocale("ar")
-	waitFor(t, w, `mygo.locale === "ar" && mygo.dir === "rtl" && window.heard.join() === "ar rtl"`)
-	if v, err := w.Page().Eval("navigator.languages.join()"); err == nil {
-		t.Logf("the page's languages: %v", v)
-	}
-
-	w.Page().Reload()
-	waitFor(t, w, `window.started === "ar rtl" && document.readyState === "complete"`)
-	// Go tells a loading page the language again, which it has.
-	time.Sleep(300 * time.Millisecond)
-	waitFor(t, w, `window.heard.length === 0`)
-
-	mygo.App.SetLocale("ja")
-	waitFor(t, w, `window.heard.join() === "ja ltr"`)
-	// Another page, in a new window, starts in it too.
-	w2 := newWindow(t, mygo.WindowOptions{Hidden: true})
-	w2.Page().LoadHTML(localePage, "app://localhost/")
-	waitFor(t, w2, `window.started === "ja ltr"`)
-}
-
 // TestTextLanguage checks that native UI draws text in the language the
 // app shows, which an element's Lang overrides: 直 and 骨 are drawn apart
 // in Japanese and in Chinese.

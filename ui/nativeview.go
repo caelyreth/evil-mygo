@@ -9,39 +9,14 @@ import (
 	"github.com/egoist/mygo/internal/viewhost"
 )
 
-// NativeWebView is a web view a window made for its content to show,
-// as *mygo.WebView, of mygo.Window.NewWebView.
-type NativeWebView = surface.WebView
+// embeddedView is an embedded platform or plugin view hosted under the surface.
+type embeddedView = surface.EmbeddedView
 
-// WebView shows a web view, made with mygo.Window.NewWebView, in the
-// element's content box. A web view has no size of its own: the element
-// stretches across its container (AlignSelf(Stretch)), and takes the room
-// along it with Grow or a size:
-//
-//	ui.Row(c).Fill().Children(func() {
-//		sidebar(c)
-//		ui.WebView(c, app.docs).Grow(1)
-//	})
-//
-// The web view shows while a frame builds its element and hides when one
-// does not, keeping its page: a view switching tabs builds the web view
-// of the tab shown. The element paints a hole through the window's
-// content (the web view is under it, the system's own view), as rounded
-// as its Radius and cut by the scroll containers and clips around it, so
-// that what paints after it shows over the page: its children, popovers,
-// menus, dialogs, tooltips and toasts. The page takes the pointer where
-// it shows and nothing painted over it takes it, and the keyboard once
-// clicked, focused (mygo.WebView.Focus) or tabbed into: Tab stops at the
-// element. The keys the page leaves unhandled come to the native UI as if
-// the element had the focus, which the shortcuts around it and the
-// window's see. Its background and border paint around the page, which
-// its opacity fades, and assistive technology finds the page inside it.
-func coreWebView(c *context, v NativeWebView) *node {
+func coreEmbeddedView(c *context, v embeddedView) *node {
 	e := c.newElement(kindBox)
 	e.webView = v
 	e.self = Stretch
-	// Tab stops at it to give its page the keyboard, which shows its
-	// own focus.
+	// Tab stops at it to give the embedded view the keyboard.
 	e.flags |= flagFocusable | flagOwnRing
 	return e
 }
@@ -91,7 +66,7 @@ func coreNativeView(c *context, v PlatformView) *node {
 		pv = &platformView{h: h}
 		rt.platformViews = append(rt.platformViews, pv)
 	}
-	return coreWebView(c, pv)
+	return coreEmbeddedView(c, pv)
 }
 
 // PlatformView is a view of the platform, which NativeView shows: a value
@@ -103,20 +78,20 @@ type PlatformView interface {
 }
 
 // platformView stands for a view of the platform in the window of an
-// engine, which places it as it places web views: the surface hosts it
-// (viewhost.Embed, which package native sets) the first time a frame
-// shows it. It holds the view by its handle, not the Go value: a view the
-// app lets go of is released, which tells the window (gone).
+// engine, which places it under the surface (viewhost.Embed, which package
+// native sets) the first time a frame shows it. It holds the view by its
+// handle, not the Go value: a view the app lets go of is released, which
+// tells the window (gone).
 type platformView struct {
 	h     uintptr
-	embed platform.WebView
+	embed platform.EmbeddedView
 	conn  *surface.Conn
 	gone  bool
 }
 
-// SurfaceWebView puts the view under the surface of conn, the first time,
+// SurfaceView puts the view under the surface of conn, the first time,
 // and returns what stands for it there. Main thread only.
-func (p *platformView) SurfaceWebView(conn *surface.Conn) platform.WebView {
+func (p *platformView) SurfaceView(conn *surface.Conn) platform.EmbeddedView {
 	if p.gone {
 		return nil
 	}
@@ -164,7 +139,7 @@ func (rt *engine) pruneViews() {
 // DIPs; hit is the index of its element's own hit, inert that it shows
 // but takes no pointer.
 type webPlace struct {
-	v NativeWebView
+	v embeddedView
 	// e is the element showing v, whose place this is: a frame showing one
 	// web view twice, as by an exit transition, notes a place for each.
 	e     *node
@@ -233,23 +208,23 @@ func (rt *engine) noteWebView(e *node, clip Rect, invisible bool) {
 	rt.webPlaces = append(rt.webPlaces, wp)
 }
 
-// placedWebView is where a frame shows a web view, for the host.
+// placedWebView is where a frame shows an embedded view, for the host.
 type placedWebView struct {
-	v           NativeWebView
+	v           embeddedView
 	frame, clip platform.RectF
-	// size is the size the page lays out at, and radii its corners', in
-	// its DIPs (platform.WebViewPlacement).
+	// size is the size the view lays out at, and radii its corners', in
+	// its DIPs (platform.ViewPlacement).
 	size   [2]float64
 	radii  [4]float64
 	covers []platform.RectF
-	// opacity is how opaque the page shows: the element's own where nothing
-	// is painted under it, for the host to fade the page itself by.
+	// opacity is how opaque the view shows: the element's own where nothing
+	// is painted under it, for the host to fade the view itself by.
 	opacity float32
 }
 
 // placement returns v as the platform takes it.
-func (v *placedWebView) placement(n platform.WebView) platform.WebViewPlacement {
-	return platform.WebViewPlacement{WebView: n, Frame: v.frame, Clip: v.clip, Width: v.size[0], Height: v.size[1], Radii: v.radii, Covers: v.covers, Opacity: float64(v.opacity)}
+func (v *placedWebView) placement(n platform.EmbeddedView) platform.ViewPlacement {
+	return platform.ViewPlacement{View: n, Frame: v.frame, Clip: v.clip, Width: v.size[0], Height: v.size[1], Radii: v.radii, Covers: v.covers, Opacity: float64(v.opacity)}
 }
 
 // scaling returns the scale of m, which only moves and scales, by
@@ -398,7 +373,7 @@ func (rt *engine) webViewPress(x, y float32, button int) {
 // there, without showing it, as the page has the keyboard. The shortcuts
 // of the elements around it and the window's see it; the modifiers the
 // content knows stay as they were, as it hears none let go of.
-func (rt *engine) webViewKey(v NativeWebView, mods Modifiers, key, physical Key, repeat bool) {
+func (rt *engine) webViewKey(v embeddedView, mods Modifiers, key, physical Key, repeat bool) {
 	if key == KeyTab || key == KeyUnknown && physical == KeyUnknown {
 		return // the page's own, or no key
 	}
@@ -424,7 +399,7 @@ func (rt *engine) webViewKey(v NativeWebView, mods Modifiers, key, physical Key,
 
 // webViewTabOut moves the focus on from the element showing v, whose page
 // Tab left past its last element, or Shift+Tab past its first when back.
-func (rt *engine) webViewTabOut(v NativeWebView, back bool) {
+func (rt *engine) webViewTabOut(v embeddedView, back bool) {
 	for _, id := range rt.focusOrder {
 		if s := rt.states[id]; s != nil && s.webView == v {
 			rt.focused = id

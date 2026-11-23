@@ -6,7 +6,6 @@ import (
 	"strings"
 	"unsafe"
 
-	"github.com/egoist/mygo/internal/bridge"
 	"github.com/egoist/mygo/internal/platform"
 )
 
@@ -177,10 +176,6 @@ func (w *window) TitleBar() platform.TitleBar {
 	}
 	return w.controls.room
 }
-
-// titleBarScript tells the first page the room of the title buttons, at
-// document start.
-func (w *window) titleBarScript() string { return bridge.TitleBarScript(w.TitleBar(), w.opts.Zoom) }
 
 // buttonLayout returns the window buttons that gtk-decoration-layout puts at
 // the start and at the end of a title bar, such as "close,minimize" and

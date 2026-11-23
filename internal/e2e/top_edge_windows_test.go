@@ -24,25 +24,25 @@ const (
 // drag regions move the window. One that cannot resize, or is maximized,
 // leaves the whole top to the content.
 func TestCaptionlessTopEdge(t *testing.T) {
-	page := `<body style="margin:0"><div style="--app-region:drag;height:48px">drag</div></body>`
+	dragContent := ui.View(func(c *ui.Context) {
+		ui.Column(c).Fill().Children(func() {
+			ui.Box(c).Height(48).Shrink(0).DragWindow()
+			ui.Text(c, "native")
+		})
+	})
 	for name, c := range map[string]struct {
 		opts      mygo.WindowOptions
 		rightEdge bool // the edge reaches the top-right corner
 	}{
-		"frameless":                {mygo.WindowOptions{Frameless: true}, true},
-		"frameless with acrylic":   {mygo.WindowOptions{Frameless: true, Transparent: true, Vibrancy: mygo.VibrancyAcrylic}, true},
-		"frameless native UI":      {mygo.WindowOptions{Frameless: true, Content: ui.View(func(c *ui.Context) { ui.Text(c, "native") })}, true},
-		"hidden title bar":         {mygo.WindowOptions{TitleBarStyle: mygo.TitleBarHidden}, false},
-		"hidden title, no buttons": {mygo.WindowOptions{TitleBarStyle: mygo.TitleBarHidden, HideWindowButtons: true}, true},
+		"frameless":                {mygo.WindowOptions{Frameless: true, Content: dragContent}, true},
+		"frameless with acrylic":   {mygo.WindowOptions{Frameless: true, Transparent: true, Vibrancy: mygo.VibrancyAcrylic, Content: dragContent}, true},
+		"hidden title bar":         {mygo.WindowOptions{TitleBarStyle: mygo.TitleBarHidden, Content: dragContent}, false},
+		"hidden title, no buttons": {mygo.WindowOptions{TitleBarStyle: mygo.TitleBarHidden, HideWindowButtons: true, Content: dragContent}, true},
 	} {
 		t.Run(name, func(t *testing.T) {
 			opts := c.opts
 			opts.X, opts.Y, opts.Width, opts.Height = 120, 120, 420, 300
 			w := newWindow(t, opts)
-			if opts.Content == nil {
-				w.Page().LoadHTML(page, "")
-				waitFor(t, w, "document.readyState === 'complete'")
-			}
 			hit := func(x, y int32) (h uintptr) {
 				mygo.RunOnMain(func() { h = win.TestHitTest(w.NativeHandle(), x, y) })
 				return h

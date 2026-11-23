@@ -4,7 +4,6 @@ package main
 
 import (
 	"os/exec"
-	"strings"
 	"syscall"
 	"unsafe"
 )
@@ -32,15 +31,7 @@ func terminate(cmd *exec.Cmd) { kill(cmd) }
 
 func interrupt(cmd *exec.Cmd) { kill(cmd) }
 
-// webviewProcess names WebView2's processes, which kill spares.
-var webviewProcess = "msedgewebview2.exe"
-
-// kill ends a process and those it started, except WebView2's. The browser
-// process of a WebView2 user data folder runs under the first app that used
-// the folder, and a build that mygo dev starts right after the previous one
-// may find it still running and use it too: killing it would leave the new
-// build's pages blank. WebView2's processes exit on their own once no app
-// uses them.
+// kill ends a process and its descendants.
 func kill(cmd *exec.Cmd) {
 	if cmd == nil || cmd.Process == nil {
 		return
@@ -90,9 +81,6 @@ func processTree(root uint32) []uint32 {
 			continue
 		}
 		for _, c := range children[tree[i]] {
-			if strings.EqualFold(c.name, webviewProcess) {
-				continue
-			}
 			if at, ok := started(c.pid); ok && at >= parent {
 				tree = append(tree, c.pid)
 			}

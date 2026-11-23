@@ -228,35 +228,6 @@ func TestInstallScript(t *testing.T) {
 	t.Setenv("PATH", path)
 	installed("1.0.0")
 
-	// It warns when the library cache has no WebKitGTK, and only then.
-	libc := "\tlibc.so.6 (libc6,x86-64, OS ABI: Linux 3.2.0) => /lib/x86_64-linux-gnu/libc.so.6\n"
-	for _, cache := range []struct {
-		libs  string
-		warns bool
-	}{
-		{libs: "", warns: false}, // no cache
-		{libs: "0 libs found in cache `/etc/ld.so.cache'\n", warns: false},
-		{libs: libc + "\tlibwebkit2gtk-4.1.so.0 (libc6,x86-64) => /lib/x86_64-linux-gnu/libwebkit2gtk-4.1.so.0\n", warns: false},
-		{libs: libc + "\tlibwebkit2gtk-4.0.so.37 (libc6,x86-64) => /lib/x86_64-linux-gnu/libwebkit2gtk-4.0.so.37\n", warns: false},
-		{libs: libc + "\tlibgtk-3.so.0 (libc6,x86-64) => /lib/x86_64-linux-gnu/libgtk-3.so.0\n", warns: true},
-	} {
-		t.Setenv("LD_CACHE", cache.libs)
-		out := run(alone, filepath.Join(local, "my-app-1.0.0-linux-amd64.tar.gz"))
-		if warns := strings.Contains(out, "My App needs WebKitGTK, which is not installed. Install it with:\n  "); warns != cache.warns {
-			t.Errorf("with the library cache\n%s\ninstall.sh printed:\n%s", cache.libs, out)
-		}
-	}
-	t.Setenv("LD_CACHE", "")
-	installed("1.0.0")
-	// The libraries it looks for are those the app loads.
-	ffi, err := os.ReadFile(filepath.Join("..", "..", "internal", "linux", "ffi.go"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(ffi), `open("libwebkit2gtk-4.1.so.0", "libwebkit2gtk-4.0.so.37")`) {
-		t.Error("install.sh looks for other WebKitGTK libraries than the app loads")
-	}
-
 	// Uninstalling removes what install.sh and the app made, and only that:
 	// with the links of the commands, one of a name the app no longer has.
 	handler := filepath.Join(home, ".local", "share", "applications", "com.mygo.my-app.url-handler.desktop")

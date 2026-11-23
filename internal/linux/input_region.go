@@ -2,7 +2,28 @@
 
 package linux
 
-import "github.com/egoist/mygo/internal/platform"
+import (
+	"sync"
+
+	"github.com/egoist/mygo/internal/platform"
+)
+
+var (
+	inputRegionOnce                  sync.Once
+	gdkWindowInputShapeCombineRegion func(w, region ptr, x, y int32)
+	cairoRegionCreateRectangle       func(r *gdkRectangle) ptr
+	cairoRegionUnionRectangle        func(region ptr, r *gdkRectangle) int32
+	cairoRegionDestroy               func(region ptr)
+)
+
+func loadInputRegion() {
+	inputRegionOnce.Do(func() {
+		mustBind(libGDK, &gdkWindowInputShapeCombineRegion, "gdk_window_input_shape_combine_region")
+		mustBind(libCairo, &cairoRegionCreateRectangle, "cairo_region_create_rectangle")
+		mustBind(libCairo, &cairoRegionUnionRectangle, "cairo_region_union_rectangle")
+		mustBind(libCairo, &cairoRegionDestroy, "cairo_region_destroy")
+	})
+}
 
 // An input region (SetInputRegion) lets the pointer through a window but
 // where its rectangles are, as a desktop pet's window lets clicks through

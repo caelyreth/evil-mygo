@@ -101,11 +101,10 @@ type host interface {
 	// placeGlass shows the system's glass where the frame shows it, and
 	// hides the rest.
 	placeGlass(places []platform.GlassPlacement)
-	// tabIntoWebView gives the page of v the keyboard as Tab does, from
-	// its end when back (platform.WebView.TabInto).
-	tabIntoWebView(v NativeWebView, back bool)
-	// platformWebView returns the web view of the platform v is, if any.
-	platformWebView(v NativeWebView) platform.WebView
+	// tabIntoWebView gives v the keyboard as Tab does, from its end when back.
+	tabIntoWebView(v embeddedView, back bool)
+	// platformWebView returns the embedded view of the platform v is, if any.
+	platformWebView(v embeddedView) platform.EmbeddedView
 }
 
 // engine runs the user interface of one window: it builds frames with

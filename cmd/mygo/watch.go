@@ -58,7 +58,7 @@ func listBuildInputs(c *Config) (*buildInputs, error) {
 		return dir == "" || modcache != "" && strings.HasPrefix(dir, modcache+string(filepath.Separator))
 	}
 	in := &buildInputs{
-		files:     []string{filepath.Join(c.root, jsonConfig), filepath.Join(c.root, tsConfig)},
+		files:     []string{filepath.Join(c.root, jsonConfig)},
 		resources: c.path(resourcesDir),
 	}
 	// Workspace selection depends on the app's directory and GOWORK,

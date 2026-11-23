@@ -40,7 +40,6 @@ func (*Backend) Screen() platform.Screen                                    { re
 func (*Backend) Theme() platform.Theme                                      { return Theme{} }
 func (*Backend) Power() platform.Power                                      { return Power{} }
 func (*Backend) Network() platform.Network                                  { return Network{} }
-func (*Backend) NowPlaying() platform.NowPlaying                            { return NowPlaying{} }
 func (*Backend) Secrets() platform.Secrets                                  { return Secrets{} }
 func (*Backend) NewTray(string, platform.TrayHandler) (platform.Tray, error) {
 	return nil, errUnsupported
@@ -48,7 +47,6 @@ func (*Backend) NewTray(string, platform.TrayHandler) (platform.Tray, error) {
 func (*Backend) RegisterHotkey(int, string, string) error { return errUnsupported }
 func (*Backend) UnregisterHotkey(int)                     {}
 func (*Backend) NotificationsSupported() bool             { return false }
-func (*Backend) WebViewAvailable() bool                   { return false }
 func (*Backend) RemoveNotification(string)                {}
 
 func (*Backend) ShowNotification(_ *platform.Notification, done func(error)) {
@@ -86,30 +84,10 @@ func (App) IsURLSchemeRegistered(string, string, string) bool { return false }
 func (App) SetOpenAtLogin(bool, string, string, string) error { return errUnsupported }
 func (App) OpenAtLogin(string, string, string) bool           { return false }
 func (App) OpenedAtLogin() bool                               { return false }
-func (App) SetDockMenu(*platform.Menu)                        {}
-func (App) ClearBrowsingData(_ platform.DataStore, _ platform.SiteData, done func(error)) {
-	done(errUnsupported)
-}
-func (App) NewDataStore(platform.DataStoreOptions) (platform.DataStore, error) {
-	return nil, errUnsupported
-}
+func (App) SetDockMenu(*platform.Menu)        {}
 func (App) AddRecentDocument(string) error      { return errUnsupported }
 func (App) ClearRecentDocuments() error         { return errUnsupported }
 func (App) SetJumpList(platform.JumpList) error { return errUnsupported }
-
-func (App) ListCookies(_ platform.DataStore, _ string, done func([]platform.Cookie, error)) {
-	done(nil, platform.ErrUnsupported)
-}
-func (App) SetCookie(_ platform.DataStore, _ platform.Cookie, done func(error)) {
-	done(platform.ErrUnsupported)
-}
-func (App) DeleteCookie(_ platform.DataStore, _ platform.CookieKey, done func(error)) {
-	done(platform.ErrUnsupported)
-}
-func (App) ClearCookies(_ platform.DataStore, done func(error)) { done(platform.ErrUnsupported) }
-func (App) CompileContentRules(_, _, _ string, done func(any, error)) {
-	done(nil, platform.ErrUnsupported)
-}
 
 // Dialogs does nothing, or reports that it cannot.
 type Dialogs struct{}
@@ -192,11 +170,6 @@ func (Power) KeepAwake(bool, string) func() { return func() {} }
 func (Power) KeepRunning(string) func()     { return func() {} }
 func (Power) OnBattery() bool               { return false }
 func (Power) IdleTime() time.Duration       { return 0 }
-
-// NowPlaying does nothing, or reports that it cannot.
-type NowPlaying struct{}
-
-func (NowPlaying) Set(*platform.NowPlayingInfo) {}
 
 // Network does nothing, or reports that it cannot.
 type Network struct{}

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -49,8 +48,8 @@ var archPackages = map[string]string{
 	"git":                        "git",
 }
 
-// archDepends returns the Arch Linux packages the app depends on: GTK,
-// WebKitGTK and l.Depends.Arch, or when l.Depends.legacy is true (linux.depends
+// archDepends returns the Arch Linux packages the app depends on: GTK
+// and l.Depends.Arch, or when l.Depends.legacy is true (linux.depends
 // is a list of Debian packages), those of debDepends mapped through
 // archPackages and the Debian packages that have none it knows.
 // A Debian dependency is one package, with its version and architecture
@@ -58,9 +57,6 @@ var archPackages = map[string]string{
 func (l *Linux) archDepends() (depends, unknown []string) {
 	if !l.Depends.legacy {
 		depends = []string{"gtk3"}
-		if l.webView() {
-			depends = append(depends, "webkit2gtk-4.1")
-		}
 		return append(depends, l.Depends.Arch...), nil
 	}
 
@@ -129,43 +125,19 @@ func archVersion(v string) string {
 	return v
 }
 
-// packageJSONString returns the string field key of the package.json of
-// root, or "" without one.
-func packageJSONString(root, key string) string {
-	data, err := os.ReadFile(filepath.Join(root, "package.json"))
-	if err != nil {
-		return ""
-	}
-	var pkg map[string]json.RawMessage
-	var value string
-	if json.Unmarshal(data, &pkg) != nil || json.Unmarshal(pkg[key], &value) != nil {
-		return ""
-	}
-	return strings.TrimSpace(value)
-}
-
 // linuxLicense returns the license of the app for its Linux packages: the
-// SPDX expression of mygo.json, else of package.json, else
-// LicenseRef-custom, which says that the license is the app's own, as for
-// UNLICENSED, npm's mark of a package that may not be used freely.
+// SPDX expression of mygo.json, else LicenseRef-custom.
 func (c *Config) linuxLicense() string {
-	license := c.License
-	if license == "" {
-		license = packageJSONString(c.root, "license")
-	}
-	license = strings.TrimSuffix(strings.TrimPrefix(license, "("), ")")
+	license := strings.TrimSuffix(strings.TrimPrefix(c.License, "("), ")")
 	if license == "" || license == "UNLICENSED" || strings.HasPrefix(license, "SEE LICENSE IN") {
 		return "LicenseRef-custom"
 	}
 	return license
 }
 
-// archURL returns the home page of the app for its PKGBUILD: the homepage
-// of package.json, else the repository of updates.github, else "".
+// archURL returns the home page of the app for its PKGBUILD: the repository
+// of updates.github, else "".
 func archURL(c *Config) string {
-	if u := packageJSONString(c.root, "homepage"); u != "" {
-		return u
-	}
 	if c.Updates != nil && c.Updates.GitHub != "" {
 		return "https://github.com/" + c.Updates.GitHub
 	}

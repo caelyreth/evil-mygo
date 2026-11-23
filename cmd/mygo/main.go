@@ -1,6 +1,5 @@
-// Command mygo is the MyGo development tool: it scaffolds projects,
-// generates the typed TypeScript client for bound Go services, runs apps in
-// development and builds packaged production apps.
+// Command mygo is the MyGo development tool: it scaffolds projects, runs
+// native UI apps in development, and builds packaged production apps.
 package main
 
 import (
@@ -21,12 +20,9 @@ Usage:
 
 Commands:
 
-	init [dir]           create a new project (Go + TypeScript frontend built with Vite)
-	install-skills [dir] install or update the bundled MyGo agent skills
-	vet [dir]           run Go vet and check native UI build lifetimes
-	migrate-ui [dir]     preview or apply the checked UI value API migration
-	generate             write the typed TypeScript client for bound Go services,
-	                     and the accessors of the app's catalogs of messages
+	init [dir]           create a new project
+	vet [dir]            run Go vet and check native UI build lifetimes
+	generate             write the accessors of the app's catalogs of messages
 	i18n check [dir]     check the app's catalogs of messages
 	dev                  run a development build with live reload
 	build                build production apps (a .app and a .dmg on macOS)
@@ -49,10 +45,6 @@ func main() {
 		os.Exit(2)
 	}
 	cmd, args := os.Args[1], os.Args[2:]
-	running = cmd
-	if cmd == "gen" {
-		running = "generate"
-	}
 	// Ctrl+C leaves the line of a step in progress, not its spinner. mygo dev
 	// stops its app first.
 	if cmd == "build" || cmd == "native" || cmd == "generate" || cmd == "gen" || cmd == "init" || cmd == "publish" {
@@ -68,12 +60,8 @@ func main() {
 	switch cmd {
 	case "init":
 		err = runInit(args)
-	case "install-skills":
-		err = runInstallSkills(args)
 	case "vet":
 		err = runVetUI(args)
-	case "migrate-ui":
-		err = runMigrateUI(args)
 	case "generate", "gen":
 		err = runGenerate(args)
 	case "dev":

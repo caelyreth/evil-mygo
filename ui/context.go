@@ -809,8 +809,8 @@ type state struct {
 	// times the frame paints.
 	ink, lastInk Rect
 	inkFrame     uint64
-	// webView is the web view the element shows (WebView).
-	webView NativeWebView
+	// webView is the embedded view the element shows (NativeView).
+	webView embeddedView
 
 	clicks, rightClicks, doubleClicks int
 	// quietClicks counts those of clicks that a row does not report as a

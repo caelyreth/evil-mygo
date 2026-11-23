@@ -89,13 +89,6 @@ func (t *iosToolchain) buildApp(ctx context.Context, c, dc *Config, tk *task, op
 	ldflags += extraLDFlags()
 	flags := []string{"-trimpath", "-buildmode=c-archive", "-ldflags", ldflags}
 	flags = append(flags, productionTags(opts.debug)...)
-	overlay, err := writeOverlay(filepath.Join(work, "overlay.json"), opts.overlay)
-	if err != nil {
-		return "", err
-	}
-	if overlay != "" {
-		flags = append(flags, "-overlay", overlay)
-	}
 	env := []string{"GOOS=ios", "GOARCH=arm64", "CGO_ENABLED=1", "CC=" + t.clang + " -target " + t.target + " -isysroot " + t.sdk}
 	tk.set("compiling Go")
 	if err := goBuild(ctx, c, tk, lib, env, flags...); err != nil {

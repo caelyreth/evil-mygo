@@ -36,16 +36,11 @@ func recentDocumentRecorded(path string) (recorded, supported bool) {
 	return slices.ContainsFunc(paths, func(p string) bool { return strings.EqualFold(p, path) }), true
 }
 
-// Clicks reach windows showing native UI only: WebView2 takes the mouse in
-// windows of its own process.
+// Clicks reach windows showing native UI only.
 func click(w *mygo.Window, x, y float64) (ok bool) {
 	mygo.RunOnMain(func() { ok = win.TestClickSurface(w.NativeHandle(), x, y) })
 	return ok
 }
-
-// Clicks reach windows showing native UI only: a web view's page is
-// not clicked.
-func clickPage(*mygo.Window, float64, float64) bool { return false }
 
 // appClick clicks with the system's input, which activates windows, and
 // returns once the app handled the click.
@@ -86,8 +81,6 @@ func wheel(w *mygo.Window, x, y float64) (ok bool) {
 	return ok
 }
 
-func webViewAttached(*mygo.Window) (bool, bool) { return false, false }
-
 // Collection behaviors and deactivating the app are macOS's.
 func collectionBehavior(*mygo.Window) (uint, bool)               { return 0, false }
 func becomesKeyOnlyIfNeeded(*mygo.Window) (bool, bool)           { return false, false }
@@ -98,17 +91,7 @@ func roundedBacking(*mygo.Window) (bool, float64, float64, bool) { return false,
 func windowBacking(*mygo.Window) (bool, float64, bool)           { return false, 0, false }
 func appActive() (bool, bool)                                    { return false, false }
 
-// WebView2 opens DevTools in a window of its own.
-func dockDevTools(*mygo.Window) bool { return false }
-
-func dockedDevToolsPlace(*mygo.Window) string { return "" }
-
 func dismissPopups() (int, bool) { return 0, false }
-
-func setDroppedFiles(w *mygo.Window, paths []string) bool {
-	mygo.RunOnMain(func() { win.TestSetDroppedFiles(w.NativeHandle(), paths) })
-	return true
-}
 
 // The progress bar is shown by the shell, out of the app's reach.
 func dockTileImage() ([]byte, bool) { return nil, false }
@@ -256,12 +239,6 @@ func canCompose() (ok bool) {
 func loseComposition(removed bool) (ok bool) {
 	mygo.RunOnMain(func() { ok = win.TestLoseComposition(removed) })
 	return ok
-}
-
-// failWebViews makes WebView2 fail to create the next n webviews.
-func failWebViews(n int) bool {
-	mygo.RunOnMain(func() { win.TestFailWebViews(n) })
-	return true
 }
 
 // A Control-click is a secondary click on macOS only.
@@ -430,57 +407,6 @@ func panelStyles(w *mygo.Window) (tool, topmost, owned, supported bool) {
 	return tool, topmost, owned, true
 }
 
-// throttlingOff reports whether the page of w, or of its first web view,
-// is set up to keep running while it can't be seen, and how many of the
-// settings that take the platform has.
-func throttlingOff(w *mygo.Window, webView bool) (off bool, settings int) {
-	mygo.RunOnMain(func() { off, settings = win.TestBackgroundThrottlingOff(w.NativeHandle(), webView) })
-	return off, settings
-}
-
-// WebView2 tells no capture.
-func mockCapture(*mygo.Window) bool { return false }
-
-// pageGestures reports whether a swipe navigates and a pinch zooms the page
-// of a window, or with webView 0 or more, of its web view of that index.
-func pageGestures(w *mygo.Window, webView int) (swipe, pinch, ok bool) {
-	mygo.RunOnMain(func() { swipe, pinch, ok = win.TestPageGestures(w.NativeHandle(), webView) })
-	return swipe, pinch, ok
-}
-
-// WebView2 takes touch input from Windows' pointer messages, which a test
-// can't send it.
-func pinchPage(*mygo.Window, int, float64, float64, ...float64) bool { return false }
-
-// pageMenusHooked tells that the tests can right-click a page and read
-// the menu it opens, through rightClickPage, pageMenu, choosePageMenuItem
-// and dismissPageMenu. A menu WebView2 draws itself can't be read: the
-// tests change theirs, which MyGo draws.
-const pageMenusHooked = true
-
-// rightClickPage right-clicks (x, y) in a window's page, with the
-// DevTools protocol's mouse events.
-func rightClickPage(w *mygo.Window, x, y float64) (ok bool) {
-	mygo.RunOnMain(func() { ok = win.TestRightClickPage(w.NativeHandle(), x, y) })
-	return ok
-}
-
-// pageMenu returns the labels of the items of the context menu MyGo
-// draws over a page, "-" for separators, and whether one is shown. The
-// modal loop of a menu runs the main thread's work.
-func pageMenu() (labels []string, shown bool) {
-	mygo.RunOnMain(func() { labels, shown = win.TestPageMenu() })
-	return labels, shown
-}
-
-// choosePageMenuItem chooses an item of that menu by its label.
-func choosePageMenuItem(label string) (ok bool) {
-	mygo.RunOnMain(func() { ok = win.TestChoosePageMenuItem(label) })
-	return ok
-}
-
-func dismissPageMenu() { mygo.RunOnMain(win.TestEndMenu) }
-
 // takeForeground brings a window to the foreground, after Alt pressed and
 // released when Windows refuses it: a process that sent the last input may
 // take the foreground.
@@ -509,11 +435,6 @@ func pressLetter(w *mygo.Window, letter byte, cmd bool) (ok bool) {
 	return ok
 }
 
-// pressPageLetter presses the key of an uppercase letter in a foreground window showing a web page.
-func pressPageLetter(w *mygo.Window, letter byte) bool {
-	return pressLetter(w, letter, false)
-}
-
 func glassTint(*mygo.Window) (red, green, blue, alpha float64, ok bool) { return 0, 0, 0, 0, false }
 
 func nativeGlassSupported() bool { return false }
@@ -534,12 +455,6 @@ func checkActivationHit(t *testing.T, w *mygo.Window, kind string, enabled bool)
 	var cls string
 	eventually(t, "the content window placed", func() bool {
 		mygo.RunOnMain(func() { res, cls = win.TestMouseActivate(w.NativeHandle(), 100, 100) })
-		if kind == "page" {
-			if enabled {
-				return cls == "MyGoWindow"
-			}
-			return cls != "" && cls != "MyGoWindow"
-		}
 		return cls == "MyGoSurface"
 	})
 	want := uintptr(1) // MA_ACTIVATE

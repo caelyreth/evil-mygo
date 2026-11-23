@@ -98,7 +98,6 @@ func registerMenuTarget() {
 		method("mygoMenuItemClicked:", func(self id, _ objc.SEL, item id) {
 			theBackend.h.MenuItemClicked(sendInt(item, "tag"))
 		}),
-		method("mygoContextItemClicked:", contextItemClicked),
 		// The app's items keep the state it gave them in a menu that
 		// validates its items.
 		method("validateMenuItem:", func(self id, _ objc.SEL, item id) bool { return sendBool(item, "isEnabled") }),
@@ -1416,12 +1415,9 @@ func (b *Backend) PopupMenu(m *platform.Menu, pw platform.Window, pos *platform.
 		var view id
 		var loc NSPoint
 		var content *surface
-		if w, ok := pw.(*window); ok && w != nil && !w.closed {
+		if w, ok := pw.(*window); ok && w != nil && !w.closed && w.surface != nil {
 			content = w.surface
-			view = w.web
-			if w.surface != nil {
-				view = w.surface.view
-			}
+			view = w.surface.view
 			if pos != nil {
 				loc = NSPoint{float64(pos.X), float64(pos.Y)}
 				if !sendBool(view, "isFlipped") {

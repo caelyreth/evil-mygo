@@ -238,7 +238,7 @@ func (t *Tester) accessEach(fn func(r Role, n *platform.AccessNode, info func() 
 // state of its own, such as AccessChildren or a web view's page node) to
 // the visible clip around it in the window's DIPs.
 func (rt *engine) clippedAccessBounds(tree *platform.AccessTree, n *platform.AccessNode, bounds Rect) Rect {
-	if n.WebView != nil {
+	if n.View != nil {
 		if s := rt.states[n.ID^pageNodeID]; s != nil {
 			return intersect(bounds, rt.windowRect(rt.accessClip(s)))
 		}

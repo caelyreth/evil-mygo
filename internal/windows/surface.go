@@ -190,16 +190,6 @@ type surface struct {
 	// under the surface, which show as it shrinks (fillUnder).
 	bg      platform.Color
 	bgBrush uintptr
-
-	// layer holds the web views under the frames, once there are some
-	// (webview_embed.go): placed are where the content shows them, and
-	// stacked those shown, in the order of their visuals. webHover is the
-	// web view under the pointer, and webCapture the one a press went to,
-	// which gets the mouse until the buttons are let go.
-	layer                *webLayer
-	placed               []platform.WebViewPlacement
-	stacked              []*window
-	webHover, webCapture *window
 }
 
 func registerSurfaceClass() {
@@ -252,10 +242,9 @@ func (s *surface) Native() platform.SurfaceNative {
 	return platform.SurfaceNative{HWND: s.hwnd, Composed: s.viaComposition()}
 }
 
-// viaComposition reports whether the frames show through
-// DirectComposition: in a window without a redirection bitmap, and over
-// web views.
-func (s *surface) viaComposition() bool { return s.w.noRedirect || s.layer != nil }
+// viaComposition reports whether the frames show through DirectComposition,
+// in a window without a redirection bitmap.
+func (s *surface) viaComposition() bool { return s.w.noRedirect }
 
 // ShowsMaterial reports whether the window shows its material behind the
 // content: it has one, no redirection bitmap to cover it, and DWM draws
@@ -768,9 +757,20 @@ func (s *surface) pointer(kind platform.SurfaceEventKind, lp uintptr, button int
 
 // eatActivationRelease remembers the release of an activation press
 // WM_MOUSEACTIVATE ate (MA_ACTIVATEANDEAT), so the release that follows
-// does not reach the content or an embedded web view as half a click.
+// does not reach the content as half a click.
 func (s *surface) eatActivationRelease(down uint16) {
-	s.ateUp = releaseMessage(down)
+	switch down {
+	case wmLButtonDown:
+		s.ateUp = wmLButtonUp
+	case wmRButtonDown:
+		s.ateUp = wmRButtonUp
+	case wmMButtonDown:
+		s.ateUp = wmMButtonUp
+	case wmXButtonDown:
+		s.ateUp = wmXButtonUp
+	default:
+		s.ateUp = 0
+	}
 }
 
 func (s *surface) message(hwnd uintptr, m uint32, wp, lp uintptr) (uintptr, bool) {
@@ -786,27 +786,10 @@ func (s *surface) message(hwnd uintptr, m uint32, wp, lp uintptr) (uintptr, bool
 		s.ateUp = 0
 		return 0, true
 	}
-	switch m {
-	case wmMouseMove, wmLButtonDown, wmLButtonDblClk, wmLButtonUp, wmRButtonDown, wmRButtonDblClk, wmRButtonUp,
-		wmMButtonDown, wmMButtonDblClk, wmMButtonUp, wmXButtonDown, wmXButtonDblClk, wmXButtonUp, wmMouseWheel, wmMouseHWheel:
-		if s.forwardMouse(m, wp, lp) {
-			return 0, true // the web view under the pointer takes it
-		}
-	case wmTimer:
-		if wp == timerUncloak {
-			procKillTimer.Call(hwnd, timerUncloak)
-			s.uncloak()
-			return 0, true
-		}
-		if wp == timerWebView {
-			procKillTimer.Call(hwnd, timerWebView)
-			for _, v := range s.w.webViews {
-				if webViewBuilt && v.asksAgain() {
-					v.createWebView()
-				}
-			}
-			return 0, true
-		}
+	if m == wmTimer && wp == timerUncloak {
+		procKillTimer.Call(hwnd, timerUncloak)
+		s.uncloak()
+		return 0, true
 	}
 	switch m {
 	case wmPaint:
@@ -826,14 +809,6 @@ func (s *surface) message(hwnd uintptr, m uint32, wp, lp uintptr) (uintptr, bool
 	case wmEraseBkgnd:
 		return 1, true
 	case wmSize:
-		if s.layer != nil {
-			// The web views keep their place in DIPs, in other pixels after
-			// a change of DPI.
-			for _, v := range s.w.webViews {
-				v.placeEmbedded()
-			}
-			s.layer.commit()
-		}
 		s.send(platform.SurfaceEvent{Kind: platform.SurfaceResize})
 		// Draw at once, so the content follows the window while it is
 		// resized.
@@ -881,7 +856,6 @@ func (s *surface) message(hwnd uintptr, m uint32, wp, lp uintptr) (uintptr, bool
 			// gives the content the pointer's moves.
 			return 0, true
 		}
-		s.mouseLeft()
 		s.send(platform.SurfaceEvent{Kind: platform.PointerLeave})
 		return 0, true
 	case wmLButtonDown, wmLButtonDblClk, wmRButtonDown, wmRButtonDblClk, wmMButtonDown, wmMButtonDblClk:
@@ -961,16 +935,13 @@ func (s *surface) message(hwnd uintptr, m uint32, wp, lp uintptr) (uintptr, bool
 			s.cancelPress()
 		}
 		s.buttons = 0
-		if lp != hwnd {
-			s.webCapture = nil
-		}
 		return 0, true
 	case wmMouseWheel, wmMouseHWheel:
 		pt := point{int32(int16(loword(lp))), int32(int16(hiword(lp)))}
 		procScreenToClient.Call(hwnd, uintptr(unsafe.Pointer(&pt)))
 		delta := float64(int16(hiword(wp)))
 		precise := int(delta)%120 != 0
-		if pinching(m, wp) {
+		if m == wmMouseWheel && int16(hiword(wp))%120 != 0 && loword(wp)&0x0008 != 0 { // MK_CONTROL
 			// A touchpad's pinch, which Windows sends as scrolling with
 			// Ctrl held, as it does Ctrl and two fingers: three notches'
 			// worth zoom twice as large.
@@ -991,9 +962,6 @@ func (s *surface) message(hwnd uintptr, m uint32, wp, lp uintptr) (uintptr, bool
 		return 0, true
 	case wmSetCursor:
 		if loword(lp) == htClient {
-			if s.webCursor() {
-				return 1, true // the page's
-			}
 			procSetCursor.Call(cursorHandle(s.cursor))
 			return 1, true
 		}
@@ -1303,7 +1271,7 @@ func (w *window) Surface() platform.Surface {
 // content leaves: their keys are the content's own too, as Ctrl+C, which
 // copies in a field, interrupts in a terminal and is Edit › Copy's.
 func (s *surface) menuShortcut(vk uintptr, roles bool) bool {
-	w := s.w.top()
+	w := s.w
 	cmd, ok := w.accels[accelKey{vk: uint32(vk), mods: currentModifiers()}]
 	if !ok {
 		return false

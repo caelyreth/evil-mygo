@@ -9,7 +9,6 @@ import (
 	"strings"
 	"unsafe"
 
-	"github.com/egoist/mygo/internal/bridge"
 	"github.com/egoist/mygo/internal/platform"
 )
 
@@ -163,10 +162,6 @@ func (w *window) TitleBar() platform.TitleBar {
 	h := w.titleBarHeight()
 	return platform.TitleBar{Height: h, Right: captionButtonWidth * len(w.shownButtons()), Bottom: h}
 }
-
-// titleBarScript tells the first page the room of the window controls, at
-// document start.
-func (w *window) titleBarScript() string { return bridge.TitleBarScript(w.TitleBar(), w.opts.Zoom) }
 
 // captionChanged lays the controls out again after the window gained or lost
 // a button, or entered or left full screen, and tells the page.

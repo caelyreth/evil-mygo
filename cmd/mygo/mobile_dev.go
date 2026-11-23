@@ -92,11 +92,6 @@ func (s *devSession) buildAndLaunchMobile(ctx context.Context, t *task, running 
 	if opts.pkg, err = packageDir(c); err != nil {
 		return nil, sum, err
 	}
-	if c.DevURL == "" {
-		if opts.overlay, err = frontendFiles(c, opts.pkg, work); err != nil {
-			return nil, sum, err
-		}
-	}
 	stage, err := os.MkdirTemp(dir, ".staging-")
 	if err != nil {
 		return nil, sum, err
@@ -145,12 +140,6 @@ func (s *devSession) buildAndLaunchMobile(ctx context.Context, t *task, running 
 	copy(sum[:], h.Sum(nil))
 	if sum == running {
 		return nil, sum, errUnchanged
-	}
-	if c.Bindings != "" {
-		t.set("generating the TypeScript client")
-		if err := writeClient(ctx, c, false); err != nil {
-			return nil, sum, err
-		}
 	}
 	final := filepath.Join(dir, filepath.Base(app))
 	if s.device.platform == "ios" {

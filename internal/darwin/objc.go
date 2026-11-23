@@ -1,6 +1,6 @@
 //go:build darwin && !ios
 
-// Package darwin implements the macOS backend (AppKit + WKWebView) in pure
+// Package darwin implements the macOS backend (AppKit) in pure Go.
 // Go: Objective-C is driven through the runtime with purego, no cgo.
 package darwin
 
@@ -96,9 +96,9 @@ func mustDlopen(path string) uintptr {
 }
 
 var (
-	libObjC, libCF, libCG, libAppKit, libWebKit, libFoundation, libCarbon uintptr
-	libCoreServices                                                       uintptr
-	loadOnce                                                              sync.Once
+	libObjC, libCF, libCG, libAppKit, libFoundation, libCarbon uintptr
+	libCoreServices                                            uintptr
+	loadOnce                                                   sync.Once
 )
 
 // load opens the frameworks and prepares the typed message functions.
@@ -109,7 +109,6 @@ func load() {
 		libCF = mustDlopen("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")
 		libCG = mustDlopen("/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics")
 		libAppKit = mustDlopen("/System/Library/Frameworks/AppKit.framework/AppKit")
-		libWebKit = mustDlopen("/System/Library/Frameworks/WebKit.framework/WebKit")
 		libCarbon = mustDlopen("/System/Library/Frameworks/Carbon.framework/Carbon")
 		libCoreServices = mustDlopen("/System/Library/Frameworks/CoreServices.framework/CoreServices")
 		// Optional frameworks, loaded so their classes are registered.
@@ -494,15 +493,10 @@ func callBlock(block uintptr, args ...uintptr) {
 // objc.Block as its first parameter.
 func newBlock(fn any) objc.Block { return objc.NewBlock(fn) }
 
-// nsError describes an NSError, preferring the JavaScript exception message
-// WebKit attaches.
+// nsError describes an NSError.
 func nsError(err id) error {
 	if err == 0 {
 		return nil
-	}
-	info := send(err, "userInfo")
-	if msg := send(info, "objectForKey:", uintptr(nsString("WKJavaScriptExceptionMessage"))); msg != 0 {
-		return fmt.Errorf("%s", goString(msg))
 	}
 	return fmt.Errorf("%s", goString(send(err, "localizedDescription")))
 }

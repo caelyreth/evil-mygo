@@ -352,7 +352,6 @@ func (a *Application) updateLocale(tell bool) {
 	}
 	contentLocaleChanged()
 	if localeChanged {
-		pagesLocaleChanged(next.locale)
 		relabelMenus()
 		fire1(&locales.onLocaleChanged, next.locale)
 	}

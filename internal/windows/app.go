@@ -3,7 +3,6 @@
 package windows
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -16,8 +15,7 @@ import (
 	"github.com/egoist/mygo/internal/platform"
 )
 
-// Backend is the Windows (Win32 + WebView2) implementation of
-// platform.Backend.
+// Backend is the Windows (Win32) implementation of platform.Backend.
 type Backend struct {
 	h    platform.AppHandler
 	name string
@@ -36,36 +34,9 @@ type Backend struct {
 	postedMu sync.Mutex
 	posted   []func()
 
-	windows map[uintptr]*window // by HWND
-	// languages are those SetLanguages told: the first is the language
-	// of the WebView2 environment, once made.
+	windows   map[uintptr]*window // by HWND
 	languages []string
 	appMenu   *platform.Menu
-
-	// The WebView2 environment is created asynchronously, when the first
-	// window that shows a web page needs it; windows wait.
-	env        uintptr
-	envErr     error
-	envStarted bool
-	envWaiters []func()
-	// envUnthrottled tells that the environment's browser runs, or is
-	// starting, with unthrottledArguments, which the page that started it
-	// asked for; envWarned that a page that asked later was told it was
-	// too late.
-	envUnthrottled, envWarned bool
-	// envAutoplay and envAutoplayWarned are the same for autoplayArguments
-	// (PageOptions.Autoplay).
-	envAutoplay, envAutoplayWarned bool
-	// envResult is whether the environment was created (1) or failed (2),
-	// 0 before, for WebViewAvailable, which any goroutine may call.
-	envResult atomic.Int32
-
-	// cookies gives cookie calls a cookie manager (cookies.go).
-	cookies cookieStore
-	// stores are the profiles of sessions (session.go), privateStores
-	// the number of InPrivate ones made.
-	stores        []*dataStore
-	privateStores int
 
 	menus menuTable
 
@@ -152,7 +123,7 @@ func New() *Backend {
 	}
 }
 
-func (b *Backend) Name() string { return backendName }
+func (b *Backend) Name() string { return "windows" }
 
 func (b *Backend) IsMainThread() bool { return currentThreadID() == mainThreadID }
 
@@ -179,16 +150,6 @@ func (b *Backend) Init(h platform.AppHandler, opts platform.AppOptions) error {
 	// Clipboard and drag/drop share startup-created OLE callback tables.
 	dropOnce.Do(initDropTarget)
 	return nil
-}
-
-// whenEnvironment runs fn once the WebView2 environment, which
-// startEnvironment started, exists (or failed).
-func (b *Backend) whenEnvironment(fn func()) {
-	if b.env != 0 || b.envErr != nil {
-		fn()
-		return
-	}
-	b.envWaiters = append(b.envWaiters, fn)
 }
 
 func (b *Backend) Run() error {
@@ -411,9 +372,6 @@ func (b *Backend) appMessage(m uint32, wp, lp uintptr) (uintptr, bool) {
 	case wmAppRun:
 		b.runPosted()
 		return 0, true
-	case wmAppCookieView:
-		b.closeCookieViewNow()
-		return 0, true
 	case wmClipboardUpdate:
 		if b.clipboardChanged != nil {
 			b.clipboardChanged()
@@ -453,10 +411,6 @@ func (b *Backend) appMessage(m uint32, wp, lp uintptr) (uintptr, bool) {
 	case wmTimer:
 		if wp == timerCompose {
 			b.recompose()
-			return 0, true
-		}
-		if wp == timerCookieView && checkCookieViews != nil {
-			checkCookieViews(b)
 			return 0, true
 		}
 	case wmAppDeviceRemoved:
@@ -698,43 +652,4 @@ func (a appController) Package() (platform.PackageInfo, bool) {
 		return platform.PackageInfo{}, false // not built by mygo build
 	}
 	return info, true
-}
-
-// ClearBrowsingData clears the profile of store, the one the app's web
-// views share for nil, through the web view cookie calls use: a window's,
-// or a hidden one before a window shows a page (cookies.go). SiteDataAll
-// is ClearBrowsingDataAll, other types ClearBrowsingData of their kinds.
-func (a appController) ClearBrowsingData(store platform.DataStore, types platform.SiteData, done func(error)) {
-	a.withCookieManager(store, func(_ []platform.Cookie, err error) { done(err) }, func(r *cookieRequest) {
-		wv13 := queryInterface(r.webview, &iidICoreWebView2_13)
-		if wv13 == 0 {
-			r.finish(nil, errors.New("mygo: clearing browsing data needs a newer WebView2 Runtime"))
-			return
-		}
-		var profile uintptr
-		comCall(wv13, wv13GetProfile, uintptr(unsafe.Pointer(&profile)))
-		release(wv13)
-		p2 := queryInterface(profile, &iidICoreWebView2Profile2)
-		release(profile)
-		if p2 == 0 {
-			r.finish(nil, errors.New("mygo: clearing browsing data needs a newer WebView2 Runtime"))
-			return
-		}
-		defer release(p2)
-		hr := withHandler(func(result, _ uintptr) {
-			if failed(result) {
-				r.finish(nil, hresultError("clearing browsing data", result))
-				return
-			}
-			r.finish(nil, nil)
-		}, func(h uintptr) uintptr {
-			if types.All() {
-				return comCall(p2, profile2ClearBrowsingDataAll, h)
-			}
-			return comCall(p2, profile2ClearBrowsingData, browsingDataKinds(types), h)
-		})
-		if failed(hr) {
-			r.finish(nil, hresultError("clearing browsing data", hr))
-		}
-	})
 }

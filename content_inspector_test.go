@@ -17,16 +17,13 @@ func TestContentInspector(t *testing.T) {
 	}
 	// Development builds turn DevTools on: Toggle Developer Tools opens
 	// the inspector of native UI beside the content, not a web inspector.
-	w, fw, s := contentWindow(t, view)
+	w, _, s := contentWindow(t, view)
 	onMain(func() {
 		performRole(RoleToggleDevTools, w)
 		s.Frame()
 	})
 	if width != 150 {
 		t.Errorf("beside the inspector, the content is %v wide", width)
-	}
-	if fw.IsDevToolsOpened() {
-		t.Error("the role opened a web inspector")
 	}
 	onMain(func() {
 		performRole(RoleToggleDevTools, w)
@@ -36,7 +33,7 @@ func TestContentInspector(t *testing.T) {
 		t.Errorf("with the inspector closed, the content is %v wide", width)
 	}
 
-	off := NewWindow(WindowOptions{Width: 300, Height: 200, Content: ui.View(view), Page: PageOptions{DevTools: DevToolsDisabled}})
+	off := NewWindow(WindowOptions{Width: 300, Height: 200, Content: ui.View(view), DevTools: DevToolsDisabled})
 	t.Cleanup(off.Destroy)
 	onMain(func() {
 		performRole(RoleToggleDevTools, off)

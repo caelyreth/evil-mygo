@@ -1,6 +1,6 @@
 //go:build linux && !android && (amd64 || arm64)
 
-// Package linux implements the Linux backend (GTK 3 + WebKitGTK) in pure Go:
+// Package linux implements the Linux backend (GTK 3) in pure Go:
 // the libraries are loaded at run time with purego, no cgo.
 package linux
 
@@ -8,8 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"sync"
-	"sync/atomic"
 	"unsafe"
 
 	"github.com/ebitengine/purego"
@@ -19,7 +17,7 @@ type ptr = uintptr
 
 // Library handles.
 var (
-	libGLib, libGObject, libGIO, libGDK, libGTK, libWebKit, libJSC, libSoup, libCairo, libPixbuf, libIndicator ptr
+	libGLib, libGObject, libGIO, libGDK, libGTK, libCairo, libPixbuf, libIndicator ptr
 )
 
 // cs returns a NUL terminated copy of s for C functions.
@@ -394,100 +392,9 @@ var (
 	gtkAboutDialogSetComments           func(d ptr, s *byte)
 )
 
-// WebKitGTK, JavaScriptCore, libsoup and cairo.
+// GObject, recent manager, cairo and AppIndicator.
 var (
-	webkitWebContextGetDefault                        func() ptr
-	webkitWebContextRegisterURIScheme                 func(ctx ptr, scheme *byte, cb ptr, data ptr, destroy ptr)
-	webkitWebContextGetSecurityManager                func(ctx ptr) ptr
-	webkitWebContextGetWebsiteDataManager             func(ctx ptr) ptr
-	webkitWebContextSetPreferredLanguages             func(ctx ptr, languages **byte)
-	webkitWebsiteDataManagerClear                     func(m ptr, types uint32, timespan int64, cancellable ptr, cb ptr, data ptr)
-	webkitWebsiteDataManagerClearFinish               func(m, res ptr, err *ptr) bool
-	webkitDownloadGetWebView                          func(d ptr) ptr
-	webkitDownloadGetRequest                          func(d ptr) ptr
-	webkitDownloadSetDestination                      func(d ptr, uri *byte)
-	webkitDownloadSetAllowOverwrite                   func(d ptr, v bool)
-	webkitDownloadCancel                              func(d ptr)
-	webkitResponsePolicyDecisionGetResponse           func(d ptr) ptr
-	webkitResponsePolicyDecisionIsMIMETypeSupported   func(d ptr) bool
-	webkitPolicyDecisionDownload                      func(d ptr)
-	webkitURIResponseGetURI                           func(r ptr) ptr
-	webkitURIResponseGetHTTPHeaders                   func(r ptr) ptr
-	webkitSecurityManagerRegisterSecure               func(m ptr, scheme *byte)
-	webkitSecurityManagerRegisterCORS                 func(m ptr, scheme *byte)
-	webkitUserContentManagerNew                       func() ptr
-	webkitUserContentManagerRegisterHandler           func(ucm ptr, name *byte) bool
-	webkitUserContentManagerUnregisterHandler         func(ucm ptr, name *byte)
-	webkitUserContentManagerAddScript                 func(ucm, script ptr)
-	webkitUserContentManagerRemoveAllScripts          func(ucm ptr)
-	webkitUserScriptNew                               func(src *byte, frames, time int32, allow, block ptr) ptr
-	webkitUserScriptUnref                             func(s ptr)
-	webkitWebViewNewWithUserContentManager            func(ucm ptr) ptr
-	webkitWebViewGetSettings                          func(wv ptr) ptr
-	webkitSettingsSetEnableDeveloperExtras            func(s ptr, v bool)
-	webkitSettingsSetUserAgent                        func(s ptr, ua *byte)
-	webkitSettingsGetUserAgent                        func(s ptr) ptr
-	webkitSettingsSetAllowFileAccessFromFileURLs      func(s ptr, v bool)
-	webkitSettingsSetJavascriptCanAccessClipboard     func(s ptr, v bool)
-	webkitWebViewLoadURI                              func(wv ptr, uri *byte)
-	webkitWebViewLoadHTML                             func(wv ptr, html *byte, base *byte)
-	webkitWebViewReload                               func(wv ptr)
-	webkitWebViewReloadBypassCache                    func(wv ptr)
-	webkitWebViewStopLoading                          func(wv ptr)
-	webkitWebViewGoBack                               func(wv ptr)
-	webkitWebViewGoForward                            func(wv ptr)
-	webkitWebViewCanGoBack                            func(wv ptr) bool
-	webkitWebViewCanGoForward                         func(wv ptr) bool
-	webkitWebViewIsLoading                            func(wv ptr) bool
-	webkitWebViewGetURI                               func(wv ptr) ptr
-	webkitWebViewGetTitle                             func(wv ptr) ptr
-	webkitWebViewSetZoomLevel                         func(wv ptr, z float64)
-	webkitWebViewGetZoomLevel                         func(wv ptr) float64
-	webkitWebViewSetBackgroundColor                   func(wv ptr, rgba *gdkRGBA)
-	webkitWebViewIsPlayingAudio                       func(wv ptr) bool
-	webkitWebViewSetIsMuted                           func(wv ptr, muted bool) // 2.30+
-	webkitWebViewGetIsMuted                           func(wv ptr) bool        // 2.30+
-	webkitWebViewGetCaptureState                      [3]func(wv ptr) int32
-	webkitWebViewSetCaptureState                      [3]func(wv ptr, state int32)
-	webkitWebViewEvaluateJavascript                   func(wv ptr, script *byte, length int, world, sourceURI *byte, cancellable, cb, data ptr)
-	webkitWebViewRunJavascript                        func(wv ptr, script *byte, cancellable, cb, data ptr)
-	webkitWebViewCallAsyncJavascriptFunction          func(wv ptr, body *byte, length int, args ptr, world, sourceURI *byte, cancellable, cb, data ptr)
-	webkitWebViewCallAsyncJavascriptFunctionFinish    func(wv, res ptr, err *ptr) ptr
-	webkitWebViewGetInspector                         func(wv ptr) ptr
-	webkitWebInspectorShow                            func(i ptr)
-	webkitWebInspectorClose                           func(i ptr)
-	webkitWebInspectorGetWebView                      func(i ptr) ptr
-	webkitWebViewGetSnapshot                          func(wv ptr, region, options int32, cancellable, cb, data ptr)
-	webkitWebViewGetSnapshotFinish                    func(wv, res ptr, err *ptr) ptr
-	webkitWebViewExecuteEditingCommand                func(wv ptr, cmd *byte)
-	webkitPrintOperationNew                           func(wv ptr) ptr
-	webkitPrintOperationRunDialog                     func(op, parent ptr) int32
-	webkitPrintOperationSetPrintSettings              func(op, settings ptr)
-	webkitPrintOperationSetPageSetup                  func(op, setup ptr)
-	webkitPrintOperationPrint                         func(op ptr)
-	webkitSettingsGetPrintBackgrounds                 func(s ptr) bool
-	gObjectGetData                                    func(obj ptr, key *byte) ptr
-	gtkEventControllerSetPropagationPhase             func(c ptr, phase int32)
-	webkitSettingsSetPrintBackgrounds                 func(s ptr, v bool)
-	webkitUserMediaPermissionRequestGetType           func() uintptr
-	webkitGeolocationPermissionRequestGetType         func() uintptr
-	webkitNotificationPermissionRequestGetType        func() uintptr
-	webkitUserMediaPermissionIsForAudioDevice         func(req ptr) bool
-	webkitUserMediaPermissionIsForVideoDevice         func(req ptr) bool
-	webkitPermissionRequestAllow                      func(req ptr)
-	webkitPermissionRequestDeny                       func(req ptr)
 	gTypeCheckInstanceIsA                             func(instance ptr, typ uintptr) bool
-	gtkPrintSettingsNew                               func() ptr
-	gtkPrintSettingsSet                               func(s ptr, key, value *byte)
-	gtkPageSetupNew                                   func() ptr
-	gtkPageSetupSetPaperSize                          func(setup, size ptr)
-	gtkPageSetupSetOrientation                        func(setup ptr, orientation int32)
-	gtkPageSetupSetTopMargin                          func(setup ptr, margin float64, unit int32)
-	gtkPageSetupSetBottomMargin                       func(setup ptr, margin float64, unit int32)
-	gtkPageSetupSetLeftMargin                         func(setup ptr, margin float64, unit int32)
-	gtkPageSetupSetRightMargin                        func(setup ptr, margin float64, unit int32)
-	gtkPaperSizeNewCustom                             func(name, displayName *byte, width, height float64, unit int32) ptr
-	gtkPaperSizeFree                                  func(size ptr)
 	gtkRecentManagerGetDefault                        func() ptr
 	gtkRecentManagerAddItem                           func(manager ptr, uri *byte) bool
 	gtkRecentManagerGetItems                          func(manager ptr) ptr
@@ -497,40 +404,7 @@ var (
 	gGetApplicationName                               func() ptr
 	gtkRecentManagerRemoveItem                        func(manager ptr, uri *byte, gerr ptr) bool
 	gtkRecentManagerHasItem                           func(manager ptr, uri *byte) bool
-	webkitJavascriptResultGetJSValue                  func(r ptr) ptr
-	webkitNavigationPolicyDecisionGetNavigationAction func(d ptr) ptr
-	webkitNavigationActionGetTargetFrameInfo          func(a ptr) ptr  // 2.56+
-	webkitFrameInfoIsMainFrame                        func(f ptr) bool // 2.56+
-	webkitNavigationActionGetRequest                  func(a ptr) ptr
-	webkitNavigationActionGetNavigationType           func(a ptr) int32
-	webkitNavigationActionIsUserGesture               func(a ptr) bool
-	webkitURIRequestGetURI                            func(r ptr) ptr
-	webkitPolicyDecisionUse                           func(d ptr)
-	webkitPolicyDecisionUseWithPolicies               func(d ptr, p ptr)
-	webkitWebsitePoliciesNewWithPolicies              func(name *byte, value int32, end ptr) ptr
-	webkitPolicyDecisionIgnore                        func(d ptr)
-	webkitURISchemeRequestGetURI                      func(r ptr) ptr
-	webkitURISchemeRequestGetHTTPMethod               func(r ptr) ptr
-	webkitURISchemeRequestGetHTTPHeaders              func(r ptr) ptr
-	webkitURISchemeRequestGetHTTPBody                 func(r ptr) ptr
-	webkitURISchemeRequestGetWebView                  func(r ptr) ptr
-	webkitURISchemeRequestFinishWithResponse          func(r, resp ptr)
-	webkitURISchemeRequestFinishError                 func(r, gerr ptr)
-	webkitURISchemeRequestFinish                      func(r ptr, stream ptr, length int64, contentType *byte)
-	webkitURISchemeResponseNew                        func(stream ptr, length int64) ptr
-	webkitURISchemeResponseSetStatus                  func(resp ptr, status uint32, reason *byte)
-	webkitURISchemeResponseSetContentType             func(resp ptr, ct *byte)
-	webkitURISchemeResponseSetHTTPHeaders             func(resp, headers ptr)
-
-	jscValueToString func(v ptr) ptr
-
-	soupMessageHeadersNew     func(typ int32) ptr
-	soupMessageHeadersAppend  func(h ptr, name, value *byte)
-	soupMessageHeadersForeach func(h ptr, fn ptr, data ptr)
-	soupMessageHeadersGetOne  func(h ptr, name *byte) ptr
-
-	cairoSurfaceWriteToPNGStream func(surface ptr, write ptr, closure ptr) int32
-	cairoSurfaceDestroy          func(s ptr)
+	cairoSurfaceDestroy func(s ptr)
 
 	appIndicatorNew            func(id, icon *byte, category int32) ptr
 	appIndicatorSetStatus      func(ind ptr, status int32)
@@ -540,8 +414,6 @@ var (
 	appIndicatorSetLabel       func(ind ptr, label, guide *byte)
 	appIndicatorSetTooltipFull func(ind ptr, icon, title, body *byte)
 )
-
-var webkitVersion string
 
 func load() error {
 	var err error
@@ -839,26 +711,6 @@ func load() error {
 	mustBind(t, &gtkAboutDialogSetCopyright, "gtk_about_dialog_set_copyright")
 	mustBind(t, &gtkAboutDialogSetComments, "gtk_about_dialog_set_comments")
 	mustBind(libGObject, &gTypeCheckInstanceIsA, "g_type_check_instance_is_a")
-	mustBind(t, &gtkPrintSettingsNew, "gtk_print_settings_new")
-	mustBind(t, &gtkPrintSettingsSet, "gtk_print_settings_set")
-	mustBind(t, &gtkPageSetupNew, "gtk_page_setup_new")
-	mustBind(t, &gtkPageSetupSetPaperSize, "gtk_page_setup_set_paper_size")
-	mustBind(t, &gtkPageSetupSetOrientation, "gtk_page_setup_set_orientation")
-	mustBind(t, &gtkPageSetupSetTopMargin, "gtk_page_setup_set_top_margin")
-	mustBind(t, &gtkPageSetupSetBottomMargin, "gtk_page_setup_set_bottom_margin")
-	mustBind(t, &gtkPageSetupSetLeftMargin, "gtk_page_setup_set_left_margin")
-	mustBind(t, &gtkPageSetupSetRightMargin, "gtk_page_setup_set_right_margin")
-	mustBind(t, &gtkPaperSizeNewCustom, "gtk_paper_size_new_custom")
-	mustBind(t, &gtkPaperSizeFree, "gtk_paper_size_free")
-	mustBind(t, &gtkRecentManagerGetDefault, "gtk_recent_manager_get_default")
-	mustBind(t, &gtkRecentManagerAddItem, "gtk_recent_manager_add_item")
-	mustBind(t, &gtkRecentManagerGetItems, "gtk_recent_manager_get_items")
-	mustBind(t, &gtkRecentInfoGetURI, "gtk_recent_info_get_uri")
-	mustBind(t, &gtkRecentInfoHasApplication, "gtk_recent_info_has_application")
-	mustBind(t, &gtkRecentInfoUnref, "gtk_recent_info_unref")
-	mustBind(t, &gtkRecentManagerRemoveItem, "gtk_recent_manager_remove_item")
-	mustBind(t, &gtkRecentManagerHasItem, "gtk_recent_manager_has_item")
-	mustBind(libCairo, &cairoSurfaceWriteToPNGStream, "cairo_surface_write_to_png_stream")
 	mustBind(libCairo, &cairoSurfaceDestroy, "cairo_surface_destroy")
 
 	if libIndicator != 0 {
@@ -870,182 +722,6 @@ func load() error {
 		bind(libIndicator, &appIndicatorSetLabel, "app_indicator_set_label")
 		bind(libIndicator, &appIndicatorSetTooltipFull, "app_indicator_set_tooltip_full")
 	}
-	return nil
-}
-
-var (
-	webKitOnce sync.Once
-	errWebKit  error
-	// webKitLoaded reports, from any thread, that webKit loaded the
-	// libraries and bound their functions.
-	webKitLoaded atomic.Bool
-)
-
-// webKit loads WebKitGTK, JavaScriptCore and libsoup, the first time a
-// window shows a web page or browsing data is cleared, and returns why they
-// did not load. Windows that show Content need GTK alone: an app whose
-// windows all do never loads them, which saves it some 75 libraries, 7 MB
-// and 20 ms of startup.
-//
-// Loading only opens the libraries and binds functions, which any thread
-// may do (WebViewAvailable). WebKitGTK takes the first thread that calls
-// into it for its UI thread, and aborts when another calls later: the
-// first call, persistCookies, waits for the main thread, whose users of
-// WebKit all call webKit first. fixScreenResolution comes before it, so
-// that the first web context reads a sane resolution.
-func webKit() error {
-	webKitOnce.Do(func() {
-		errWebKit = loadWebKit()
-		webKitLoaded.Store(errWebKit == nil)
-	})
-	if errWebKit == nil && theBackend != nil && theBackend.IsMainThread() {
-		resolutionOnce.Do(fixScreenResolution)
-		cookiesOnce.Do(persistCookies)
-	}
-	return errWebKit
-}
-
-func loadWebKit() error {
-	var err error
-	if libWebKit, err = open("libwebkit2gtk-4.1.so.0", "libwebkit2gtk-4.0.so.37"); err != nil {
-		return fmt.Errorf("%w (install WebKitGTK: libwebkit2gtk-4.1-0 on Debian/Ubuntu, webkit2gtk4.1 on Fedora)", err)
-	}
-	// 4.1 links libsoup 3 and 4.0 libsoup 2.4. Opening the loaded library
-	// again returns the same handle, which tells the two apart.
-	h41, _ := open("libwebkit2gtk-4.1.so.0")
-	soup3 = h41 != 0 && h41 == libWebKit
-	jsc, soup := "libjavascriptcoregtk-4.1.so.0", "libsoup-3.0.so.0"
-	if !soup3 {
-		jsc, soup = "libjavascriptcoregtk-4.0.so.18", "libsoup-2.4.so.1"
-	}
-	// SoupCookie pointers must never cross Soup ABI generations.
-	if libJSC, err = open(jsc); err != nil {
-		return err
-	}
-	if libSoup, err = open(soup); err != nil {
-		return err
-	}
-	bindCookies()
-	bindAuth()
-
-	w := libWebKit
-	mustBind(w, &webkitWebContextGetDefault, "webkit_web_context_get_default")
-	mustBind(w, &webkitWebContextRegisterURIScheme, "webkit_web_context_register_uri_scheme")
-	mustBind(w, &webkitWebContextGetSecurityManager, "webkit_web_context_get_security_manager")
-	mustBind(w, &webkitWebContextGetWebsiteDataManager, "webkit_web_context_get_website_data_manager")
-	bind(w, &webkitWebContextSetPreferredLanguages, "webkit_web_context_set_preferred_languages")
-	mustBind(w, &webkitWebsiteDataManagerClear, "webkit_website_data_manager_clear")
-	mustBind(w, &webkitWebsiteDataManagerClearFinish, "webkit_website_data_manager_clear_finish")
-	mustBind(w, &webkitDownloadGetWebView, "webkit_download_get_web_view")
-	mustBind(w, &webkitDownloadGetRequest, "webkit_download_get_request")
-	mustBind(w, &webkitDownloadSetDestination, "webkit_download_set_destination")
-	mustBind(w, &webkitDownloadSetAllowOverwrite, "webkit_download_set_allow_overwrite")
-	mustBind(w, &webkitDownloadCancel, "webkit_download_cancel")
-	mustBind(w, &webkitResponsePolicyDecisionGetResponse, "webkit_response_policy_decision_get_response")
-	mustBind(w, &webkitResponsePolicyDecisionIsMIMETypeSupported, "webkit_response_policy_decision_is_mime_type_supported")
-	mustBind(w, &webkitPolicyDecisionDownload, "webkit_policy_decision_download")
-	mustBind(w, &webkitURIResponseGetURI, "webkit_uri_response_get_uri")
-	mustBind(w, &webkitURIResponseGetHTTPHeaders, "webkit_uri_response_get_http_headers")
-	mustBind(w, &webkitSecurityManagerRegisterSecure, "webkit_security_manager_register_uri_scheme_as_secure")
-	mustBind(w, &webkitSecurityManagerRegisterCORS, "webkit_security_manager_register_uri_scheme_as_cors_enabled")
-	mustBind(w, &webkitUserContentManagerNew, "webkit_user_content_manager_new")
-	mustBind(w, &webkitUserContentManagerRegisterHandler, "webkit_user_content_manager_register_script_message_handler")
-	mustBind(w, &webkitUserContentManagerUnregisterHandler, "webkit_user_content_manager_unregister_script_message_handler")
-	mustBind(w, &webkitUserContentManagerAddScript, "webkit_user_content_manager_add_script")
-	mustBind(w, &webkitUserContentManagerRemoveAllScripts, "webkit_user_content_manager_remove_all_scripts")
-	mustBind(w, &webkitUserScriptNew, "webkit_user_script_new")
-	mustBind(w, &webkitUserScriptUnref, "webkit_user_script_unref")
-	mustBind(w, &webkitWebViewNewWithUserContentManager, "webkit_web_view_new_with_user_content_manager")
-	mustBind(w, &webkitWebViewGetSettings, "webkit_web_view_get_settings")
-	mustBind(w, &webkitSettingsSetEnableDeveloperExtras, "webkit_settings_set_enable_developer_extras")
-	mustBind(w, &webkitSettingsSetUserAgent, "webkit_settings_set_user_agent")
-	mustBind(w, &webkitSettingsGetUserAgent, "webkit_settings_get_user_agent")
-	mustBind(w, &webkitSettingsSetAllowFileAccessFromFileURLs, "webkit_settings_set_allow_file_access_from_file_urls")
-	mustBind(w, &webkitSettingsSetJavascriptCanAccessClipboard, "webkit_settings_set_javascript_can_access_clipboard")
-	mustBind(w, &webkitWebViewLoadURI, "webkit_web_view_load_uri")
-	mustBind(w, &webkitWebViewLoadHTML, "webkit_web_view_load_html")
-	mustBind(w, &webkitWebViewReload, "webkit_web_view_reload")
-	mustBind(w, &webkitWebViewReloadBypassCache, "webkit_web_view_reload_bypass_cache")
-	mustBind(w, &webkitWebViewStopLoading, "webkit_web_view_stop_loading")
-	mustBind(w, &webkitWebViewGoBack, "webkit_web_view_go_back")
-	mustBind(w, &webkitWebViewGoForward, "webkit_web_view_go_forward")
-	mustBind(w, &webkitWebViewCanGoBack, "webkit_web_view_can_go_back")
-	mustBind(w, &webkitWebViewCanGoForward, "webkit_web_view_can_go_forward")
-	mustBind(w, &webkitWebViewIsLoading, "webkit_web_view_is_loading")
-	mustBind(w, &webkitWebViewGetURI, "webkit_web_view_get_uri")
-	mustBind(w, &webkitWebViewGetTitle, "webkit_web_view_get_title")
-	mustBind(w, &webkitWebViewSetZoomLevel, "webkit_web_view_set_zoom_level")
-	mustBind(w, &webkitWebViewGetZoomLevel, "webkit_web_view_get_zoom_level")
-	mustBind(w, &webkitWebViewSetBackgroundColor, "webkit_web_view_set_background_color")
-	bind(w, &webkitWebViewIsPlayingAudio, "webkit_web_view_is_playing_audio")
-	// To turn WebKit's zoom gesture off (stopPinchZoom).
-	bind(libGObject, &gObjectGetData, "g_object_get_data")
-	bind(libGTK, &gtkEventControllerSetPropagationPhase, "gtk_event_controller_set_propagation_phase")
-	if bind(w, &webkitWebViewSetIsMuted, "webkit_web_view_set_is_muted") {
-		mustBind(w, &webkitWebViewGetIsMuted, "webkit_web_view_get_is_muted")
-	}
-	// The capture states of the camera, the microphone and the display
-	// (2.34+), in the order of platform.CaptureKind.
-	for kind, device := range [...]string{"camera", "microphone", "display"} {
-		if bind(w, &webkitWebViewGetCaptureState[kind], "webkit_web_view_get_"+device+"_capture_state") {
-			mustBind(w, &webkitWebViewSetCaptureState[kind], "webkit_web_view_set_"+device+"_capture_state")
-		}
-	}
-	bind(w, &webkitWebViewEvaluateJavascript, "webkit_web_view_evaluate_javascript")
-	bind(w, &webkitWebViewRunJavascript, "webkit_web_view_run_javascript")
-	bind(w, &webkitWebViewCallAsyncJavascriptFunction, "webkit_web_view_call_async_javascript_function")
-	bind(w, &webkitWebViewCallAsyncJavascriptFunctionFinish, "webkit_web_view_call_async_javascript_function_finish")
-	mustBind(w, &webkitWebViewGetInspector, "webkit_web_view_get_inspector")
-	mustBind(w, &webkitWebInspectorShow, "webkit_web_inspector_show")
-	mustBind(w, &webkitWebInspectorClose, "webkit_web_inspector_close")
-	mustBind(w, &webkitWebInspectorGetWebView, "webkit_web_inspector_get_web_view")
-	mustBind(w, &webkitWebViewGetSnapshot, "webkit_web_view_get_snapshot")
-	mustBind(w, &webkitWebViewGetSnapshotFinish, "webkit_web_view_get_snapshot_finish")
-	mustBind(w, &webkitWebViewExecuteEditingCommand, "webkit_web_view_execute_editing_command")
-	mustBind(w, &webkitPrintOperationNew, "webkit_print_operation_new")
-	mustBind(w, &webkitPrintOperationRunDialog, "webkit_print_operation_run_dialog")
-	mustBind(w, &webkitPrintOperationSetPrintSettings, "webkit_print_operation_set_print_settings")
-	mustBind(w, &webkitPrintOperationSetPageSetup, "webkit_print_operation_set_page_setup")
-	mustBind(w, &webkitPrintOperationPrint, "webkit_print_operation_print")
-	mustBind(w, &webkitSettingsGetPrintBackgrounds, "webkit_settings_get_print_backgrounds")
-	mustBind(w, &webkitSettingsSetPrintBackgrounds, "webkit_settings_set_print_backgrounds")
-	mustBind(w, &webkitUserMediaPermissionRequestGetType, "webkit_user_media_permission_request_get_type")
-	mustBind(w, &webkitGeolocationPermissionRequestGetType, "webkit_geolocation_permission_request_get_type")
-	mustBind(w, &webkitNotificationPermissionRequestGetType, "webkit_notification_permission_request_get_type")
-	mustBind(w, &webkitUserMediaPermissionIsForAudioDevice, "webkit_user_media_permission_is_for_audio_device")
-	mustBind(w, &webkitUserMediaPermissionIsForVideoDevice, "webkit_user_media_permission_is_for_video_device")
-	mustBind(w, &webkitPermissionRequestAllow, "webkit_permission_request_allow")
-	mustBind(w, &webkitPermissionRequestDeny, "webkit_permission_request_deny")
-	mustBind(w, &webkitJavascriptResultGetJSValue, "webkit_javascript_result_get_js_value")
-	mustBind(w, &webkitNavigationPolicyDecisionGetNavigationAction, "webkit_navigation_policy_decision_get_navigation_action")
-	bind(w, &webkitNavigationActionGetTargetFrameInfo, "webkit_navigation_action_get_target_frame_info")
-	bind(w, &webkitFrameInfoIsMainFrame, "webkit_frame_info_is_main_frame")
-	mustBind(w, &webkitNavigationActionGetRequest, "webkit_navigation_action_get_request")
-	mustBind(w, &webkitNavigationActionGetNavigationType, "webkit_navigation_action_get_navigation_type")
-	mustBind(w, &webkitNavigationActionIsUserGesture, "webkit_navigation_action_is_user_gesture")
-	mustBind(w, &webkitURIRequestGetURI, "webkit_uri_request_get_uri")
-	mustBind(w, &webkitPolicyDecisionUse, "webkit_policy_decision_use")
-	bind(w, &webkitPolicyDecisionUseWithPolicies, "webkit_policy_decision_use_with_policies")
-	bind(w, &webkitWebsitePoliciesNewWithPolicies, "webkit_website_policies_new_with_policies")
-	mustBind(w, &webkitPolicyDecisionIgnore, "webkit_policy_decision_ignore")
-	mustBind(w, &webkitURISchemeRequestGetURI, "webkit_uri_scheme_request_get_uri")
-	mustBind(w, &webkitURISchemeRequestGetWebView, "webkit_uri_scheme_request_get_web_view")
-	mustBind(w, &webkitURISchemeRequestFinishError, "webkit_uri_scheme_request_finish_error")
-	mustBind(w, &webkitURISchemeRequestFinish, "webkit_uri_scheme_request_finish")
-	bind(w, &webkitURISchemeRequestGetHTTPMethod, "webkit_uri_scheme_request_get_http_method")
-	bind(w, &webkitURISchemeRequestGetHTTPHeaders, "webkit_uri_scheme_request_get_http_headers")
-	bind(w, &webkitURISchemeRequestGetHTTPBody, "webkit_uri_scheme_request_get_http_body")
-	bind(w, &webkitURISchemeRequestFinishWithResponse, "webkit_uri_scheme_request_finish_with_response")
-	bind(w, &webkitURISchemeResponseNew, "webkit_uri_scheme_response_new")
-	bind(w, &webkitURISchemeResponseSetStatus, "webkit_uri_scheme_response_set_status")
-	bind(w, &webkitURISchemeResponseSetContentType, "webkit_uri_scheme_response_set_content_type")
-	bind(w, &webkitURISchemeResponseSetHTTPHeaders, "webkit_uri_scheme_response_set_http_headers")
-
-	mustBind(libJSC, &jscValueToString, "jsc_value_to_string")
-	mustBind(libSoup, &soupMessageHeadersNew, "soup_message_headers_new")
-	mustBind(libSoup, &soupMessageHeadersGetOne, "soup_message_headers_get_one")
-	mustBind(libSoup, &soupMessageHeadersAppend, "soup_message_headers_append")
-	mustBind(libSoup, &soupMessageHeadersForeach, "soup_message_headers_foreach")
 	return nil
 }
 

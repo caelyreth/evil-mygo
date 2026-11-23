@@ -8,13 +8,14 @@ import (
 
 	"github.com/egoist/mygo"
 	win "github.com/egoist/mygo/internal/windows"
+	"github.com/egoist/mygo/ui"
 )
 
 // TestPanelAltF4 asks to close a panel on Alt+F4, which has no window menu
-// (TestPanelStyles), with a material behind its page.
+// (TestPanelStyles), with a material behind its content.
 func TestPanelAltF4(t *testing.T) {
-	panel := newWindow(t, mygo.WindowOptions{Panel: true, Frameless: true, Transparent: true, Vibrancy: mygo.VibrancyPopover, Width: 400, Height: 200})
-	panel.Page().LoadHTML(`<body style="background:transparent">panel</body>`, "")
+	panel := newWindow(t, mygo.WindowOptions{Panel: true, Frameless: true, Transparent: true, Vibrancy: mygo.VibrancyPopover, Width: 400, Height: 200,
+		Content: ui.View(func(c *ui.Context) { ui.Text(c, "panel") })})
 	eventually(t, "the panel focused", panel.IsFocused)
 	var closes atomic.Int32
 	panel.OnClose(func(e *mygo.CloseEvent) { closes.Add(1); e.PreventDefault() })
@@ -27,10 +28,10 @@ func TestPanelAltF4(t *testing.T) {
 // without a maximize box the whole monitor, and the panel, topmost, would
 // hide the taskbar. What shows of it, without its invisible borders, is the
 // work area; the test reads the window's rectangles in pixels, as Windows
-// keeps them, rather than in DIPs through the page or its bounds.
+// keeps them, rather than in DIPs through its bounds.
 func TestPanelMaximizedInWorkArea(t *testing.T) {
-	panel := newWindow(t, mygo.WindowOptions{Panel: true, Frameless: true, Transparent: true, Vibrancy: mygo.VibrancyAcrylic, X: 100, Y: 100, Width: 400, Height: 200})
-	panel.Page().LoadHTML(`<body style="background:transparent">panel</body>`, "")
+	panel := newWindow(t, mygo.WindowOptions{Panel: true, Frameless: true, Transparent: true, Vibrancy: mygo.VibrancyAcrylic, X: 100, Y: 100, Width: 400, Height: 200,
+		Content: ui.View(func(c *ui.Context) { ui.Text(c, "panel") })})
 	eventually(t, "the panel shown", panel.IsVisible)
 	type rects struct {
 		window, shown, client, monitor, work [4]int32

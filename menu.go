@@ -69,12 +69,7 @@ const (
 	RolePasteAndMatchStyle MenuRole = "pasteAndMatchStyle"
 	RoleDelete             MenuRole = "delete"
 	RoleSelectAll          MenuRole = "selectAll"
-	RoleReload             MenuRole = "reload"
-	RoleForceReload        MenuRole = "forceReload"
 	RoleToggleDevTools     MenuRole = "toggleDevTools"
-	RoleResetZoom          MenuRole = "resetZoom"
-	RoleZoomIn             MenuRole = "zoomIn"
-	RoleZoomOut            MenuRole = "zoomOut"
 	RoleToggleFullScreen   MenuRole = "togglefullscreen"
 	RoleMinimize           MenuRole = "minimize"
 	RoleZoom               MenuRole = "zoom"
@@ -653,11 +648,6 @@ func (it *MenuItem) snapshotLocked() *platform.MenuItem {
 	if it.Icon != nil {
 		p.Icon = it.Icon.p
 	}
-	// A web view's item does what the web view does, unless the app gave
-	// it a Click of its own.
-	if it.native != 0 && it.Click == nil {
-		p.Native, p.Name = it.native, it.ID
-	}
 	switch it.Type {
 	case MenuItemSeparator:
 		p.Type = platform.MenuItemSeparator
@@ -690,31 +680,8 @@ func menuItemClicked(uid int, win *Window) {
 	}
 	performRole(it.Role, win)
 	if it.Click != nil {
-		// The context menu of a web view's page is its window's.
-		if win != nil {
-			win = win.top()
-		}
 		it.Click(it, win)
 	}
-}
-
-var zoomSteps = []float64{0.25, 0.33, 0.5, 0.67, 0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3, 4, 5}
-
-func nextZoom(cur float64, dir int) float64 {
-	if dir > 0 {
-		for _, s := range zoomSteps {
-			if s > cur+0.001 {
-				return s
-			}
-		}
-		return zoomSteps[len(zoomSteps)-1]
-	}
-	for i := len(zoomSteps) - 1; i >= 0; i-- {
-		if zoomSteps[i] < cur-0.001 {
-			return zoomSteps[i]
-		}
-	}
-	return zoomSteps[0]
 }
 
 // performRole implements roles that backends report back to Go.
@@ -730,41 +697,11 @@ func performRole(role MenuRole, win *Window) {
 		return
 	}
 	n := win.native
-	// A window showing native UI has no page to reload or zoom; it has
-	// its own inspector.
 	switch role {
 	case RoleToggleDevTools:
-		if c := win.conn; c != nil {
-			if c.ToggleDevTools != nil {
-				c.ToggleDevTools()
-			}
-			return
+		if c := win.conn; c != nil && c.ToggleDevTools != nil {
+			c.ToggleDevTools()
 		}
-	case RoleReload, RoleForceReload, RoleResetZoom, RoleZoomIn, RoleZoomOut:
-		if win.content {
-			return
-		}
-	}
-	switch role {
-	case RoleReload:
-		n.Reload(false)
-	case RoleForceReload:
-		n.Reload(true)
-	case RoleToggleDevTools:
-		if n.IsDevToolsOpened() {
-			n.CloseDevTools()
-		} else {
-			n.OpenDevTools()
-		}
-	case RoleResetZoom:
-		n.SetZoom(1)
-		win.zoomChanged()
-	case RoleZoomIn:
-		n.SetZoom(nextZoom(n.Zoom(), 1))
-		win.zoomChanged()
-	case RoleZoomOut:
-		n.SetZoom(nextZoom(n.Zoom(), -1))
-		win.zoomChanged()
 	case RoleToggleFullScreen:
 		n.SetFullScreen(!n.IsFullScreen())
 	case RoleMinimize:
@@ -776,30 +713,15 @@ func performRole(role MenuRole, win *Window) {
 			n.Maximize()
 		}
 	case RoleClose:
-		win.top().close()
+		win.close()
 	case RoleUndo, RoleRedo, RoleCut, RoleCopy, RolePaste, RoleDelete, RoleSelectAll, RolePasteAndMatchStyle:
 		cmd := map[MenuRole]string{
 			RoleUndo: "undo", RoleRedo: "redo", RoleCut: "cut", RoleCopy: "copy", RolePaste: "paste",
 			RoleDelete: "delete", RoleSelectAll: "selectAll", RolePasteAndMatchStyle: "pasteAndMatchStyle",
 		}[role]
-		if win.content {
-			win.contentCommand(cmd)
-			return
-		}
-		if role == RolePasteAndMatchStyle {
-			cmd = "paste"
-		}
-		n.Eval("document.execCommand(" + `"` + cmd + `"` + ")")
+		win.contentCommand(cmd)
 	case RoleBold, RoleItalic, RoleUnderline, RoleStrikethrough, RoleAlignLeft, RoleAlignCenter, RoleAlignRight:
-		if win.content {
-			win.contentCommand(string(role))
-			return
-		}
-		cmd := map[MenuRole]string{
-			RoleBold: "bold", RoleItalic: "italic", RoleUnderline: "underline", RoleStrikethrough: "strikeThrough",
-			RoleAlignLeft: "justifyLeft", RoleAlignCenter: "justifyCenter", RoleAlignRight: "justifyRight",
-		}[role]
-		n.Eval("document.execCommand(" + `"` + cmd + `"` + ")")
+		win.contentCommand(string(role))
 	}
 }
 
@@ -833,21 +755,11 @@ func roleDefaults(r MenuRole) (label, accel string) {
 		return tx.MenuDelete(), ""
 	case RoleSelectAll:
 		return tx.MenuSelectAll(), "CmdOrCtrl+A"
-	case RoleReload:
-		return tx.MenuReload(), "CmdOrCtrl+R"
-	case RoleForceReload:
-		return tx.MenuForceReload(), "Shift+CmdOrCtrl+R"
 	case RoleToggleDevTools:
 		if mac {
 			return tx.MenuToggleDevTools(), "Alt+Cmd+I"
 		}
 		return tx.MenuToggleDevTools(), "Ctrl+Shift+I"
-	case RoleResetZoom:
-		return tx.MenuActualSize(), "CmdOrCtrl+0"
-	case RoleZoomIn:
-		return tx.MenuZoomIn(), "CmdOrCtrl+Plus"
-	case RoleZoomOut:
-		return tx.MenuZoomOut(), "CmdOrCtrl+-"
 	case RoleToggleFullScreen:
 		if mac {
 			return tx.MenuToggleFullScreen(), "Ctrl+Cmd+F"
@@ -1009,13 +921,7 @@ func roleSubmenu(r MenuRole) []*MenuItem {
 		}
 	case RoleViewMenu:
 		return []*MenuItem{
-			{Role: RoleReload},
-			{Role: RoleForceReload},
 			{Role: RoleToggleDevTools},
-			Separator(),
-			{Role: RoleResetZoom},
-			{Role: RoleZoomIn},
-			{Role: RoleZoomOut},
 			Separator(),
 			{Role: RoleToggleFullScreen},
 		}

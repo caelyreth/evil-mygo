@@ -110,7 +110,6 @@ func (v *Content) AttachContent(conn *surface.Conn) {
 	}
 	h.uiFont()
 	h.textLanguage()
-	h.automate()
 	if devAttach != nil {
 		devAttach(h)
 	}
@@ -179,8 +178,8 @@ type windowHost struct {
 	shown, renewed bool
 	// placed is where the surface shows the window's web views, views
 	// the web views.
-	placed []platform.WebViewPlacement
-	views  []NativeWebView
+	placed []platform.ViewPlacement
+	views  []embeddedView
 	// glassPlaced is where the surface shows the system's glass.
 	glassPlaced []platform.GlassPlacement
 	// waiting tells that a frame paced by the display waits for waitingOn,
@@ -368,11 +367,11 @@ func (h *windowHost) event(ev platform.SurfaceEvent) bool {
 		}
 		return false
 	}
-	if ev.Kind == platform.WebViewTabOut || ev.Kind == platform.WebViewKey {
-		i := slices.IndexFunc(h.placed, func(p platform.WebViewPlacement) bool { return p.WebView == ev.WebView })
+	if ev.Kind == platform.ViewTabOut || ev.Kind == platform.ViewKey {
+		i := slices.IndexFunc(h.placed, func(p platform.ViewPlacement) bool { return p.View == ev.View })
 		switch {
 		case i < 0:
-		case ev.Kind == platform.WebViewTabOut:
+		case ev.Kind == platform.ViewTabOut:
 			h.rt.webViewTabOut(h.views[i], ev.Mods&platform.ModShift != 0)
 		default:
 			h.rt.webViewKey(h.views[i], Modifiers(ev.Mods), Key(ev.Key), Key(ev.PhysicalKey), ev.Repeat)
@@ -1142,34 +1141,36 @@ func sameGlassPlacement(a, b platform.GlassPlacement) bool {
 // placeWebViews gives the surface where the frame shows the window's web
 // views, unless it is where the last frame showed them.
 func (h *windowHost) placeWebViews(views []placedWebView) {
-	list := make([]platform.WebViewPlacement, 0, len(views))
-	natives := make([]NativeWebView, 0, len(views))
+	list := make([]platform.ViewPlacement, 0, len(views))
+	natives := make([]embeddedView, 0, len(views))
 	for _, v := range views {
-		if n := v.v.SurfaceWebView(h.conn); n != nil {
+		if n := v.v.SurfaceView(h.conn); n != nil {
 			list = append(list, v.placement(n))
 			natives = append(natives, v.v)
 		}
 	}
-	if slices.EqualFunc(list, h.placed, func(a, b platform.WebViewPlacement) bool {
-		return a.WebView == b.WebView && a.Frame == b.Frame && a.Clip == b.Clip && a.Width == b.Width && a.Height == b.Height &&
+	if slices.EqualFunc(list, h.placed, func(a, b platform.ViewPlacement) bool {
+		return a.View == b.View && a.Frame == b.Frame && a.Clip == b.Clip && a.Width == b.Width && a.Height == b.Height &&
 			a.Radii == b.Radii && a.Opacity == b.Opacity && slices.Equal(a.Covers, b.Covers)
 	}) {
 		return
 	}
 	h.placed, h.views = list, natives
-	if h.conn.PlaceWebViews != nil {
-		h.conn.PlaceWebViews(list)
-	} else {
-		h.conn.Surface.PlaceWebViews(list)
+	if h.conn.PlaceViews != nil {
+		h.conn.PlaceViews(list)
+	} else if vs, ok := h.conn.Surface.(platform.ViewSurface); ok {
+		vs.PlaceViews(list)
+	} else if pvs, ok := h.conn.Surface.(platform.PluginViewSurface); ok {
+		pvs.PlaceViews(list)
 	}
 }
 
-func (h *windowHost) platformWebView(v NativeWebView) platform.WebView {
-	return v.SurfaceWebView(h.conn)
+func (h *windowHost) platformWebView(v embeddedView) platform.EmbeddedView {
+	return v.SurfaceView(h.conn)
 }
 
-func (h *windowHost) tabIntoWebView(v NativeWebView, back bool) {
-	if n := v.SurfaceWebView(h.conn); n != nil {
+func (h *windowHost) tabIntoWebView(v embeddedView, back bool) {
+	if n := v.SurfaceView(h.conn); n != nil {
 		n.TabInto(back)
 	}
 }

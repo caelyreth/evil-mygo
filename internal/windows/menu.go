@@ -3,7 +3,6 @@
 package windows
 
 import (
-	"encoding/json"
 	"strings"
 	"unsafe"
 
@@ -20,9 +19,6 @@ type menuEntry struct {
 	menu  uintptr // the HMENU holding the item
 	radio bool
 	accel string
-	// native is the number of an item of WebView2's own in a page's
-	// context menu (context_menu.go), 0 for the app's.
-	native int
 	// disabled keeps the app's choice when enableEditItems changes the native
 	// item's state.
 	disabled bool
@@ -159,20 +155,13 @@ func (b *Backend) buildMenu(m *platform.Menu, bar bool, owner int, accels map[ac
 		if it.Checked {
 			flags |= mfChecked
 		}
-		e := &menuEntry{uid: it.ID, role: it.Role, owner: owner, menu: h, radio: it.Type == platform.MenuItemRadio, disabled: !it.Enabled, icon: it.Icon, native: it.Native}
+		e := &menuEntry{uid: it.ID, role: it.Role, owner: owner, menu: h, radio: it.Type == platform.MenuItemRadio, disabled: !it.Enabled, icon: it.Icon}
 		if !bar {
 			e.dpi = dpi
 		}
 		cmd := b.menus.add(e)
 		label := menuLabel(it)
-		if it.Native != 0 {
-			// WebView2's item shows its shortcut as WebView2 words it, and
-			// WebView2 hears its key.
-			if it.Accelerator != "" {
-				e.accel = it.Accelerator
-				label += "\t" + e.accel
-			}
-		} else if a, err := accelerator.Parse(it.Accelerator, "windows"); err == nil && it.Accelerator != "" {
+		if a, err := accelerator.Parse(it.Accelerator, "windows"); err == nil && it.Accelerator != "" {
 			e.accel = acceleratorText(a)
 			label += "\t" + e.accel
 			if vk, ok := virtualKey(a.Key); ok && accels != nil {
@@ -259,43 +248,6 @@ func (w *window) revealMenu(wp, lp uintptr) uintptr {
 		w.attachMenu()
 	}
 	return r
-}
-
-// takeKeyboardForMenus gives the window itself the keyboard for the menu
-// loop of its bar, which starts in it, when the page of its web view has
-// it. The page's window is WebView2's, of another process, whose thread
-// shares the window's input: while it keeps the keyboard, the keys typed
-// in the menus (the arrows, Escape, Alt, the letters) go to whichever of
-// the two threads reads them first, and those the page reads are lost to
-// the menus, which stay open and don't answer, or reach the page behind
-// them. Win32 keeps the keyboard in the menus by reading the thread's
-// keys in their loop, which holds only while the keyboard is in the
-// thread, as the window's own controls are.
-func (w *window) takeKeyboardForMenus() {
-	if w.controller == 0 || w.menusHaveKeyboard {
-		return
-	}
-	focus, _, _ := procGetFocus.Call()
-	if focus == 0 || focus == w.hwnd {
-		return
-	}
-	if t, _, _ := procGetWindowThreadProcessId.Call(focus, 0); uint32(t) == currentThreadID() {
-		return
-	}
-	w.menusHaveKeyboard = true // WM_SETFOCUS leaves the keyboard in the window
-	procSetFocus.Call(w.hwnd)
-}
-
-// giveKeyboardBack gives the page the keyboard that takeKeyboardForMenus
-// took, once the menus close, unless it went elsewhere meanwhile.
-func (w *window) giveKeyboardBack() {
-	if !w.menusHaveKeyboard {
-		return
-	}
-	w.menusHaveKeyboard = false
-	if focus, _, _ := procGetFocus.Call(); focus == w.hwnd && !w.closed {
-		w.focusWebView()
-	}
 }
 
 // popupMenuBar opens the menus of the menu bar from the top-left corner of
@@ -439,17 +391,8 @@ func (b *Backend) focusedWindow() *window {
 	return b.windows[fg]
 }
 
-// editRole performs the edit roles in the page, or sends them to native UI.
-// DevTools evaluation gives document.execCommand a user gesture.
+// editRole sends the edit roles to the native UI surface.
 func editRole(w *window, role string) bool {
-	commands := map[string]string{
-		"undo": "undo", "redo": "redo", "cut": "cut", "copy": "copy",
-		"delete": "delete", "selectAll": "selectAll",
-	}
-	if v := w.focusedWebView(); v != nil {
-		// The page of a web view in the content has the keyboard.
-		return editRole(v, role)
-	}
 	if w.surface != nil {
 		if !platform.EditCommands[role] {
 			return false
@@ -457,48 +400,14 @@ func editRole(w *window, role string) bool {
 		w.h.SurfaceEvent(platform.SurfaceEvent{Kind: platform.SurfaceCommand, Text: role})
 		return true
 	}
-	switch role {
-	case "paste":
-		// Run Chromium's paste command with every clipboard format. The
-		// page sees keydown and keyup, but an Unidentified key without
-		// modifiers avoids invoking its Ctrl+V handlers too.
-		w.withWebView(func() {
-			w.focusWebView() // the menu has closed
-			w.devtools("Input.dispatchKeyEvent", `{"type":"rawKeyDown","key":"Unidentified","commands":["paste"]}`, func(_ string, err error) {
-				if err != nil {
-					return
-				}
-				w.withWebView(func() {
-					w.devtools("Input.dispatchKeyEvent", `{"type":"keyUp","key":"Unidentified"}`, nil)
-				})
-			})
-		})
-		return true
-	case "pasteAndMatchStyle":
-		text := clipboard{w.b}.ReadText()
-		params, _ := json.Marshal(map[string]string{"text": text})
-		w.withWebView(func() { w.devtools("Input.insertText", string(params), nil) })
-		return true
-	}
-	cmd, ok := commands[role]
-	if !ok {
-		// The Format menu's, in the page with the keyboard.
-		cmd, ok = formatCommands[role]
-	}
-	if !ok {
-		return false
-	}
-	params, _ := json.Marshal(map[string]any{"expression": "document.execCommand(" + jsString(cmd) + ")", "userGesture": true})
-	w.withWebView(func() { w.devtools("Runtime.evaluate", string(params), nil) })
-	return true
+	return false
 }
 
 // enableEditItems enables the items of the edit roles in menu, of the
 // window's menu bar or a popup over it, as the native UI the window shows
-// can act on them. Those of a page keep the app's state: what a page would
-// do is not known before.
+// can act on them.
 func (w *window) enableEditItems(menu uintptr) {
-	native := w.surface != nil && w.focusedWebView() == nil
+	native := w.surface != nil
 	for cmd, e := range w.b.menus.entries {
 		if e.menu != menu || !platform.EditCommands[e.role] {
 			continue
@@ -513,18 +422,6 @@ func (w *window) enableEditItems(menu uintptr) {
 		}
 		procEnableMenuItem.Call(e.menu, uintptr(cmd), flags)
 	}
-}
-
-// formatCommands are the page's commands of the Format menu's roles; in
-// native UI, they go to the content as the other roles.
-var formatCommands = map[string]string{
-	"bold": "bold", "italic": "italic", "underline": "underline", "strikethrough": "strikeThrough",
-	"alignLeft": "justifyLeft", "alignCenter": "justifyCenter", "alignRight": "justifyRight",
-}
-
-func jsString(s string) string {
-	b, _ := json.Marshal(s)
-	return string(b)
 }
 
 func (b *Backend) PopupMenu(m *platform.Menu, pw platform.Window, pos *platform.Point) {

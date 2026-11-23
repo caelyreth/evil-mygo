@@ -5,8 +5,6 @@ package windows
 import (
 	"errors"
 	"log"
-	"syscall"
-	"time"
 	"unsafe"
 
 	"github.com/egoist/mygo/internal/platform"
@@ -25,43 +23,8 @@ type window struct {
 	flyout     platform.Flyout
 	flyoutSize platform.Size
 
-	// The WebView2 controller is created asynchronously; calls that need
-	// it wait in pending until it exists, or fail with webViewErr, why it
-	// could not be created.
-	controller   uintptr // ICoreWebView2Controller
-	webview      uintptr // ICoreWebView2
-	settings     uintptr // ICoreWebView2Settings
-	ready        bool
-	pending      []pendingCall
-	webViewErr   error
-	webViewFails int // creations that failed
-	// creating is true from the time WebView2 was asked for the controller
-	// until it answered.
-	creating bool
-	// scriptIDs are the ids of the scripts added to every document, which
-	// SetUserScripts removes; scriptGen counts the replacements, so an id
-	// that arrives after one is removed at once.
-	scriptIDs  []string
-	scriptGen  int
 	closed     bool
 	destroying bool
-	// schemes are the custom scheme responses whose handlers run, which
-	// end when the page's webview closes (webview.go).
-	schemes map[*schemeResponse]struct{}
-
-	// contentFilter applies the content rules of SetContentRules to a
-	// request (content_rules.go), and reports whether it answered it; nil
-	// without any. filtersAll tells that WebView2 asks about every
-	// request, and hidingScript hides what the rules hide in every
-	// document. navigating is the page loading, the top-level URL of its
-	// own request.
-	contentFilter func(args, req uintptr, uri string, resource int32) bool
-	filtersAll    bool
-	hidingScript  string
-	navigating    string
-	// reloadAdopted reloads the first document of an adopted popup
-	// (newWindowRequested).
-	reloadAdopted bool
 
 	minW, minH, maxW, maxH int // DIPs
 	movable, closable      bool
@@ -70,13 +33,11 @@ type window struct {
 	caption                *captionBar // the controls in its place, nil if they failed
 	buttonsTheme           string      // "light" or "dark" for the controls (SetWindowButtonsTheme), "" as the app
 	topEdge                uintptr     // the window over the top resize border of one without a caption (topedge.go), or 0
-	noRedirect             bool        // no redirection bitmap, for a material behind the page
+	noRedirect             bool        // no redirection bitmap, for a material behind the surface
 	fullScreen             bool
-	fullByApp              bool     // the app asked for the full screen; the page's own does not end it
-	pageFull               bool     // the page has an element full screen (webview.go)
-	reframing              bool     // SetFullScreen is changing the frame
-	showMaximized          bool     // on the first show (WindowOptions.Maximized)
-	dropped                []string // DroppedFiles
+	fullByApp              bool // the app asked for the full screen
+	reframing              bool // SetFullScreen is changing the frame
+	showMaximized          bool // on the first show (WindowOptions.Maximized)
 	skipTaskbar            bool
 	progress               struct {
 		state string
@@ -95,35 +56,9 @@ type window struct {
 	// placing is the rectangle, in pixels, that place is moving the window
 	// to, already in the DPI of its display: WM_DPICHANGED keeps it.
 	placing *rect
-	// surface shows the content MyGo draws, in place of the webview.
+	// surface shows the content MyGo draws.
 	surface *surface
-	// webViews are the web views under the surface (webview_embed.go), and
-	// host the window whose surface a web view is under, which shows it
-	// through its composition controller comp (comp3 its drag and drop,
-	// on runtimes having it; uia the provider of its page for UI
-	// Automation), in the visual webVis inside clipVis, where placement puts
-	// it while shown: scaled by pageScale from pageAt, in the surface's
-	// pixels, and cut to its corners by corners, a rectangle clip of
-	// webVis. focused tells that it has the keyboard, and
-	// cursor is the cursor its page wants. hidden tells that a host is
-	// hidden, which hides its web views too: WebView2 shows their pages
-	// in windows of its own, which hiding the host alone leaves on the
-	// desktop.
-	webViews         []*window
-	host             *window
-	comp, comp3, uia uintptr
-	clipVis, webVis  uintptr
-	placement        platform.WebViewPlacement
-	pageAt           [2]float32
-	pageScale        [2]float32
-	corners          uintptr
-	// effect fades the page itself, where the placement says it does not
-	// show whole, which the clip visual's sub-tree is composed by.
-	effect         uintptr
-	shown, focused bool
-	hidden         bool
-	cursor         uintptr
-	saved          struct {
+	saved   struct {
 		style, exStyle uintptr
 		placement      windowPlacement
 	}
@@ -150,26 +85,9 @@ type window struct {
 	// the keyboard is in the menu bar.
 	autoHideMenu, revealed bool
 	inMenu                 bool    // in a menu loop, of the bar or a popup
-	menusHaveKeyboard      bool    // the bar's menu loop took the keyboard from the page (takeKeyboardForMenus)
 	menuKey                menuKey // the letter that opened popupMenuBar
 
-	programmatic bool
-	loading      bool
-	zoom         float64
-	userZoom     float64   // on ARM64, the controller's zoom, which the user's Ctrl+wheel sets, under the CSS one (abi_arm64.go); 0 for 1
-	muted        bool      // SetAudioMuted, which setUp applies to a web view made later
-	mutePut      time.Time // when the IsMuted put in flight was made, zero for none
-	devTools     bool
-	htmlFor      map[string]string // LoadHTML documents by the URL they load at
-	htmlNext     bool              // LoadHTML started the next navigation
-	calls        map[int]func(string, error)
-	nextCall     int
-
 	active bool
-	// atePageUp is the mouse button release of an activation press
-	// WM_MOUSEACTIVATE ate on a WebView2 page window, held until the
-	// release arrives so it does not land in the page as an orphan mouseup.
-	atePageUp uint32
 
 	// flyoutLeft tells that the activation left the window's focusable
 	// flyout for another app's window, which draws the window inactive
@@ -178,17 +96,11 @@ type window struct {
 }
 
 func (b *Backend) NewWindow(o *platform.WindowOptions, h platform.WindowHandler) (platform.Window, error) {
-	if !o.Surface {
-		if err := b.startEnvironment(o); err != nil {
-			return nil, err
-		}
-	}
 	w := &window{
 		b: b, h: h, opts: o,
 		movable: o.Movable, closable: o.Closable, frameless: o.Frameless,
-		opacity: 1, zoom: 1, shadow: o.HasShadow, autoHideMenu: o.AutoHideMenu,
+		opacity: 1, shadow: o.HasShadow, autoHideMenu: o.AutoHideMenu,
 		minW: o.MinSize.Width, minH: o.MinSize.Height, maxW: o.MaxSize.Width, maxH: o.MaxSize.Height,
-		htmlFor: map[string]string{}, calls: map[int]func(string, error){},
 	}
 	w.hiddenTitleBar = !o.Frameless && (o.TitleBarStyle == "hidden" || o.TitleBarStyle == "hiddenInset")
 	// A page or native UI with a material behind it needs a window without
@@ -265,11 +177,9 @@ func (b *Backend) NewWindow(o *platform.WindowOptions, h platform.WindowHandler)
 		w.caption = newCaptionBar(w)
 	}
 	w.newTopEdge()
-	if o.Surface {
-		if w.surface = newSurface(w); w.surface == nil {
-			procDestroyWindow.Call(w.hwnd)
-			return nil, errors.New("mygo: cannot create the window's surface")
-		}
+	if w.surface = newSurface(w); w.surface == nil {
+		procDestroyWindow.Call(w.hwnd)
+		return nil, errors.New("mygo: cannot create the window's surface")
 	}
 	b.applyWindowTheme(w)
 	if o.Vibrancy != "" {
@@ -292,9 +202,6 @@ func (b *Backend) NewWindow(o *platform.WindowOptions, h platform.WindowHandler)
 	}
 	w.skipTaskbar = o.SkipTaskbar // applied once the taskbar button exists
 	w.layoutControls()
-	if webViewBuilt && !o.Surface {
-		b.whenEnvironment(w.createWebView)
-	}
 	return w, nil
 }
 
@@ -323,10 +230,10 @@ func initialWindowBounds(o *platform.WindowOptions, s dipSpace) rect {
 // to show without a redirection bitmap; make it only when they need it.
 func (w *window) needsNoRedirect(compose func() *composition) bool {
 	o := w.opts
-	if o.Flyout != nil || o.Transparent && o.Surface {
+	if o.Flyout != nil || o.Transparent {
 		return compose() != nil
 	}
-	return !o.Surface && o.Transparent || o.Vibrancy != "" && systemBackdrops() && (!w.hiddenTitleBar && !o.Surface || compose() != nil)
+	return o.Vibrancy != "" && systemBackdrops() && compose() != nil
 }
 
 func (w *window) styles() (style, ex uint32) {
@@ -504,56 +411,6 @@ func (w *window) monitor() uintptr {
 	return m
 }
 
-// releaseMessage maps a mouse-down message from WM_MOUSEACTIVATE to its
-// matching mouse-up message.
-func releaseMessage(down uint16) uint32 {
-	switch down {
-	case wmLButtonDown:
-		return wmLButtonUp
-	case wmRButtonDown:
-		return wmRButtonUp
-	case wmMButtonDown:
-		return wmMButtonUp
-	case wmXButtonDown:
-		return wmXButtonUp
-	}
-	return 0
-}
-
-// webViewChild returns WebView2's direct child window (Chrome_WidgetWin_0)
-// under w.hwnd, or 0 if none exists. That class name is WebView2's
-// undocumented internal host window; when it is absent, syncWebViewEnabled
-// is a no-op and the activation click falls back to reaching the page.
-func (w *window) webViewChild() uintptr {
-	const gwHwndNext = 2
-	for h, _, _ := procGetTopWindow.Call(w.hwnd); h != 0; h, _, _ = procGetNextWindow.Call(h, gwHwndNext) {
-		var buf [32]uint16
-		n, _, _ := procGetClassNameW.Call(h, uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf)))
-		if syscall.UTF16ToString(buf[:n]) == "Chrome_WidgetWin_0" {
-			return h
-		}
-	}
-	return 0
-}
-
-// syncWebViewEnabled disables WebView2's child window while an inactive
-// window has ConsumeActivationClick set (or is still awaiting the release of
-// an eaten activation press), so Windows routes WM_MOUSEACTIVATE and the
-// matching button-up to w.hwnd instead of WebView2's cross-process
-// Chrome_RenderWidgetHostHWND.
-func (w *window) syncWebViewEnabled() {
-	if !webViewBuilt || !w.opts.ConsumeActivationClick || w.host != nil || w.surface != nil || w.controller == 0 {
-		return
-	}
-	if child := w.webViewChild(); child != 0 {
-		enable := uintptr(0)
-		if w.active && w.atePageUp == 0 {
-			enable = 1
-		}
-		procEnableWindow.Call(child, enable)
-	}
-}
-
 // message handles a window message; ok false lets DefWindowProc run.
 func (w *window) message(m uint32, wp, lp uintptr) (uintptr, bool) {
 	if m == w.b.taskbarButtonCreated && m != 0 {
@@ -569,20 +426,8 @@ func (w *window) message(m uint32, wp, lp uintptr) (uintptr, bool) {
 	if m == wmMouseActivate && (w.ownsFocusableFlyout() || !w.active && w.opts.ConsumeActivationClick && loword(lp) == htClient) {
 		if w.surface != nil {
 			w.surface.eatActivationRelease(hiword(lp))
-		} else if w.opts.ConsumeActivationClick && w.controller != 0 {
-			w.atePageUp = releaseMessage(hiword(lp))
 		}
 		return maActivateAndEat, true
-	}
-	if m != 0 && m == w.atePageUp {
-		w.atePageUp = 0
-		procReleaseCapture.Call()
-		w.syncWebViewEnabled()
-		if w.active {
-			// WM_SETFOCUS came while the child was disabled, so MoveFocus could not take focus yet.
-			w.focusWebView()
-		}
-		return 0, true
 	}
 	if m == wmNCActivate && wp == 0 && w.keepsActive() {
 		// Its flyout takes the activation: the frame and the material
@@ -625,49 +470,22 @@ func (w *window) message(m uint32, wp, lp uintptr) (uintptr, bool) {
 			checkInputRegion(w)
 			return 0, true
 		}
-		if wp != timerWebView {
-			return 0, false
-		}
-		procKillTimer.Call(w.hwnd, timerWebView)
-		if webViewBuilt {
-			w.createWebView()
-		}
-		return 0, true
+		return 0, false
 	case wmSize:
 		if !w.reframing { // SetFullScreen lays the window out once it is done
 			w.sized(wp)
 		}
 		return 0, true
 	case wmShowWindow:
-		w.hidden = wp == 0
-		for _, v := range w.webViews {
-			v.placeEmbedded()
-		}
 		if inputRegionShown != nil {
 			inputRegionShown(w, wp != 0)
 		}
 		return 0, false
 	case wmMove:
-		if w.controller != 0 {
-			comCall(w.controller, ctlNotifyParentWindowPositionChanged)
-		}
-		for _, v := range w.webViews {
-			if v.controller != 0 {
-				comCall(v.controller, ctlNotifyParentWindowPositionChanged)
-			}
-		}
 		w.h.Moved()
 		return 0, true
 	case wmActivate:
-		const waClickActive = 2
 		w.active = loword(wp) != waInactive
-		if loword(wp) != waClickActive {
-			w.atePageUp = 0
-		}
-		w.syncWebViewEnabled()
-		if loword(wp) == waClickActive && w.atePageUp != 0 {
-			procSetCapture.Call(w.hwnd)
-		}
 		if w.active {
 			w.flyoutLeft = false
 		}
@@ -680,25 +498,9 @@ func (w *window) message(m uint32, wp, lp uintptr) (uintptr, bool) {
 			w.h.Focused()
 		}
 		return 0, false
-	case wmCaptureChanged:
-		if w.atePageUp != 0 && lp != w.hwnd {
-			w.atePageUp = 0
-			w.syncWebViewEnabled()
-		}
-	case wmLButtonDown, wmLButtonDblClk, wmRButtonDown, wmRButtonDblClk, wmMButtonDown, wmMButtonDblClk, wmXButtonDown, wmXButtonDblClk:
-		if w.atePageUp != 0 {
-			w.atePageUp = 0
-			procReleaseCapture.Call()
-			w.syncWebViewEnabled()
-		}
 	case wmSetFocus:
-		if w.menusHaveKeyboard {
-			return 0, true // the page gets it back once the menus close
-		}
 		if w.surface != nil {
 			procSetFocus.Call(w.surface.hwnd)
-		} else {
-			w.focusWebView()
 		}
 		return 0, true
 	case wmGetMinMaxInfo:
@@ -774,12 +576,8 @@ func (w *window) message(m uint32, wp, lp uintptr) (uintptr, bool) {
 		if w.surface != nil {
 			w.surface.liftKeys()
 		}
-		if wp == 0 { // the bar's, or the window menu's, not TrackPopupMenu's
-			w.takeKeyboardForMenus()
-		}
 	case wmExitMenuLoop:
 		w.inMenu = false
-		w.giveKeyboardBack()
 	case wmMenuChar:
 		if r, ok := w.menuChar(wp, lp); ok {
 			return r, true
@@ -805,7 +603,6 @@ func (w *window) message(m uint32, wp, lp uintptr) (uintptr, bool) {
 // sized lays the window out after it changed size or state (a WM_SIZE kind),
 // and tells the app.
 func (w *window) sized(kind uintptr) {
-	w.resizeWebView()
 	if w.surface != nil {
 		// What the window grew by shows the content's background, not
 		// black, until the surface presents the frame of its new size,
@@ -1051,28 +848,15 @@ func (w *window) cleanup() {
 	if w.closed {
 		return
 	}
-	w.closeWebViews()
 	w.closed = true
 	if w.opts.Modal && w.parent != nil && !w.parent.closed {
 		procEnableWindow.Call(w.parent.hwnd, 1)
 	}
-	for id, cb := range w.calls {
-		delete(w.calls, id)
-		cb("", errDestroyed)
-	}
-	w.failPending(errDestroyed)
 	if w.caption != nil {
 		w.caption.forget()
 	}
 	if w.topEdge != 0 {
 		delete(w.b.topEdges, w.topEdge)
-	}
-	if w.controller != 0 {
-		comCall(w.controller, ctlClose)
-		release(w.settings)
-		release(w.webview)
-		release(w.controller)
-		w.controller, w.webview, w.settings = 0, 0, 0
 	}
 	w.b.menus.drop(w.owner)
 	// Windows destroys the menu bar on the window, not one hidden off it.
@@ -1088,8 +872,7 @@ func (w *window) cleanup() {
 	delete(w.b.windows, w.hwnd)
 }
 
-func (w *window) Handle() uintptr        { return w.hwnd }
-func (w *window) WebViewHandle() uintptr { return w.webview }
+func (w *window) Handle() uintptr { return w.hwnd }
 
 func (w *window) SetTitle(title string) {
 	procSetWindowTextW.Call(w.hwnd, uintptr(unsafe.Pointer(u16(title))))
@@ -1315,10 +1098,6 @@ func (w *window) IsVisible() bool {
 }
 
 func (w *window) Focus() {
-	if w.host != nil {
-		w.focusWebView()
-		return
-	}
 	if f := w.opts.Flyout; f != nil && !f.Focusable {
 		w.Show() // never activated
 		return
@@ -1327,7 +1106,6 @@ func (w *window) Focus() {
 		procShowWindow.Call(w.hwnd, swRestore)
 	}
 	procSetForegroundWindow.Call(w.hwnd)
-	w.focusWebView()
 }
 
 func (w *window) Blur() {
@@ -1339,9 +1117,6 @@ func (w *window) Blur() {
 }
 
 func (w *window) IsFocused() bool {
-	if w.host != nil {
-		return w.focused
-	}
 	fg, _, _ := procGetForegroundWindow.Call()
 	return fg == w.hwnd
 }
@@ -1349,9 +1124,9 @@ func (w *window) IsFocused() bool {
 // CornerRadius is the 8 DIPs Windows 11 rounds a window's corners with: a
 // window with a frame, a panel, or a frameless one given a CornerRadius
 // (which takes the system's whatever its radius). A maximized or full-screen
-// window, a child host, and every window before Windows 11 are square.
+// window and every window before Windows 11 are square.
 func (w *window) CornerRadius() float64 {
-	if w.host != nil || !windows11() || w.fullScreen || w.IsMaximized() {
+	if !windows11() || w.fullScreen || w.IsMaximized() {
 		return 0
 	}
 	if w.frameless && !w.opts.Panel && w.opts.CornerRadius <= 0 {
@@ -1423,10 +1198,9 @@ func (w *window) setFullScreen(v bool, byApp bool) {
 	}
 	if !v {
 		if !byApp && w.fullByApp {
-			return // the app has this window full screen; the page leaving its own is no leave
+			return
 		}
 		w.fullByApp = false
-		w.leavePageFullScreen()
 	}
 	if w.inMenu {
 		procEndMenu.Call() // its menus come from a bar that comes or goes
@@ -1481,43 +1255,13 @@ func (w *window) Center() {
 
 func (w *window) SetBackgroundColor(c platform.Color) {
 	w.bg = &c
-	// A web view in native UI has no window of its own to paint: only
-	// WebView2 fills it, and a brush would outlive it.
-	if w.host == nil {
-		if w.bgBrush != 0 {
-			procDeleteObject.Call(w.bgBrush)
-		}
-		w.bgBrush, _, _ = procCreateSolidBrush.Call(uintptr(c.R) | uintptr(c.G)<<8 | uintptr(c.B)<<16)
+	if w.bgBrush != 0 {
+		procDeleteObject.Call(w.bgBrush)
 	}
-	w.withWebView(w.applyWebViewBackground)
+	w.bgBrush, _, _ = procCreateSolidBrush.Call(uintptr(c.R) | uintptr(c.G)<<8 | uintptr(c.B)<<16)
 	if w.hwnd != 0 {
 		procInvalidateRect(w.hwnd)
 	}
-}
-
-// applyWebViewBackground paints the webview before its page does:
-// transparent with a material behind it, else the background color.
-// WebView2 only supports fully opaque or fully transparent backgrounds.
-// A transparent page shows the window's background color behind it, which
-// GDI paints; in a window without a redirection bitmap, the webview does.
-func (w *window) applyWebViewBackground() {
-	ctl2 := queryInterface(w.controller, &iidICoreWebView2Controller2)
-	if ctl2 == 0 {
-		return
-	}
-	defer release(ctl2)
-	var c uint32 = 0xFFFFFFFF // opaque white: A, R, G, B bytes
-	switch {
-	case w.vibrancy != "":
-		c = 0
-	case w.opts.Transparent && (w.bg == nil || !w.noRedirect):
-		c = 0
-	case w.bg != nil && w.bg.A == 0:
-		c = 0
-	case w.bg != nil:
-		c = 0xFF | uint32(w.bg.R)<<8 | uint32(w.bg.G)<<16 | uint32(w.bg.B)<<24
-	}
-	comCall(ctl2, ctl2PutDefaultBackgroundColor, uintptr(c))
 }
 
 func (w *window) SetOpacity(v float64) {
@@ -1656,7 +1400,6 @@ func (w *window) SetVibrancy(material string) {
 	if material == "" && w.captionless() && w.shadow {
 		w.SetHasShadow(true)
 	}
-	w.withWebView(w.applyWebViewBackground)
 	procInvalidateRect(w.hwnd)
 }
 
@@ -1752,10 +1495,6 @@ func (w *window) TitleBarDoubleClicked() {
 }
 
 func (w *window) Close() {
-	if w.host != nil {
-		w.closeWebView()
-		return
-	}
 	if !w.closed {
 		w.destroy()
 	}

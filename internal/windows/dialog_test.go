@@ -3,6 +3,7 @@
 package windows
 
 import (
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -10,6 +11,12 @@ import (
 
 	"github.com/egoist/mygo/internal/platform"
 )
+
+func comInit(t *testing.T) {
+	runtime.LockOSThread()
+	t.Cleanup(runtime.UnlockOSThread)
+	procCoInitializeEx.Call(0, coinitApartmentThreaded)
+}
 
 // TestOpenDialogOptions checks the options of open dialogs: a folder
 // picker never forces items of the file system, which freezes it on WSL

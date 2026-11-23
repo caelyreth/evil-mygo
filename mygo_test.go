@@ -5,33 +5,27 @@ package mygo
 import (
 	"cmp"
 	"context"
-	"encoding/json/jsontext"
 	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"image/color"
 	"io"
-	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"reflect"
-	"regexp"
 	"runtime"
 	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
-	"testing/fstest"
 	"time"
 
 	"github.com/egoist/mygo/internal/fake"
 	"github.com/egoist/mygo/internal/platform"
-	"github.com/egoist/mygo/internal/tsgen"
 	"github.com/egoist/mygo/internal/wait"
 	"github.com/egoist/mygo/transfer"
-	"github.com/egoist/mygo/ui"
 )
 
 var fb *fake.Backend
@@ -72,9 +66,6 @@ func TestMain(m *testing.M) {
 	if mode := os.Getenv("MYGO_TEST_END_SESSION"); mode != "" {
 		endSession(mode)
 	}
-	if os.Getenv("MYGO_TEST_EVAL_AFTER_QUIT") == "1" {
-		evalAfterQuit()
-	}
 	// A quit that a test lets through must not end the tests.
 	stopGrace = 0
 	if os.Getenv("MYGO_TEST_BEFORE_RUN") == "1" {
@@ -98,74 +89,7 @@ func testWindow(t *testing.T, opts WindowOptions) (*Window, *fake.Window) {
 	w := NewWindow(opts)
 	t.Cleanup(w.Destroy)
 	wins := fb.Windows()
-	fw := wins[len(wins)-1]
-	// Like a page loaded with LoadHTML.
-	onMain(func() { fw.H.NavigationCommitted("about:blank") })
-	return w, fw
-}
-
-// readyWindow is testWindow for a window whose page is loaded.
-func readyWindow(t *testing.T, opts WindowOptions) (*Window, *fake.Window) {
-	t.Helper()
-	w, fw := testWindow(t, opts)
-	page(fw, `{"t":"dom-ready"}`)
-	return w, fw
-}
-
-// page simulates the page bridge posting a message.
-func page(fw *fake.Window, msg string) {
-	s := secret(fw)
-	onMain(func() { fw.H.Message(s + msg) })
-}
-
-// secret returns the secret the bridge of fw prefixes its messages with.
-func secret(fw *fake.Window) string {
-	m := regexp.MustCompile(`"secret":"([^"]+)"`).FindStringSubmatch(fw.Opts.UserScripts[0].Source)
-	if m == nil {
-		panic("no secret in the bridge configuration")
-	}
-	return m[1]
-}
-
-// received waits until the page received a message matching pred.
-func received(t *testing.T, fw *fake.Window, pred func(m map[string]any) bool) map[string]any {
-	t.Helper()
-	var found map[string]any
-	if wait.Poll(func() bool {
-		for _, s := range fw.Scripts() {
-			const prefix = "__mygo.receive("
-			if !strings.HasPrefix(s, prefix) {
-				continue
-			}
-			var msgs []map[string]any
-			if err := json.Unmarshal([]byte(strings.TrimSuffix(strings.TrimPrefix(s, prefix), ")")), &msgs); err != nil {
-				t.Fatalf("bad script %q: %v", s, err)
-			}
-			for _, m := range msgs {
-				if pred(m) {
-					found = m
-					return true
-				}
-			}
-		}
-		return false
-	}) {
-		return found
-	}
-	t.Fatalf("message not received; scripts: %q", fw.Scripts())
-	return nil
-}
-
-func call(t *testing.T, fw *fake.Window, id int, method string, args ...any) map[string]any {
-	t.Helper()
-	if args == nil {
-		args = []any{}
-	}
-	a, _ := json.Marshal(args)
-	page(fw, fmt.Sprintf(`{"t":"call","id":%d,"k":"tok","m":%q,"a":%s}`, id, method, a))
-	return received(t, fw, func(m map[string]any) bool {
-		return m["t"] == "reply" && m["id"] == float64(id)
-	})
+	return w, wins[len(wins)-1]
 }
 
 // A window made with IgnoreMouseEvents lets the mouse through from the
@@ -203,20 +127,11 @@ func TestWindowDefaults(t *testing.T) {
 	if o.Width != 800 || o.Height != 600 || !o.Center || o.Title != "MyGoTest" {
 		t.Errorf("unexpected defaults: %+v", o)
 	}
-	if !o.Resizable || !o.Closable || !o.Minimizable || !o.Maximizable || !o.HasShadow || o.Opacity != 1 || o.Zoom != 1 {
+	if !o.Resizable || !o.Closable || !o.Minimizable || !o.Maximizable || !o.HasShadow || o.Opacity != 1 {
 		t.Errorf("unexpected capability defaults: %+v", o)
 	}
 	if !o.DevTools {
 		t.Error("devtools should be enabled in development")
-	}
-	// Tab reaches every control, as desktop apps do, unless asked otherwise.
-	if !o.TabFocusesLinks {
-		t.Error("Tab should reach links and form controls by default")
-	}
-	// The bridge configuration, then the settings of the desktop, which it
-	// tells.
-	if len(o.UserScripts) != 2 || !strings.Contains(o.UserScripts[0].Source, `"windowId":`+fmt.Sprint(w.ID())) {
-		t.Errorf("bridge script not configured: %v", o.UserScripts)
 	}
 	if !w.IsVisible() {
 		t.Error("window should be shown by default")
@@ -301,7 +216,7 @@ func TestWindowOptions(t *testing.T) {
 	_, fw := testWindow(t, WindowOptions{
 		Title: "Custom", Width: 300, Height: 200, X: 10, Y: 20,
 		Hidden: true, DisableResize: true, BackgroundColor: "#11223380",
-		Page: PageOptions{DevTools: DevToolsDisabled, PreloadScript: "window.x = 1"}, Parent: parent, URL: "https://example.com/",
+		DevTools: DevToolsDisabled, Parent: parent,
 	})
 	o := fw.Opts
 	if o.Title != "Custom" || o.Width != 300 || o.Center || o.Resizable || o.DevTools {
@@ -310,19 +225,11 @@ func TestWindowOptions(t *testing.T) {
 	if c := o.BackgroundColor; c == nil || *c != (platform.Color{R: 0x11, G: 0x22, B: 0x33, A: 0x80}) {
 		t.Errorf("background color: %v", c)
 	}
-	// The bridge configuration, the settings of the desktop, then the app's
-	// preload script.
-	if len(o.UserScripts) != 3 || o.UserScripts[2].Source != "window.x = 1" {
-		t.Errorf("preload script: %v", o.UserScripts)
-	}
 	if o.Parent == nil {
 		t.Error("parent not passed")
 	}
 	if fw.IsVisible() {
 		t.Error("hidden window was shown")
-	}
-	if fw.URL() != "https://example.com/" {
-		t.Errorf("URL not loaded: %q", fw.URL())
 	}
 }
 
@@ -332,13 +239,6 @@ func TestConsumeActivationClickOption(t *testing.T) {
 		if fw.Opts.ConsumeActivationClick != enabled {
 			t.Errorf("ConsumeActivationClick = %v, want %v", fw.Opts.ConsumeActivationClick, enabled)
 		}
-	}
-}
-
-func TestSafariTabFocusOption(t *testing.T) {
-	_, fw := testWindow(t, WindowOptions{Page: PageOptions{SafariTabFocus: true}})
-	if fw.Opts.TabFocusesLinks {
-		t.Error("SafariTabFocus should leave links and form controls out of Tab")
 	}
 }
 
@@ -466,1258 +366,6 @@ func TestWindowStateAndEvents(t *testing.T) {
 	}
 }
 
-func TestPageTitleUpdatesWindowTitle(t *testing.T) {
-	w, fw := testWindow(t, WindowOptions{Title: "Initial"})
-	onMain(func() { fw.H.TitleChanged("From Page") })
-	if w.Title() != "From Page" {
-		t.Errorf("title = %q", w.Title())
-	}
-	w.Page().OnPageTitleUpdated(func(e *TitleEvent) { e.PreventDefault() })
-	onMain(func() { fw.H.TitleChanged("Ignored") })
-	if w.Title() != "From Page" {
-		t.Errorf("prevented title changed the window: %q", w.Title())
-	}
-}
-
-func TestWillNavigate(t *testing.T) {
-	w, fw := testWindow(t, WindowOptions{})
-	w.Page().OnWillNavigate(func(e *NavigateEvent) {
-		if strings.Contains(e.URL, "blocked") {
-			e.PreventDefault()
-		}
-	})
-	check := func(nav platform.Navigation, want bool) {
-		t.Helper()
-		if got := onMainValue(func() bool { return fw.H.WillNavigate(nav) }); got != want {
-			t.Errorf("WillNavigate(%+v) = %v, want %v", nav, got, want)
-		}
-	}
-	check(platform.Navigation{URL: "https://ok.example", IsMainFrame: true}, true)
-	check(platform.Navigation{URL: "https://blocked.example", IsMainFrame: true}, false)
-	check(platform.Navigation{URL: "https://blocked.example", IsMainFrame: false}, true)
-	check(platform.Navigation{URL: "https://blocked.example", IsMainFrame: true, Unasked: true}, true)
-}
-
-// TestUserInitiated checks that whether a user's gesture opened a window
-// or navigated reaches the window open handler and OnWillNavigate, which
-// can refuse what a page's script did on its own.
-func TestUserInitiated(t *testing.T) {
-	w, fw := testWindow(t, WindowOptions{})
-	off := App.OnWindowCreated(func(c *Window) { t.Cleanup(c.Destroy) })
-	defer off()
-	var asked []WindowOpenRequest
-	w.Page().SetWindowOpenHandler(func(req WindowOpenRequest) *WindowOptions {
-		asked = append(asked, req)
-		if !req.UserInitiated {
-			return nil // a pop-up
-		}
-		return &WindowOptions{}
-	})
-	opens := func(req platform.NewWindowRequest) bool {
-		return onMainValue(func() bool { return fw.H.NewWindow(req) != nil })
-	}
-	if !opens(platform.NewWindowRequest{URL: "https://clicked.example/", Width: 300, Height: 200, UserInitiated: true}) {
-		t.Error("the window a user's click opened was refused")
-	}
-	if opens(platform.NewWindowRequest{URL: "https://popup.example/"}) {
-		t.Error("the window a script opened on its own was opened")
-	}
-	want := []WindowOpenRequest{
-		{URL: "https://clicked.example/", Width: 300, Height: 200, UserInitiated: true},
-		{URL: "https://popup.example/"},
-	}
-	if !slices.Equal(asked, want) {
-		t.Errorf("the handler was asked %+v, want %+v", asked, want)
-	}
-
-	var users []bool
-	w.Page().OnWillNavigate(func(e *NavigateEvent) { users = append(users, e.UserInitiated) })
-	for _, user := range []bool{true, false} {
-		onMain(func() {
-			fw.H.WillNavigate(platform.Navigation{URL: "https://next.example/", IsMainFrame: true, UserInitiated: user})
-		})
-	}
-	if !slices.Equal(users, []bool{true, false}) {
-		t.Errorf("OnWillNavigate was told UserInitiated %v, want [true false]", users)
-	}
-}
-
-// TestReloadLoadsHTMLAgain checks that a reload of a document LoadHTML
-// loaded loads it again, where web views would reload its URL.
-func TestReloadLoadsHTMLAgain(t *testing.T) {
-	w, fw := testWindow(t, WindowOptions{})
-	commit := func(url string) { onMain(func() { fw.H.NavigationCommitted(url) }) }
-	reloads := func(url string) bool {
-		t.Helper()
-		nav := platform.Navigation{URL: url, IsMainFrame: true, Unasked: true, Reload: true}
-		went := onMainValue(func() bool { return fw.H.WillNavigate(nav) })
-		onMain(func() {}) // what the reload posted
-		return went
-	}
-	loaded := func(want ...string) {
-		t.Helper()
-		if got := onMainValue(func() []string { return slices.Clone(fw.HTML) }); !slices.Equal(got, want) {
-			t.Errorf("LoadHTML loaded %q, want %q", got, want)
-		}
-	}
-
-	w.Page().LoadHTML("one", "")
-	if !reloads("https://previous.example/") {
-		t.Error("the reload of the previous page was canceled")
-	}
-	commit("about:blank")
-	if reloads("about:blank") {
-		t.Error("the reload of the HTML went ahead")
-	}
-	commit("about:blank")
-	if reloads("about:blank#x") {
-		t.Error("the reload of the HTML after a fragment navigation went ahead")
-	}
-	loaded("one", "one", "one")
-	// Until it commits, a reload is the previous document's.
-	if !reloads("about:blank") {
-		t.Error("a reload before the HTML committed was canceled")
-	}
-	commit("about:blank")
-	commit("https://next.example/")
-	if !reloads("https://next.example/") {
-		t.Error("the reload of the next page was canceled")
-	}
-	loaded("one", "one", "one")
-
-	w.Page().LoadHTML("two", "mygo://localhost")
-	commit("mygo://localhost/")
-	if reloads("mygo://localhost/") {
-		t.Error("the reload of the HTML at its base URL went ahead")
-	}
-	loaded("one", "one", "one", "two", "two")
-	commit("mygo://localhost/")
-	if err := w.Page().LoadURL("https://next.example/"); err != nil {
-		t.Fatal(err)
-	}
-	if !reloads("mygo://localhost/") {
-		t.Error("a reload after LoadURL was canceled")
-	}
-}
-
-func TestReadyToShowFiresOnce(t *testing.T) {
-	w, fw := testWindow(t, WindowOptions{Hidden: true})
-	var n atomic.Int32
-	w.OnReadyToShow(func() { n.Add(1) })
-	var dom atomic.Int32
-	w.Page().OnDOMReady(func() { dom.Add(1) })
-	page(fw, `{"t":"dom-ready"}`)
-	page(fw, `{"t":"dom-ready"}`)
-	onMain(fw.H.LoadFinished)
-	if n.Load() != 1 || dom.Load() != 2 {
-		t.Errorf("ready-to-show fired %d times, dom-ready %d times", n.Load(), dom.Load())
-	}
-}
-
-// A window created hidden and shown from OnReadyToShow shows when its
-// first page fails to load, unless a listener of the failure loads
-// another page, which the window then waits for.
-func TestReadyToShowAfterFailedLoad(t *testing.T) {
-	w, fw := testWindow(t, WindowOptions{Hidden: true})
-	var n atomic.Int32
-	w.OnReadyToShow(func() { n.Add(1) })
-	fail := func() { onMain(func() { fw.H.LoadFailed("https://down.example/", -1004, "could not connect") }) }
-	fail()
-	if n.Load() != 1 {
-		t.Errorf("ready-to-show fired %d times after a failed load, want 1", n.Load())
-	}
-
-	w, fw = testWindow(t, WindowOptions{Hidden: true})
-	n.Store(0)
-	w.OnReadyToShow(func() { n.Add(1) })
-	off := w.Page().OnDidFailLoad(func(*LoadError) { w.Page().LoadHTML("<p>offline</p>", "") })
-	fail()
-	if n.Load() != 0 {
-		t.Errorf("ready-to-show fired %d times while the page of a listener loads, want 0", n.Load())
-	}
-	off()
-	fail()
-	if n.Load() != 1 {
-		t.Errorf("ready-to-show fired %d times after that page failed too, want 1", n.Load())
-	}
-}
-
-// Bound services.
-
-type testUser struct {
-	Name string   `json:"name"`
-	Tags []string `json:"tags"`
-}
-
-type testService struct{ calls atomic.Int32 }
-
-func (s *testService) Hello(name string) string { s.calls.Add(1); return "hello " + name }
-func (s *testService) Sum(nums ...int) int {
-	n := 0
-	for _, x := range nums {
-		n += x
-	}
-	return n
-}
-func (s *testService) Fail() error { return errors.New("nope") }
-func (s *testService) Panic()      { panic("boom") }
-func (s *testService) Echo(u testUser) (testUser, error) {
-	u.Tags = append(u.Tags, "echoed")
-	return u, nil
-}
-func (s *testService) Caller(ctx context.Context) int   { return CallerWindow(ctx).ID() }
-func (s *testService) Nil() []string                    { return nil }
-func (s *testService) Optional(a string, b *int) string { return fmt.Sprintf("%s:%v", a, b == nil) }
-
-func TestCalls(t *testing.T) {
-	svc := &testService{}
-	bindForTest(t, "Svc", svc)
-	w, fw := testWindow(t, WindowOptions{})
-
-	tests := []struct {
-		method string
-		args   []any
-		ok     bool
-		want   any
-	}{
-		{"Svc.Hello", []any{"bun"}, true, "hello bun"},
-		{"Svc.Sum", []any{1, 2, 3}, true, float64(6)},
-		{"Svc.Sum", nil, true, float64(0)},
-		{"Svc.Fail", nil, false, "nope"},
-		{"Svc.Panic", nil, false, "panic: boom"},
-		{"Svc.Echo", []any{map[string]any{"name": "a", "tags": []string{"x"}}}, true, map[string]any{"name": "a", "tags": []any{"x", "echoed"}}},
-		{"Svc.Caller", nil, true, float64(w.ID())},
-		{"Svc.Nil", nil, true, []any{}},
-		{"Svc.Optional", []any{"a"}, true, "a:true"},
-		{"Svc.Hello", []any{42}, false, nil},
-		{"Svc.Missing", nil, false, "method Svc.Missing is not bound"},
-	}
-	for i, tt := range tests {
-		m := call(t, fw, i+1, tt.method, tt.args...)
-		if m["k"] != "tok" {
-			t.Errorf("%s: token not echoed: %v", tt.method, m)
-		}
-		if m["ok"] != tt.ok {
-			t.Errorf("%s(%v): ok = %v (%v)", tt.method, tt.args, m["ok"], m)
-			continue
-		}
-		got := m["v"]
-		if !tt.ok {
-			got = m["e"]
-			if tt.want == nil {
-				continue
-			}
-		}
-		if fmt.Sprint(got) != fmt.Sprint(tt.want) {
-			t.Errorf("%s(%v) = %v, want %v", tt.method, tt.args, got, tt.want)
-		}
-	}
-	if svc.calls.Load() != 1 {
-		t.Errorf("Hello called %d times", svc.calls.Load())
-	}
-}
-
-// Text cut in the middle of an emoji holds half of a surrogate pair, which
-// JSON.stringify writes as an escape that is no character. The call is
-// made with U+FFFD in its place, and answered.
-func TestCallLoneSurrogate(t *testing.T) {
-	bindForTest(t, "Half", &testService{})
-	_, fw := testWindow(t, WindowOptions{})
-	for i, tt := range []struct{ method, arg, want string }{
-		{"Half.Hello", `"x\ud83d"`, "hello x\ufffd"},
-		{"Half.Hello", `"\ude00x"`, "hello \ufffdx"},
-		{"Half.Echo", `{"name":"a\ud83d","tags":[]}`, "map[name:a\ufffd tags:[echoed]]"},
-	} {
-		id := 300 + i
-		page(fw, fmt.Sprintf(`{"t":"call","id":%d,"k":"tok","m":%q,"a":[%s]}`, id, tt.method, tt.arg))
-		m := received(t, fw, func(m map[string]any) bool {
-			return m["t"] == "reply" && m["id"] == float64(id)
-		})
-		if m["ok"] != true || fmt.Sprint(m["v"]) != tt.want {
-			t.Errorf("%s(%s) = %v (%v), want %q", tt.method, tt.arg, m["v"], m["e"], tt.want)
-		}
-	}
-}
-
-func TestUntrustedOriginsCannotCall(t *testing.T) {
-	bindForTest(t, "Trust", &testService{})
-	if err := Protocol.Handle("trusted", http.NotFoundHandler()); err != nil {
-		t.Fatal(err)
-	}
-	defer Protocol.Unhandle("trusted")
-	_, fw := readyWindow(t, WindowOptions{Page: PageOptions{TrustedOrigins: []string{"https://partner.example"}}})
-	cases := []struct {
-		url string
-		ok  bool
-	}{
-		{"https://evil.example/", false},
-		{"https://partner.example/page", true},
-		{"https://partner.example.evil.com/", false},
-		{"trusted://localhost/", true},
-		{"file:///tmp/index.html", true},
-		{"http://localhost:5173/", true}, // loopback dev server in development
-		{"http://192.168.1.2:5173/", false},
-	}
-	for i, c := range cases {
-		onMain(func() { fw.H.NavigationCommitted(c.url) })
-		m := call(t, fw, 100+i, "Trust.Hello", "x")
-		if m["ok"] != c.ok {
-			t.Errorf("call from %s: ok = %v (%v)", c.url, m["ok"], m["e"])
-		}
-	}
-}
-
-// TestMessagesNeedTheSecret: the message handler is reachable from every
-// frame, so messages without the bridge's secret (an iframe of another
-// origin posting directly) must not run anything.
-func TestMessagesNeedTheSecret(t *testing.T) {
-	svc := &testService{}
-	bindForTest(t, "Secret", svc)
-	_, fw := readyWindow(t, WindowOptions{})
-	forged := `{"t":"call","id":1,"k":"tok","m":"Secret.Hello","a":["x"]}`
-	onMain(func() { fw.H.Message(forged) })
-	onMain(func() { fw.H.Message("wrong" + forged) })
-	time.Sleep(50 * time.Millisecond)
-	if n := svc.calls.Load(); n != 0 {
-		t.Fatalf("forged messages ran the method %d times", n)
-	}
-	if m := call(t, fw, 2, "Secret.Hello", "x"); m["ok"] != true || svc.calls.Load() != 1 {
-		t.Errorf("the bridge's call failed: %v", m)
-	}
-	if a, b := secret(fw), secret(fb.Windows()[0]); len(a) < 20 || (fw != fb.Windows()[0] && a == b) {
-		t.Errorf("secrets must be random and per window: %q %q", a, b)
-	}
-}
-
-func TestWindowControls(t *testing.T) {
-	w, fw := testWindow(t, WindowOptions{})
-	call(t, fw, 1, "mygo:window.Maximize")
-	if !w.IsMaximized() {
-		t.Error("mygo:window.Maximize")
-	}
-	m := call(t, fw, 2, "mygo:window.IsMaximized")
-	if m["v"] != true {
-		t.Errorf("IsMaximized = %v", m)
-	}
-	call(t, fw, 3, "mygo:window.SetTitle", "Set by page")
-	if w.Title() != "Set by page" {
-		t.Errorf("title = %q", w.Title())
-	}
-}
-
-type badService struct{}
-
-func (badService) Bad(ch chan int) {}
-
-type emptyService struct{}
-
-func TestBindErrors(t *testing.T) {
-	mustPanic := func(name string, fn func()) {
-		t.Helper()
-		defer func() {
-			if recover() == nil {
-				t.Errorf("%s: expected panic", name)
-			}
-		}()
-		fn()
-	}
-	mustPanic("chan param", func() { Bind(badService{}) })
-	mustPanic("no methods", func() { Bind(emptyService{}) })
-	mustPanic("nil", func() { Bind(nil) })
-	mustPanic("bad name", func() { BindAs("not valid", &testService{}) })
-	bindForTest(t, "Dup", &testService{})
-	mustPanic("duplicate", func() { BindAs("Dup", &testService{}) })
-}
-
-func TestCallContextCanceledOnNavigation(t *testing.T) {
-	w, fw := testWindow(t, WindowOptions{})
-	pc := w.pageContext()
-	onMain(func() { fw.H.NavigationCommitted("https://next.example/") })
-	select {
-	case <-pc.Done():
-	case <-time.After(wait.Guard):
-		t.Fatal("page context not canceled after navigation")
-	}
-	if w.pageContext().Err() != nil {
-		t.Error("new page context should be live")
-	}
-}
-
-type progress struct {
-	Done  int `json:"done"`
-	Total int `json:"total"`
-}
-
-func TestEvents(t *testing.T) {
-	ev := newEventForTest[progress](t, "test:progress")
-	w, fw := readyWindow(t, WindowOptions{})
-	if err := ev.Emit(w, progress{1, 3}); err != nil {
-		t.Fatal(err)
-	}
-	m := received(t, fw, func(m map[string]any) bool { return m["t"] == "event" && m["n"] == "test:progress" })
-	if fmt.Sprint(m["p"]) != "map[done:1 total:3]" {
-		t.Errorf("payload = %v", m["p"])
-	}
-	if err := ev.Broadcast(progress{2, 3}); err != nil {
-		t.Fatal(err)
-	}
-	received(t, fw, func(m map[string]any) bool {
-		p, _ := m["p"].(map[string]any)
-		return m["t"] == "event" && p["done"] == float64(2)
-	})
-	defer func() {
-		if recover() == nil {
-			t.Error("duplicate event name should panic")
-		}
-	}()
-	NewEvent[int]("test:progress")
-}
-
-// Channels.
-
-type streamer struct {
-	sent    chan error // what Send returned
-	stopped chan error // why Wait returned
-}
-
-// Count sends 0 to n-1.
-func (s *streamer) Count(n int, ch *Channel[int]) error {
-	for i := range n {
-		if err := ch.Send(i); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// Blobs sends n strings of size bytes, reporting each Send.
-func (s *streamer) Blobs(n, size int, ch *Channel[string]) {
-	blob := strings.Repeat("x", size)
-	for range n {
-		s.sent <- ch.Send(blob)
-	}
-}
-
-// Wait sends a value, then waits for the call to be canceled.
-func (s *streamer) Wait(ctx context.Context, ch *Channel[string]) error {
-	_ = ch.Send("ready")
-	<-ctx.Done()
-	s.sent <- ch.Send("late")
-	s.stopped <- ctx.Err()
-	return ctx.Err()
-}
-
-// pageMessages returns the messages the page received, in order.
-func pageMessages(t *testing.T, fw *fake.Window) []map[string]any {
-	t.Helper()
-	var out []map[string]any
-	for _, s := range fw.Scripts() {
-		const prefix = "__mygo.receive("
-		if !strings.HasPrefix(s, prefix) {
-			continue
-		}
-		var msgs []map[string]any
-		if err := json.Unmarshal([]byte(strings.TrimSuffix(strings.TrimPrefix(s, prefix), ")")), &msgs); err != nil {
-			t.Fatalf("bad script %q: %v", s, err)
-		}
-		out = append(out, msgs...)
-	}
-	return out
-}
-
-func TestChannels(t *testing.T) {
-	s := &streamer{sent: make(chan error, 16), stopped: make(chan error, 1)}
-	bindForTest(t, "Stream", s)
-	_, fw := testWindow(t, WindowOptions{})
-
-	// Values arrive in order, then the end, then the reply.
-	call(t, fw, 1, "Stream.Count", 3, 7)
-	var got []string
-	for _, m := range pageMessages(t, fw) {
-		switch {
-		case m["t"] == "chan" && m["end"] == true:
-			got = append(got, "end")
-		case m["t"] == "chan":
-			if m["c"] != float64(7) || m["k"] != "tok" {
-				t.Errorf("value for another channel: %v", m)
-			}
-			got = append(got, fmt.Sprint(m["p"]))
-		case m["t"] == "reply":
-			got = append(got, "reply")
-		}
-	}
-	if strings.Join(got, ",") != "0,1,2,end,reply" {
-		t.Errorf("page received %v", got)
-	}
-
-	// The page takes a MiB at most before it acknowledges some.
-	const size = 600 << 10
-	page(fw, `{"t":"call","id":2,"k":"tok","m":"Stream.Blobs","a":[3,`+fmt.Sprint(size)+`,8]}`)
-	for range 2 {
-		if err := <-s.sent; err != nil {
-			t.Fatal(err)
-		}
-	}
-	select {
-	case err := <-s.sent:
-		t.Fatalf("Send did not wait for the page: %v", err)
-	case <-time.After(50 * time.Millisecond):
-	}
-	// Send queued each value and posted the flush that hands it to the
-	// page before it returned. The main loop runs functions in the order
-	// they were posted, so once one posted now has run, that flush has too,
-	// however long the main thread took to get to it.
-	onMain(func() {})
-	asks := 0
-	for _, m := range pageMessages(t, fw) {
-		if m["c"] == float64(8) && m["a"] == float64(1) {
-			asks++
-		}
-	}
-	if asks != 2 {
-		t.Errorf("%d values asked for an acknowledgment, want 2", asks)
-	}
-	page(fw, `{"t":"chan-ack","c":8,"k":"stale","n":2}`) // another page's
-	select {
-	case <-s.sent:
-		t.Fatal("an acknowledgment of another page counted")
-	case <-time.After(20 * time.Millisecond):
-	}
-	page(fw, `{"t":"chan-ack","c":8,"k":"tok","n":2}`)
-	if err := <-s.sent; err != nil {
-		t.Fatal(err)
-	}
-	received(t, fw, func(m map[string]any) bool { return m["t"] == "reply" && m["id"] == float64(2) })
-
-	// The page closing the channel cancels the call.
-	page(fw, `{"t":"call","id":3,"k":"tok","m":"Stream.Wait","a":[9]}`)
-	received(t, fw, func(m map[string]any) bool { return m["c"] == float64(9) && m["p"] == "ready" })
-	page(fw, `{"t":"chan-close","c":9,"k":"tok"}`)
-	if err := <-s.stopped; !errors.Is(err, context.Canceled) {
-		t.Errorf("call context: %v", err)
-	}
-	if err := <-s.sent; !errors.Is(err, ErrChannelClosed) {
-		t.Errorf("Send after the page closed the channel = %v", err)
-	}
-	received(t, fw, func(m map[string]any) bool { return m["t"] == "reply" && m["id"] == float64(3) })
-	for _, m := range pageMessages(t, fw) {
-		if m["c"] == float64(9) && m["end"] == true {
-			t.Error("the page was told about the end of a channel it closed")
-		}
-	}
-
-	// So does navigating away.
-	page(fw, `{"t":"call","id":4,"k":"tok","m":"Stream.Wait","a":[10]}`)
-	received(t, fw, func(m map[string]any) bool { return m["c"] == float64(10) && m["p"] == "ready" })
-	onMain(func() { fw.H.NavigationCommitted("about:blank#next") })
-	if err := <-s.stopped; !errors.Is(err, context.Canceled) {
-		t.Errorf("call context after navigating: %v", err)
-	}
-	if err := <-s.sent; !errors.Is(err, ErrChannelClosed) {
-		t.Errorf("Send after navigating = %v", err)
-	}
-
-	// The page may close a channel before its call made it, e.g. by
-	// aborting a request right after starting it: the call is canceled
-	// as soon as it starts.
-	page(fw, `{"t":"chan-close","c":11,"k":"tok"}`)
-	page(fw, `{"t":"call","id":6,"k":"tok","m":"Stream.Wait","a":[11]}`)
-	select {
-	case err := <-s.stopped:
-		if !errors.Is(err, context.Canceled) {
-			t.Errorf("call context of a channel closed early: %v", err)
-		}
-	case <-time.After(wait.Guard):
-		t.Fatal("a channel the page closed before its call started did not cancel the call")
-	}
-	if err := <-s.sent; !errors.Is(err, ErrChannelClosed) {
-		t.Errorf("Send on a channel closed early = %v", err)
-	}
-
-	m := call(t, fw, 5, "Stream.Count", 1)
-	if m["ok"] != false || !strings.Contains(fmt.Sprint(m["e"]), "not a Channel") {
-		t.Errorf("call without its channel: %v", m)
-	}
-}
-
-func TestChannelsClosedAtOnce(t *testing.T) {
-	// The page closes each channel right after its call, which may be
-	// making it then: every call is canceled, whenever the close comes, and
-	// the page is told about no end.
-	const n = 200
-	s := &streamer{sent: make(chan error, n), stopped: make(chan error, n)}
-	bindForTest(t, "Stream", s)
-	_, fw := testWindow(t, WindowOptions{})
-	for id := 1; id <= n; id++ {
-		page(fw, fmt.Sprintf(`{"t":"call","id":%d,"k":"tok","m":"Stream.Wait","a":[%d]}`, id, id))
-		page(fw, fmt.Sprintf(`{"t":"chan-close","c":%d,"k":"tok"}`, id))
-	}
-	for range n {
-		select {
-		case <-s.stopped:
-		case <-time.After(wait.Guard):
-			t.Fatal("a call whose channel the page closed was not canceled")
-		}
-	}
-	// A channel ends before the reply of its call.
-	for id := 1; id <= n; id++ {
-		received(t, fw, func(m map[string]any) bool { return m["t"] == "reply" && m["id"] == float64(id) })
-	}
-	for _, m := range pageMessages(t, fw) {
-		if m["t"] == "chan" && m["end"] == true {
-			t.Fatalf("the page was told about the end of channel %v, which it closed", m["c"])
-		}
-	}
-}
-
-// A call the page may cancel with a signal streams through its channels,
-// and canceling it cancels the method's context.
-func TestChannelsOfACancelableCall(t *testing.T) {
-	s := &streamer{sent: make(chan error, 16), stopped: make(chan error, 1)}
-	bindForTest(t, "Stream", s)
-	_, fw := testWindow(t, WindowOptions{})
-
-	page(fw, `{"t":"call","id":1,"k":"tok","m":"Stream.Count","a":[2,7],"cancel":true}`)
-	reply := received(t, fw, func(m map[string]any) bool { return m["t"] == "reply" && m["id"] == float64(1) })
-	if reply["ok"] != true {
-		t.Fatalf("a cancelable call could not send on its channel: %v", reply)
-	}
-	var got []any
-	for _, m := range pageMessages(t, fw) {
-		if m["t"] == "chan" && m["c"] == float64(7) && m["end"] != true {
-			got = append(got, m["p"])
-		}
-	}
-	if len(got) != 2 {
-		t.Errorf("page received %v, want [0 1]", got)
-	}
-
-	page(fw, `{"t":"call","id":2,"k":"tok","m":"Stream.Wait","a":[8],"cancel":true}`)
-	received(t, fw, func(m map[string]any) bool { return m["c"] == float64(8) && m["p"] == "ready" })
-	page(fw, `{"t":"cancel","id":2,"k":"tok"}`)
-	if err := wait.For(t, "the call to be canceled", s.stopped); !errors.Is(err, context.Canceled) {
-		t.Errorf("call context: %v", err)
-	}
-	if err := wait.For(t, "the late send", s.sent); !errors.Is(err, ErrChannelClosed) {
-		t.Errorf("Send after the call was canceled = %v", err)
-	}
-}
-
-type badStreams struct{}
-
-func (badStreams) Result() *Channel[int]            { return nil }
-func (badStreams) Nested(struct{ C *Channel[int] }) {}
-func (badStreams) Variadic(chs ...*Channel[int])    {}
-
-func TestChannelsAreParameters(t *testing.T) {
-	for _, name := range []string{"Result", "Nested", "Variadic"} {
-		if _, err := newMethod("Bad", name, reflect.ValueOf(badStreams{}).MethodByName(name)); err == nil {
-			t.Errorf("%s: a misplaced channel should not bind", name)
-		}
-	}
-	defer func() {
-		if recover() == nil {
-			t.Error("an event of channels should panic")
-		}
-	}()
-	NewEvent[*Channel[int]]("test:channel")
-}
-
-func TestMessagesAreBatched(t *testing.T) {
-	ev := newEventForTest[int](t, "test:batch")
-	w, fw := readyWindow(t, WindowOptions{})
-	onMain(func() {
-		for i := range 5 {
-			_ = ev.Emit(w, i)
-		}
-	})
-	received(t, fw, func(m map[string]any) bool { return m["n"] == "test:batch" && m["p"] == float64(4) })
-	n := 0
-	for _, s := range fw.Scripts() {
-		if strings.Contains(s, "test:batch") {
-			n++
-		}
-	}
-	if n != 1 {
-		t.Errorf("5 events took %d evaluations, want 1", n)
-	}
-}
-
-func TestEventsWaitForDOMReady(t *testing.T) {
-	ev := newEventForTest[string](t, "test:early")
-	w, fw := testWindow(t, WindowOptions{})
-	if err := ev.Emit(w, "first"); err != nil {
-		t.Fatal(err)
-	}
-	time.Sleep(20 * time.Millisecond)
-	for _, s := range fw.Scripts() {
-		if strings.Contains(s, "test:early") {
-			t.Fatal("event delivered before the page was ready")
-		}
-	}
-	page(fw, `{"t":"dom-ready"}`)
-	received(t, fw, func(m map[string]any) bool { return m["n"] == "test:early" && m["p"] == "first" })
-
-	// After a navigation, events wait for the new page.
-	onMain(func() { fw.H.NavigationCommitted("https://next.example/") })
-	n := len(fw.Scripts())
-	_ = ev.Emit(w, "second")
-	time.Sleep(20 * time.Millisecond)
-	if len(fw.Scripts()) != n {
-		t.Fatal("event delivered during navigation")
-	}
-	page(fw, `{"t":"dom-ready"}`)
-	received(t, fw, func(m map[string]any) bool { return m["p"] == "second" })
-}
-
-func TestHiddenTitleBar(t *testing.T) {
-	// titleBar matches the page event of the room the window controls take.
-	titleBar := func(height, left, right, bottom float64) func(m map[string]any) bool {
-		return func(m map[string]any) bool {
-			p, _ := m["p"].(map[string]any)
-			return m["n"] == "mygo:title-bar" && p["height"] == height && p["left"] == left && p["right"] == right && p["bottom"] == bottom
-		}
-	}
-	w, fw := readyWindow(t, WindowOptions{TitleBarStyle: TitleBarHidden, TitleBarHeight: 52})
-	if fw.Opts.TitleBarHeight != 52 {
-		t.Errorf("TitleBarHeight = %d, want 52", fw.Opts.TitleBarHeight)
-	}
-	received(t, fw, titleBar(52, 0, 138, 52))
-
-	// The backend reports a change, such as another button layout.
-	onMain(func() {
-		fw.TitleBarRoom = platform.TitleBar{Height: 46, Left: 80, Bottom: 30}
-		fw.H.TitleBarChanged()
-	})
-	received(t, fw, titleBar(46, 80, 0, 30))
-
-	// The page gets CSS pixels, which zoom makes larger.
-	w.Page().SetZoomFactor(2)
-	received(t, fw, titleBar(23, 40, 0, 15))
-
-	// A later page hears it once its DOM is ready: the script the backend
-	// runs at document start may be older.
-	onMain(func() { fw.H.NavigationCommitted("https://next.example/") })
-	n := len(fw.Scripts())
-	page(fw, `{"t":"dom-ready"}`)
-	received(t, fw, titleBar(23, 40, 0, 15))
-	if len(fw.Scripts()) == n {
-		t.Error("the new page did not hear the title bar")
-	}
-
-	// Windows with their title bar, or none at all, hear nothing.
-	for _, opts := range []WindowOptions{{}, {Frameless: true, TitleBarStyle: TitleBarHidden}} {
-		_, other := readyWindow(t, opts)
-		onMain(func() { other.H.TitleBarChanged() })
-		time.Sleep(20 * time.Millisecond)
-		for _, s := range other.Scripts() {
-			if strings.Contains(s, "mygo:title-bar") {
-				t.Errorf("%+v: title bar sent to the page: %s", opts, s)
-			}
-		}
-	}
-
-	_, fw = testWindow(t, WindowOptions{TitleBarStyle: TitleBarHiddenInset, TitleBarHeight: -1})
-	if fw.Opts.TitleBarHeight != 0 {
-		t.Errorf("TitleBarHeight -1 = %d, want 0", fw.Opts.TitleBarHeight)
-	}
-}
-
-func TestEval(t *testing.T) {
-	w, fw := testWindow(t, WindowOptions{})
-	var bodies []string
-	fw.AsyncFunction = func(body string) (string, error) {
-		bodies = append(bodies, body)
-		switch {
-		case strings.Contains(body, "(async()=>(\ndocument.title\n))()"):
-			return `{"ok":true,"v":"Title"}`, nil
-		case strings.Contains(body, "(async()=>(\nlet x = 1; return x\n))()"):
-			return "", errors.New("SyntaxError: Unexpected token")
-		case strings.Contains(body, "(async()=>{\nlet x = 1; return x\n})()"):
-			return `{"ok":true,"v":1}`, nil
-		case strings.Contains(body, "boom"):
-			return `{"ok":false,"e":"boom"}`, nil
-		}
-		return `{"ok":true}`, nil
-	}
-	v, err := w.Page().Eval("document.title;")
-	if err != nil || v != "Title" {
-		t.Errorf("Eval expression = %v, %v", v, err)
-	}
-	n, err := EvalAs[int](w.Page(), "let x = 1; return x")
-	if err != nil || n != 1 {
-		t.Errorf("Eval statements = %v, %v (bodies %q)", n, err, bodies)
-	}
-	var evalErr *EvalError
-	if _, err := w.Page().Eval("boom()"); !errors.As(err, &evalErr) || evalErr.Message != "boom" {
-		t.Errorf("Eval error = %v", err)
-	}
-	if v, err := w.Page().Eval("void 0"); v != nil || err != nil {
-		t.Errorf("Eval undefined = %v, %v", v, err)
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	fw.AsyncFunction = func(string) (string, error) { return "", fake.ErrNoReply }
-	if _, err := w.Page().EvalContext(ctx, "1"); !errors.Is(err, context.Canceled) {
-		t.Errorf("EvalContext with canceled context = %v", err)
-	}
-
-	// The page left before the code answered says so, rather than as the
-	// code's own error, whether its pagehide or the backend tells it.
-	fw.AsyncFunction = func(string) (string, error) { return `{"left":true}`, nil }
-	if _, err := w.Page().Eval("pending"); !errors.Is(err, platform.ErrNavigated) {
-		t.Errorf("Eval in a page left = %v, want %v", err, platform.ErrNavigated)
-	}
-	bodies = nil
-	fw.AsyncFunction = func(body string) (string, error) {
-		bodies = append(bodies, body)
-		return "", platform.ErrNavigated
-	}
-	if _, err := w.Page().Eval("pending"); !errors.Is(err, platform.ErrNavigated) || len(bodies) != 1 {
-		t.Errorf("Eval in a page the backend says was left = %v, ran %d times; want %v, once", err, len(bodies), platform.ErrNavigated)
-	}
-
-	// Only a syntax error means the code did not run: other failures are
-	// not retried, which could run the code twice.
-	bodies = nil
-	fw.AsyncFunction = func(body string) (string, error) {
-		bodies = append(bodies, body)
-		return "", errors.New("the page navigated")
-	}
-	if _, err := w.Page().Eval("sideEffect()"); err == nil || len(bodies) != 1 {
-		t.Errorf("Eval after a failure = %v, ran %d times", err, len(bodies))
-	}
-}
-
-// TestEvalLateReply: on the main thread, a reply arriving after the
-// cancellation of the context was delivered, before EvalContext took it,
-// must not block.
-func TestEvalLateReply(t *testing.T) {
-	w, fw := testWindow(t, WindowOptions{})
-	ctx, cancel := context.WithCancel(context.Background())
-	delivered := make(chan struct{})
-	var once sync.Once
-	evalCanceled = func() { once.Do(func() { close(delivered) }) }
-	t.Cleanup(func() { evalCanceled = nil })
-	fw.AsyncCallback = func(body string, reply func(string, error)) {
-		postMain(func() {
-			cancel()
-			// The main thread, which EvalContext waits on, is busy here: the
-			// cancellation is delivered...
-			select {
-			case <-delivered:
-			case <-time.After(time.Minute):
-				t.Error("the cancellation was not delivered")
-			}
-			reply(`{"ok":true,"v":1}`, nil) // ...then the page answers
-		})
-	}
-	done := make(chan error, 1)
-	go onMain(func() {
-		_, err := w.Page().EvalContext(ctx, "1")
-		done <- err
-	})
-	select {
-	case err := <-done:
-		if !errors.Is(err, context.Canceled) {
-			t.Errorf("EvalContext = %v", err)
-		}
-	case <-time.After(wait.Guard):
-		t.Fatal("the late reply blocked the main thread")
-	}
-}
-
-// TestEvalWindowCloses: a page whose window closes never answers, and Eval,
-// which may have no context to end it, must not wait for it.
-func TestEvalWindowCloses(t *testing.T) {
-	w, fw := testWindow(t, WindowOptions{})
-	asked := make(chan struct{})
-	fw.AsyncFunction = func(string) (string, error) {
-		close(asked)
-		return "", fake.ErrNoReply
-	}
-	done := make(chan error, 1)
-	go func() {
-		_, err := w.Page().Eval("1")
-		done <- err
-	}()
-	<-asked
-	w.Destroy()
-	select {
-	case err := <-done:
-		if !errors.Is(err, errDestroyed) {
-			t.Errorf("Eval = %v", err)
-		}
-	case <-time.After(wait.Guard):
-		t.Fatal("Eval still waits for the page of a closed window")
-	}
-}
-
-// TestEvalAnsweredByNextPage: an eval sent just before a navigation
-// commits may run in the page that comes next, as one sent right after
-// opening a window may run in the page it loads rather than the empty one
-// it starts with: the navigation leaves it be, and Eval returns the
-// answer of that page.
-func TestEvalAnsweredByNextPage(t *testing.T) {
-	w, fw := testWindow(t, WindowOptions{})
-	replies := make(chan func(string, error), 1)
-	fw.AsyncCallback = func(body string, reply func(string, error)) { replies <- reply }
-	type res struct {
-		v   any
-		err error
-	}
-	done := make(chan res, 1)
-	go func() {
-		v, err := w.Page().Eval("navigator.userAgent")
-		done <- res{v, err}
-	}()
-	reply := <-replies
-	onMain(func() { fw.H.NavigationCommitted("app://localhost/") })
-	onMain(func() { reply(`{"ok":true,"v":"Agent"}`, nil) })
-	select {
-	case r := <-done:
-		if r.v != "Agent" || r.err != nil {
-			t.Errorf("Eval = %v, %v", r.v, r.err)
-		}
-	case <-time.After(wait.Guard):
-		t.Fatal("Eval did not return the answer of the page that came next")
-	}
-}
-
-// TestEvalWebViewDestroyed is TestEvalWindowCloses for a web view's page.
-func TestEvalWebViewDestroyed(t *testing.T) {
-	show := true
-	_, v, _, fv := webViewWindow(t, &show)
-	asked := make(chan struct{})
-	fv.Window.AsyncFunction = func(string) (string, error) {
-		close(asked)
-		return "", fake.ErrNoReply
-	}
-	done := make(chan error, 1)
-	go func() {
-		_, err := v.Page().Eval("1")
-		done <- err
-	}()
-	<-asked
-	v.Destroy()
-	select {
-	case err := <-done:
-		if !errors.Is(err, errDestroyed) {
-			t.Errorf("Eval = %v", err)
-		}
-	case <-time.After(wait.Guard):
-		t.Fatal("Eval still waits for the page of a destroyed web view")
-	}
-}
-
-// TestEvalAfterQuit: a window created once the app has quit has a page, as
-// the documentation of Page says, on which Eval fails.
-func TestEvalAfterQuit(t *testing.T) {
-	exe, err := os.Executable()
-	if err != nil {
-		t.Fatal(err)
-	}
-	cmd := exec.Command(exe, "-test.run=^$")
-	cmd.Env = append(os.Environ(), "MYGO_TEST_EVAL_AFTER_QUIT=1")
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("%v\n%s", err, out)
-	}
-	for _, want := range []string{"while stopping: " + errLoopStopped.Error() + "\n", "stopped: " + errDestroyed.Error() + "\n"} {
-		if !strings.Contains(string(out), want) {
-			t.Errorf("no %q in:\n%s", want, out)
-		}
-	}
-}
-
-// evalAfterQuit is a helper process for TestEvalAfterQuit: Eval with the quit
-// under way, in a window no one will close and on a loop that will soon stop,
-// and then with the loop stopped.
-func evalAfterQuit() {
-	App.OnWindowAllClosed(func() {})
-	eval := func(when string) {
-		w := NewWindow(WindowOptions{})
-		if wins := fb.Windows(); !w.IsDestroyed() {
-			wins[len(wins)-1].AsyncFunction = func(string) (string, error) { return "", fake.ErrNoReply }
-		}
-		_, err := w.Page().Eval("1")
-		fmt.Printf("%s: %v\n", when, err)
-	}
-	fb.IgnoresQuit = true
-	stopGrace = 0
-	App.WhenReady(func() {
-		App.Quit()
-		go func() {
-			onMain(func() {})
-			eval("while stopping")
-			fb.IgnoresQuit = false
-			App.Quit()
-		}()
-	})
-	App.Run()
-	done := make(chan struct{})
-	go func() {
-		eval("stopped")
-		close(done)
-	}()
-	<-done
-	os.Exit(0)
-}
-
-// Custom protocols.
-
-type recorder struct {
-	mu       sync.Mutex
-	status   int
-	header   http.Header
-	body     strings.Builder
-	finished chan struct{}
-}
-
-func (r *recorder) Respond(status int, h map[string][]string) { r.status, r.header = status, h }
-func (r *recorder) Write(p []byte)                            { r.body.Write(p) }
-func (r *recorder) Finish()                                   { close(r.finished) }
-func (r *recorder) Fail(err error)                            { r.body.WriteString("FAIL " + err.Error()); close(r.finished) }
-
-func request(t *testing.T, fw *fake.Window, method, url string, body io.Reader) *recorder {
-	t.Helper()
-	rec := &recorder{finished: make(chan struct{})}
-	req := &platform.SchemeRequest{Context: context.Background(), Method: method, URL: url, Header: http.Header{}, Responder: rec}
-	if body != nil {
-		req.Body = io.NopCloser(body)
-	}
-	onMain(func() { fw.H.SchemeRequest(req) })
-	select {
-	case <-rec.finished:
-	case <-time.After(wait.Guard):
-		t.Fatal("request did not finish")
-	}
-	return rec
-}
-
-func TestProtocol(t *testing.T) {
-	if err := Protocol.Handle("http", http.NotFoundHandler()); err == nil {
-		t.Error("registering http should fail")
-	}
-	if err := Protocol.Handle("Bad Scheme", http.NotFoundHandler()); err == nil {
-		t.Error("invalid scheme should fail")
-	}
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /hello", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("X-Test", r.URL.Query().Get("q"))
-		fmt.Fprint(w, "<p>hi</p>")
-	})
-	mux.HandleFunc("POST /echo", func(w http.ResponseWriter, r *http.Request) {
-		b, _ := io.ReadAll(r.Body)
-		w.WriteHeader(http.StatusCreated)
-		w.Write(b)
-	})
-	mux.HandleFunc("/stream", func(w http.ResponseWriter, r *http.Request) {
-		for i := range 3 {
-			fmt.Fprintf(w, "chunk%d;", i)
-			w.(http.Flusher).Flush()
-		}
-	})
-	mux.HandleFunc("/panic", func(w http.ResponseWriter, r *http.Request) { panic("oops") })
-	if err := Protocol.Handle("test", mux); err != nil {
-		t.Fatal(err)
-	}
-	defer Protocol.Unhandle("test")
-	if !Protocol.IsHandled("TEST") {
-		t.Error("IsHandled should be case-insensitive")
-	}
-
-	_, fw := testWindow(t, WindowOptions{})
-	if !strings.Contains(strings.Join(fw.Opts.Schemes, ","), "test") {
-		t.Errorf("scheme not passed to the window: %v", fw.Opts.Schemes)
-	}
-
-	rec := request(t, fw, "GET", "test://localhost/hello?q=1", nil)
-	if rec.status != 200 || rec.body.String() != "<p>hi</p>" || rec.header.Get("X-Test") != "1" {
-		t.Errorf("GET: %d %q %v", rec.status, rec.body.String(), rec.header)
-	}
-	if ct := rec.header.Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
-		t.Errorf("content type not sniffed: %q", ct)
-	}
-	rec = request(t, fw, "POST", "test://localhost/echo", strings.NewReader("payload"))
-	if rec.status != 201 || rec.body.String() != "payload" {
-		t.Errorf("POST: %d %q", rec.status, rec.body.String())
-	}
-	rec = request(t, fw, "GET", "test://localhost/stream", nil)
-	if rec.body.String() != "chunk0;chunk1;chunk2;" {
-		t.Errorf("stream: %q", rec.body.String())
-	}
-	rec = request(t, fw, "GET", "test://localhost/panic", nil)
-	if rec.status != 500 {
-		t.Errorf("panic: status %d", rec.status)
-	}
-	rec = request(t, fw, "GET", "unknown://localhost/", nil)
-	if rec.status != 404 {
-		t.Errorf("unhandled scheme: status %d", rec.status)
-	}
-}
-
-// Pages of the app are other origins than the custom schemes they fetch:
-// responses carry CORS headers for them, and for them only.
-func TestProtocolCORS(t *testing.T) {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/data", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("X-Count", "3")
-		fmt.Fprint(w, "data")
-	})
-	mux.HandleFunc("/own", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "https://cdn.example.com")
-	})
-	if err := Protocol.Handle("assets", mux); err != nil {
-		t.Fatal(err)
-	}
-	defer Protocol.Unhandle("assets")
-	defer func(v bool) { schemeHosts = v }(schemeHosts)
-	schemeHosts = true // as on Windows
-	_, fw := testWindow(t, WindowOptions{Page: PageOptions{TrustedOrigins: []string{"https://app.example.com"}}})
-
-	send := func(method, path, origin string, extra http.Header) *recorder {
-		t.Helper()
-		rec := &recorder{finished: make(chan struct{})}
-		h := http.Header{}
-		if origin != "" {
-			h.Set("Origin", origin)
-		}
-		for k, v := range extra {
-			h[k] = v
-		}
-		req := &platform.SchemeRequest{Context: context.Background(), Method: method, URL: "assets://localhost" + path, Header: h, Responder: rec}
-		onMain(func() { fw.H.SchemeRequest(req) })
-		select {
-		case <-rec.finished:
-		case <-time.After(wait.Guard):
-			t.Fatal("request did not finish")
-		}
-		return rec
-	}
-
-	for _, origin := range []string{
-		"mygo://localhost",            // the frontend
-		"http://mygo.localhost",       // the frontend, as WebView2 serves it
-		"http://assets.localhost",     // a custom scheme, as WebView2 serves it
-		"http://abc.assets.localhost", // another host of a custom scheme, as WebView2 serves it
-		"https://app.example.com",     // in PageOptions.TrustedOrigins
-	} {
-		rec := send("GET", "/data", origin, nil)
-		if rec.status != 200 || rec.body.String() != "data" {
-			t.Errorf("%s: %d %q", origin, rec.status, rec.body.String())
-		}
-		if got := rec.header.Get("Access-Control-Allow-Origin"); got != origin {
-			t.Errorf("%s: Access-Control-Allow-Origin = %q", origin, got)
-		}
-		if rec.header.Get("Access-Control-Expose-Headers") != "*" || rec.header.Get("Vary") != "Origin" {
-			t.Errorf("%s: headers %v", origin, rec.header)
-		}
-	}
-	if IsDev() {
-		// Development builds trust pages served from localhost: the dev server.
-		if got := send("GET", "/data", "http://localhost:5173", nil).header.Get("Access-Control-Allow-Origin"); got != "http://localhost:5173" {
-			t.Errorf("dev server: Access-Control-Allow-Origin = %q", got)
-		}
-	}
-	for _, origin := range []string{"", "null", "https://example.com", "http://evil.localhost", "http://assets.localhost:8080", "http://abc.evil.localhost", "http://a_b.assets.localhost"} {
-		if got := send("GET", "/data", origin, nil).header.Get("Access-Control-Allow-Origin"); got != "" {
-			t.Errorf("%q got Access-Control-Allow-Origin %q", origin, got)
-		}
-	}
-
-	// Elsewhere, http://<scheme>.localhost is a server on the loopback
-	// interface, not the app.
-	schemeHosts = false
-	if got := send("GET", "/data", "http://mygo.localhost", nil).header.Get("Access-Control-Allow-Origin"); got != "" {
-		t.Errorf("http://mygo.localhost outside Windows got Access-Control-Allow-Origin %q", got)
-	}
-	schemeHosts = true
-
-	// A preflight is answered for the app's pages, not passed to the handler.
-	rec := send("OPTIONS", "/data", "http://mygo.localhost", http.Header{
-		"Access-Control-Request-Method":  {"POST"},
-		"Access-Control-Request-Headers": {"content-type"},
-	})
-	if rec.status != http.StatusNoContent || rec.body.String() != "" ||
-		rec.header.Get("Access-Control-Allow-Methods") != "POST" ||
-		rec.header.Get("Access-Control-Allow-Headers") != "content-type" {
-		t.Errorf("preflight: %d %q %v", rec.status, rec.body.String(), rec.header)
-	}
-	if rec := send("OPTIONS", "/data", "https://example.com", http.Header{"Access-Control-Request-Method": {"POST"}}); rec.status == http.StatusNoContent {
-		t.Error("a preflight from another site was answered")
-	}
-
-	// A handler's own CORS headers win.
-	if got := send("GET", "/own", "mygo://localhost", nil).header.Get("Access-Control-Allow-Origin"); got != "https://cdn.example.com" {
-		t.Errorf("handler's header overridden: %q", got)
-	}
-}
-
-// bodyRecorder takes the body from the goroutine serving the request, as
-// the Linux backend does.
-type bodyRecorder struct {
-	recorder
-	writes int
-	err    error // returned by WriteBody
-}
-
-func (r *bodyRecorder) Write([]byte) { panic("Write called on a SchemeBodyWriter") }
-
-func (r *bodyRecorder) WriteBody(p []byte) error {
-	if isMainThread() || r.status == 0 {
-		panic("WriteBody on the main thread or before Respond")
-	}
-	r.writes++
-	r.body.Write(p)
-	return r.err
-}
-
-func TestProtocolBodyWriter(t *testing.T) {
-	const size = 640 << 10 // two and a half chunks
-	var written int
-	var writeErr error
-	if err := Protocol.HandleFunc("body", func(w http.ResponseWriter, r *http.Request) {
-		chunk := []byte(strings.Repeat("0123456789abcdef", 2048)) // 32 KiB
-		for written = 0; written < size; written += len(chunk) {
-			if _, writeErr = w.Write(chunk); writeErr != nil {
-				return
-			}
-		}
-	}); err != nil {
-		t.Fatal(err)
-	}
-	defer Protocol.Unhandle("body")
-	_, fw := testWindow(t, WindowOptions{})
-	serve := func(rec *bodyRecorder) {
-		t.Helper()
-		rec.finished = make(chan struct{})
-		req := &platform.SchemeRequest{Context: context.Background(), Method: "GET", URL: "body://localhost/", Header: http.Header{}, Responder: rec}
-		onMain(func() { fw.H.SchemeRequest(req) })
-		select {
-		case <-rec.finished:
-		case <-time.After(wait.Guard):
-			t.Fatal("request did not finish")
-		}
-	}
-
-	rec := &bodyRecorder{}
-	serve(rec)
-	if rec.status != 200 || rec.body.Len() != size || rec.writes != 3 {
-		t.Errorf("status %d, %d bytes in %d writes", rec.status, rec.body.Len(), rec.writes)
-	}
-	if writeErr != nil {
-		t.Errorf("Write: %v", writeErr)
-	}
-
-	// Once the webview stops reading, the handler learns it from Write.
-	rec = &bodyRecorder{err: errors.New("gone")}
-	serve(rec)
-	if writeErr == nil || writeErr.Error() != "gone" || written >= size {
-		t.Errorf("after WriteBody failed: Write = %v, %d bytes written", writeErr, written)
-	}
-}
-
 func TestWindowAllClosedOnce(t *testing.T) {
 	if n := len(Windows()); n != 0 {
 		t.Skipf("%d windows are open", n)
@@ -1735,101 +383,6 @@ func TestWindowAllClosedOnce(t *testing.T) {
 	}
 	if n := count.Load(); n != 1 {
 		t.Errorf("OnWindowAllClosed fired %d times", n)
-	}
-}
-
-func TestFrontend(t *testing.T) {
-	w, fw := testWindow(t, WindowOptions{})
-	if !slices.Contains(fw.Opts.Schemes, "mygo") {
-		t.Errorf("windows must handle the mygo scheme: %v", fw.Opts.Schemes)
-	}
-	load := func(url string) string {
-		t.Helper()
-		if err := w.Page().LoadURL(url); err != nil {
-			t.Fatal(err)
-		}
-		return get(w, platform.Window.URL)
-	}
-	if got := load("/settings?tab=1"); got != "mygo://localhost/settings?tab=1" {
-		t.Errorf("relative URL loaded %q", got)
-	}
-	if got := load("https://example.com/"); got != "https://example.com/" {
-		t.Errorf("absolute URL loaded %q", got)
-	}
-
-	// No frontend: a page explains how to get one.
-	rec := request(t, fw, "GET", "mygo://localhost/", nil)
-	if rec.status != 404 || !strings.Contains(rec.body.String(), "mygo dev") {
-		t.Errorf("no frontend: %d %q", rec.status, rec.body.String())
-	}
-	SetFrontend(fstest.MapFS{"index.html": {Data: []byte("<p>app</p>")}, "app.js": {Data: []byte("go()")}})
-	defer SetFrontend(nil)
-	if rec := request(t, fw, "GET", "mygo://localhost/app.js", nil); rec.status != 200 || rec.body.String() != "go()" {
-		t.Errorf("app.js: %d %q", rec.status, rec.body.String())
-	}
-	if rec := request(t, fw, "GET", "mygo://localhost/todos/1", nil); rec.body.String() != "<p>app</p>" {
-		t.Errorf("client-side route: %q", rec.body.String())
-	}
-	if !w.isTrusted("mygo://localhost/") {
-		t.Error("the frontend must be trusted")
-	}
-
-	// The app's own handler wins.
-	if err := Protocol.Handle("mygo", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, "own") })); err != nil {
-		t.Fatal(err)
-	}
-	if rec := request(t, fw, "GET", "mygo://localhost/app.js", nil); rec.body.String() != "own" {
-		t.Errorf("app handler: %q", rec.body.String())
-	}
-	Protocol.Unhandle("mygo")
-
-	// During mygo dev, the dev server.
-	t.Setenv("MYGO_DEV_URL", "http://192.168.1.2:5173")
-	if got := load("/"); got != "http://192.168.1.2:5173/" {
-		t.Errorf("dev: loaded %q", got)
-	}
-	if !w.isTrusted("http://192.168.1.2:5173/") || w.isTrusted("http://192.168.1.3:5173/") {
-		t.Error("only the dev server is trusted")
-	}
-	// ... or frontendDist from disk without a dev server.
-	t.Setenv("MYGO_DEV_URL", "")
-	SetFrontend(nil)
-	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "index.html"), []byte("<p>disk</p>"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("MYGO_FRONTEND_DIST", dir)
-	if rec := request(t, fw, "GET", "mygo://localhost/", nil); rec.body.String() != "<p>disk</p>" {
-		t.Errorf("frontendDist on disk: %q", rec.body.String())
-	}
-}
-
-func TestFileServer(t *testing.T) {
-	fsys := fstest.MapFS{
-		"index.html":    {Data: []byte("<!doctype html>index")},
-		"assets/app.js": {Data: []byte("console.log(1)")},
-	}
-	if err := Protocol.Handle("fs", FileServer(fsys)); err != nil {
-		t.Fatal(err)
-	}
-	defer Protocol.Unhandle("fs")
-	_, fw := testWindow(t, WindowOptions{})
-	for url, want := range map[string]string{
-		"fs://localhost/":              "<!doctype html>index",
-		"fs://localhost/assets/app.js": "console.log(1)",
-		"fs://localhost/settings/me":   "<!doctype html>index",
-	} {
-		rec := request(t, fw, "GET", url, nil)
-		if rec.status != 200 || rec.body.String() != want {
-			t.Errorf("%s: %d %q", url, rec.status, rec.body.String())
-		}
-	}
-	if rec := request(t, fw, "GET", "fs://localhost/missing.css", nil); rec.status != 404 {
-		t.Errorf("missing file: %d", rec.status)
-	}
-	rec := request(t, fw, "GET", "fs://localhost/assets/app.js", nil)
-	if ct := rec.header.Get("Content-Type"); !strings.Contains(ct, "javascript") {
-		t.Errorf("js content type = %q", ct)
 	}
 }
 
@@ -1948,46 +501,29 @@ func TestDefaultMenu(t *testing.T) {
 	}
 }
 
-func TestMenuRolesOnWindow(t *testing.T) {
-	w, fw := testWindow(t, WindowOptions{})
-	w.Focus()
-	onMain(func() {
-		performRole(RoleZoomIn, w)
-		performRole(RoleZoomIn, w)
-	})
-	if z := fw.Zoom(); z != 1.25 {
-		t.Errorf("zoom after two zoomIn = %v", z)
-	}
-	onMain(func() { performRole(RoleToggleDevTools, w) })
-	if !w.Page().IsDevToolsOpened() {
-		t.Error("toggleDevTools")
-	}
-}
-
 func TestWindowMenuActivation(t *testing.T) {
 	w, fw := testWindow(t, WindowOptions{Hidden: true})
 	other, otherNative := testWindow(t, WindowOptions{Hidden: true})
 	other.Focus()
 	var clicked *Window
-	var checked bool
-	var zoom float64
+	var checked, minimized bool
 	clicks := 0
-	menu := NewMenu([]*MenuItem{{Label: "View", Submenu: []*MenuItem{
+	menu := NewMenu([]*MenuItem{{Label: "Window", Submenu: []*MenuItem{
 		{ID: "small", Label: "Small", Type: MenuItemRadio, Checked: true},
-		{ID: "large", Label: "Large", Type: MenuItemRadio, Role: RoleZoomIn, Click: func(it *MenuItem, win *Window) {
+		{ID: "min", Label: "Minimize", Type: MenuItemRadio, Role: RoleMinimize, Click: func(it *MenuItem, win *Window) {
 			clicked, checked = win, it.IsChecked()
 			if win != nil {
-				zoom = win.Page().ZoomFactor()
+				minimized = win.IsMinimized()
 			}
 			clicks++
 		}},
 	}}})
-	item := menu.ItemByID("large")
+	item := menu.ItemByID("min")
 	onMain(func() { fw.ClickMenuItem(item.uid) })
-	if clicked != w || !checked || zoom != 1.1 || menu.ItemByID("small").IsChecked() {
-		t.Errorf("click = (%v, checked %v, zoom %v), want the menu's window after its state and role changed", clicked, checked, zoom)
+	if clicked != w || !checked || !minimized || menu.ItemByID("small").IsChecked() {
+		t.Errorf("click = (%v, checked %v, minimized %v), want the menu's window after its state and role changed", clicked, checked, minimized)
 	}
-	if other.Page().ZoomFactor() != 1 {
+	if other.IsMinimized() {
 		t.Error("the role changed the focused window instead of the menu's window")
 	}
 	if FocusedWindow() != other {
@@ -2000,15 +536,15 @@ func TestWindowMenuActivation(t *testing.T) {
 		t.Fatal("a window still has focus")
 	}
 	onMain(func() { fw.ClickMenuItem(item.uid) })
-	if clicked != w || zoom != 1.25 {
-		t.Errorf("click without focus = (%v, zoom %v), want the menu's window", clicked, zoom)
+	if clicked != w || !minimized {
+		t.Errorf("click without focus = (%v, minimized %v), want the menu's window", clicked, minimized)
 	}
 
 	// Application and tray menus without a window use the focused window.
 	other.Focus()
 	onMain(func() { fb.ClickMenuItem(item.uid) })
-	if clicked != other || zoom != 1.1 {
-		t.Errorf("application click = (%v, zoom %v), want the focused window", clicked, zoom)
+	if clicked != other || !other.IsMinimized() {
+		t.Errorf("application click = (%v, minimized %v), want the focused window", clicked, other.IsMinimized())
 	}
 	onMain(otherNative.Blur)
 	onMain(func() { fb.ClickMenuItem(item.uid) })
@@ -2021,12 +557,6 @@ func TestWindowMenuActivation(t *testing.T) {
 	onMain(func() { fw.ClickMenuItem(item.uid) })
 	if clicks != before {
 		t.Error("a destroyed window still delivered a menu click")
-	}
-}
-
-func TestNextZoom(t *testing.T) {
-	if nextZoom(1, 1) != 1.1 || nextZoom(1, -1) != 0.9 || nextZoom(5, 1) != 5 || nextZoom(0.25, -1) != 0.25 {
-		t.Error("zoom steps")
 	}
 }
 
@@ -2265,24 +795,6 @@ func TestThemePreferencesJSON(t *testing.T) {
 	}
 }
 
-// TestThemePreferencesTypeScript checks that the generated client takes
-// the type of mygo-runtime for the preferences, whose JSON it is.
-func TestThemePreferencesTypeScript(t *testing.T) {
-	m := tsgen.Model{Events: []tsgen.Event{{Name: "prefs", Type: reflect.TypeFor[ThemePreferences]()}}}
-	out, err := tsgen.Generate(m)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, want := range []string{`import { event, type ThemePreferences } from "mygo-runtime";`, `prefs: event<ThemePreferences>("prefs")`} {
-		if !strings.Contains(string(out), want) {
-			t.Errorf("client does not contain %q:\n%s", want, out)
-		}
-	}
-	if strings.Contains(string(out), "interface ThemePreferences") {
-		t.Errorf("client declares ThemePreferences itself:\n%s", out)
-	}
-}
-
 // TestThemePreferencesAreReadOnce checks that the desktop is asked for its
 // preferences once per change, as reading them can call out to it (the
 // settings portal on Linux).
@@ -2321,102 +833,6 @@ func TestThemePreferencesAreReadOnce(t *testing.T) {
 	}
 }
 
-// TestThemePreferencesReachThePage checks that the accent and the settings
-// of accessibility reach a page, at document start and on a change, and
-// that later documents start with the new ones.
-func TestThemePreferencesReachThePage(t *testing.T) {
-	onMain(func() {
-		fb.SetPreferences(platform.Preferences{
-			Accent:       platform.Color{R: 255, G: 128, B: 0, A: 255},
-			ReduceMotion: true,
-			HighContrast: true,
-			TextScale:    1.25,
-		})
-	})
-	defer onMain(func() { fb.SetPreferences(platform.Preferences{}) })
-
-	_, fw := readyWindow(t, WindowOptions{Page: PageOptions{PreloadScript: "preload();"}})
-	if src := fw.Opts.UserScripts[preferencesScriptIndex].Source; !strings.Contains(src, `"accent":"#ff8000"`) {
-		t.Errorf("preferences at document start = %s", src)
-	}
-	scaled := func(textScale float64) func(map[string]any) bool {
-		return func(m map[string]any) bool {
-			if m["n"] != "mygo:preferences" {
-				return false
-			}
-			p, _ := m["p"].(map[string]any)
-			return p["textScale"] == textScale
-		}
-	}
-
-	// A change reaches the page, and the script of the documents it loads
-	// next. A desktop without an accent sends null, so the page falls back
-	// to its own color.
-	onMain(func() { fb.SetPreferences(platform.Preferences{TextScale: 2}) })
-	p, _ := received(t, fw, scaled(2))["p"].(map[string]any)
-	if p["accent"] != nil || p["reduceMotion"] != false || p["highContrast"] != false {
-		t.Errorf("preferences after a change = %+v", p)
-	}
-	scripts := onMainValue(func() []platform.UserScript { return slices.Clone(fw.Opts.UserScripts) })
-	if len(scripts) != 3 || !strings.Contains(scripts[0].Source, `"secret"`) || scripts[2].Source != "preload();" {
-		t.Errorf("user scripts after a change = %+v", scripts)
-	} else if src := scripts[preferencesScriptIndex].Source; !strings.Contains(src, `"accent":null`) || !strings.Contains(src, `"textScale":2`) {
-		t.Errorf("preferences script after a change = %s", src)
-	}
-
-	// A theme change that leaves the preferences as they were, as one of
-	// the appearance, leaves the scripts.
-	updates := onMainValue(func() int { return fw.UserScriptUpdates })
-	onMain(func() { fb.SetPreferences(platform.Preferences{TextScale: 2}) })
-	if n := onMainValue(func() int { return fw.UserScriptUpdates }); n != updates {
-		t.Errorf("SetUserScripts called %d times without a change of the preferences", n-updates)
-	}
-}
-
-// TestPreferencesScriptAtDocumentStart checks the script that tells the
-// first page: after the bridge, which it tells, and before the preload
-// script of the app.
-func TestPreferencesScriptAtDocumentStart(t *testing.T) {
-	onMain(func() {
-		fb.SetPreferences(platform.Preferences{Accent: platform.Color{R: 0x11, G: 0x22, B: 0x33, A: 255}, TextScale: 1.5})
-	})
-	defer onMain(func() { fb.SetPreferences(platform.Preferences{}) })
-
-	_, fw := testWindow(t, WindowOptions{Page: PageOptions{PreloadScript: "preload();"}})
-	scripts := fw.Opts.UserScripts
-	if len(scripts) != 3 {
-		t.Fatalf("UserScripts = %d, want the bridge, the preferences and the preload script", len(scripts))
-	}
-	if !strings.Contains(scripts[0].Source, `"secret"`) {
-		t.Error("the bridge configuration does not come first")
-	}
-	src := scripts[preferencesScriptIndex].Source
-	for _, want := range []string{"mygo:preferences", `"accent":"#112233"`, `"textScale":1.5`} {
-		if !strings.Contains(src, want) {
-			t.Errorf("preferences script %q does not contain %q", src, want)
-		}
-	}
-	if scripts[2].Source != "preload();" {
-		t.Errorf("preload script = %q, want it last", scripts[2].Source)
-	}
-}
-
-// TestThemePreferencesDoNotReachNativeContent checks that a window that
-// draws itself queues no event for a page it does not have.
-func TestThemePreferencesDoNotReachNativeContent(t *testing.T) {
-	view := func(c *ui.Context) { ui.Text(c, "hello") }
-	w, fw, _ := contentWindow(t, view)
-	onMain(func() { fb.SetPreferences(platform.Preferences{TextScale: 2}) })
-	defer onMain(func() { fb.SetPreferences(platform.Preferences{}) })
-	time.Sleep(20 * time.Millisecond)
-	w.outMu.Lock()
-	queued := len(w.held) + len(w.outbox)
-	w.outMu.Unlock()
-	if queued != 0 || len(fw.Scripts()) != 0 {
-		t.Errorf("preferences reached native content: %d queued events, scripts %q", queued, fw.Scripts())
-	}
-}
-
 // needsAppCalls are the calls that need the running app, which main may
 // not make before Run.
 var needsAppCalls = []struct {
@@ -2429,8 +845,6 @@ var needsAppCalls = []struct {
 	{"App.IsHidden", func() { App.IsHidden() }},
 	{"App.SetBadgeCount", func() { App.SetBadgeCount(1) }},
 	{"App.ShowAboutPanel", func() { App.ShowAboutPanel(AboutPanelOptions{}) }},
-	{"App.ClearBrowsingData", func() { App.ClearBrowsingData() }},
-	{"Session.ClearData", func() { NewEphemeralSession().ClearData(SiteDataAll) }},
 	{"App.Dock.SetBadge", func() { App.Dock.SetBadge("1") }},
 	{"App.Dock.Badge", func() { App.Dock.Badge() }},
 	{"App.Dock.Bounce", func() { App.Dock.Bounce(false) }},
@@ -2594,9 +1008,6 @@ func stuckQuit() {
 // do before Run, when the backend is not initialized, and what it may
 // not, then exits.
 func beforeRun() {
-	// An event for a frontend, as an app of one declares, so that generate
-	// mode has a client to write.
-	NewEvent[int]("test:before-run")
 	// Settings, which Run applies.
 	Theme.SetSource(ThemeDark)
 	_ = Theme.SetGTKCSS("headerbar {}")
@@ -2655,12 +1066,6 @@ func TestBeforeRun(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("no %q in the output:\n%s", want, out)
 		}
-	}
-
-	client := filepath.Join(t.TempDir(), "mygo.ts")
-	run("MYGO_GENERATE=" + client)
-	if _, err := os.Stat(client); err != nil {
-		t.Error(err)
 	}
 }
 
@@ -2823,21 +1228,6 @@ func TestParseBackground(t *testing.T) {
 		if _, err := parseBackground(bad); err == nil {
 			t.Errorf("parseBackground(%q) should fail", bad)
 		}
-	}
-}
-
-func TestEncodeReply(t *testing.T) {
-	b := encodeReply(7, "k\"1", map[string]any{"line": "a b"}, nil).appendTo(nil)
-	var m map[string]jsontext.Value
-	if err := json.Unmarshal(b, &m); err != nil {
-		t.Fatalf("%s: %v", b, err)
-	}
-	if strings.Contains(string(b), " ") {
-		t.Error("U+2028 must be escaped for JavaScript")
-	}
-	b = encodeReply(8, "k", make(chan int), nil).appendTo(nil)
-	if !strings.Contains(string(b), `"ok":false`) {
-		t.Errorf("unencodable result should be an error: %s", b)
 	}
 }
 

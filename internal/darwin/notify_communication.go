@@ -166,3 +166,13 @@ func communicationAvatar(avatar []byte) id {
 	}
 	return nsData(png)
 }
+
+func pngFromImage(img id) []byte {
+	tiff := send(img, "TIFFRepresentation")
+	rep := send(class("NSBitmapImageRep"), "imageRepWithData:", uintptr(tiff))
+	if rep == 0 {
+		return nil
+	}
+	data := send(rep, "representationUsingType:properties:", 4, uintptr(send(class("NSDictionary"), "dictionary")))
+	return goBytes(data)
+}

@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"mime"
-	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -17,13 +16,10 @@ import (
 	"github.com/egoist/mygo/i18n"
 )
 
-// The configuration of a project is in one of these files at its root.
-const (
-	jsonConfig = "mygo.json"
-	tsConfig   = "mygo.config.ts"
-)
+// jsonConfig is the configuration file at a project root.
+const jsonConfig = "mygo.json"
 
-// Config is read from mygo.json or mygo.config.ts in the project root.
+// Config is read from mygo.json in the project root.
 // Every field is optional.
 type Config struct {
 	// Name is the display name of the app (default: directory name).
@@ -46,9 +42,7 @@ type Config struct {
 	Publisher string `json:"publisher"`
 	// License is the SPDX license expression of the app, such as "MIT" or
 	// "Apache-2.0 WITH LLVM-exception", which the RPM package and the
-	// PKGBUILD of Arch Linux record. It defaults to the license of
-	// package.json, for apps whose frontend declares one (default:
-	// package.json's license).
+	// PKGBUILD of Arch Linux record.
 	License string `json:"license"`
 	// Icon is a square PNG, ideally 1024x1024 (default:
 	// resources/icon.png when it exists). Beside it, the same name with
@@ -58,30 +52,6 @@ type Config struct {
 	Main string `json:"main"`
 	// Out is where builds are written (default "dist").
 	Out string `json:"out"`
-	// Bindings is the path of the generated TypeScript client (default:
-	// frontend/src/mygo.ts when frontend/package.json depends on
-	// mygo-runtime, src/mygo.ts when package.json at the root does, else
-	// mygo.ts when the configuration has a frontend, and no client for an
-	// app without one, such as an app of native UI).
-	Bindings string `json:"bindings"`
-
-	// DevURL is what the app loads during `mygo dev` in place of its built
-	// frontend, usually the dev server that DevCommand starts, e.g.
-	// "http://localhost:5173". Windows load it with relative URLs such as
-	// "/" (see mygo.WindowOptions.URL).
-	DevURL string `json:"devUrl"`
-	// DevCommand runs in the project directory while `mygo dev` runs, e.g.
-	// "bun run --cwd frontend dev". mygo dev launches the app once DevURL
-	// answers.
-	DevCommand string `json:"devCommand"`
-	// BuildCommand builds the frontend before `mygo build` compiles the
-	// app, e.g. "bun run --cwd frontend build". It runs in the project
-	// directory.
-	BuildCommand string `json:"buildCommand"`
-	// FrontendDist is the directory of the built frontend. `mygo build`
-	// embeds it into the app, which serves it at mygo://localhost/. During
-	// `mygo dev` without DevURL, it is served from disk.
-	FrontendDist string `json:"frontendDist"`
 
 	// Resources lists extra files and directories to ship with the app of
 	// every platform. Each is copied under its base name into the app's
@@ -390,17 +360,10 @@ func loadConfig(root string) (*Config, error) {
 }
 
 // readConfig returns the configuration of the project in root as JSON, and
-// the file it comes from: mygo.json, or mygo.config.ts, which a JavaScript
-// runtime evaluates. Without either it returns nothing.
+// the file it comes from (mygo.json). Without it returns nothing.
 func readConfig(root string) (data []byte, file string, err error) {
-	jsonFile, tsFile := filepath.Join(root, jsonConfig), filepath.Join(root, tsConfig)
-	switch hasJSON, hasTS := fileExists(jsonFile), fileExists(tsFile); {
-	case hasJSON && hasTS:
-		return nil, "", fmt.Errorf("%s configures the project too; keep one of them", jsonConfig)
-	case hasTS:
-		data, err = evalTSConfig(root, tsFile)
-		return data, tsFile, err
-	case hasJSON:
+	jsonFile := filepath.Join(root, jsonConfig)
+	if fileExists(jsonFile) {
 		data, err = os.ReadFile(jsonFile)
 		return data, jsonFile, err
 	}
@@ -496,11 +459,6 @@ func (c *Config) validate() error {
 	}
 	if err := c.validateMobile(); err != nil {
 		return err
-	}
-	if c.DevURL != "" {
-		if u, err := url.Parse(c.DevURL); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-			return fmt.Errorf("devUrl %q is not an http(s) URL", c.DevURL)
-		}
 	}
 	return nil
 }
@@ -636,9 +594,6 @@ func (c *Config) applyDefaults() {
 		c.MacOS.DMGTitle = c.Name
 	}
 	if c.Linux.Maintainer == "" {
-		c.Linux.Maintainer = packageAuthor(c.root)
-	}
-	if c.Linux.Maintainer == "" {
 		c.Linux.Maintainer = c.Name
 	}
 	if c.I18n != nil {
@@ -649,71 +604,6 @@ func (c *Config) applyDefaults() {
 			c.I18n.Source = "en"
 		}
 	}
-	frontendOptions := c.DevURL != "" || c.DevCommand != "" || c.BuildCommand != "" || c.FrontendDist != ""
-	// The client imports mygo-runtime: a package.json without it is not
-	// the app's frontend, as that of an app of native UI that runs the
-	// CLI from npm, or a workspace root that holds the app's website.
-	switch {
-	case c.Bindings != "":
-	case usesRuntime(filepath.Join(c.root, "frontend")):
-		c.Bindings = filepath.Join("frontend", "src", "mygo.ts")
-	case usesRuntime(c.root):
-		c.Bindings = filepath.Join("src", "mygo.ts")
-	case frontendOptions:
-		c.Bindings = "mygo.ts"
-	}
-}
-
-// usesRuntime reports whether the package.json in dir depends on
-// mygo-runtime.
-func usesRuntime(dir string) bool {
-	data, err := os.ReadFile(filepath.Join(dir, "package.json"))
-	if err != nil {
-		return false
-	}
-	var pkg struct {
-		Dependencies    map[string]json.RawMessage `json:"dependencies"`
-		DevDependencies map[string]json.RawMessage `json:"devDependencies"`
-	}
-	if json.Unmarshal(data, &pkg) != nil {
-		return false
-	}
-	_, dep := pkg.Dependencies["mygo-runtime"]
-	_, dev := pkg.DevDependencies["mygo-runtime"]
-	return dep || dev
-}
-
-// packageAuthor returns the author in the package.json of root, which npm
-// writes as "Name <email> (url)" or {"name", "email", "url"}, as
-// "Name <email>", or "" without one.
-func packageAuthor(root string) string {
-	data, err := os.ReadFile(filepath.Join(root, "package.json"))
-	if err != nil {
-		return ""
-	}
-	var pkg struct {
-		Author json.RawMessage `json:"author"`
-	}
-	if json.Unmarshal(data, &pkg) != nil || pkg.Author == nil {
-		return ""
-	}
-	var name, email string
-	var person struct{ Name, Email string }
-	if err := json.Unmarshal(pkg.Author, &name); err == nil {
-		name, _, _ = strings.Cut(name, "(")
-		name, email, _ = strings.Cut(name, "<")
-		email, _, _ = strings.Cut(email, ">")
-	} else if err := json.Unmarshal(pkg.Author, &person); err == nil {
-		name, email = person.Name, person.Email
-	}
-	name, email = strings.Join(strings.Fields(name), " "), strings.TrimSpace(email)
-	switch {
-	case name == "":
-		return ""
-	case email == "":
-		return name
-	}
-	return name + " <" + email + ">"
 }
 
 func (c *Config) path(p string) string {

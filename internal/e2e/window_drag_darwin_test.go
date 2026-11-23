@@ -3,7 +3,6 @@
 package e2e
 
 import (
-	"fmt"
 	"sync/atomic"
 	"testing"
 
@@ -13,12 +12,12 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-// TestDragRegionMovesWindow presses a drag region and drags it, of a page
-// and of native UI, in a window with a hidden title bar and in a frameless
-// one: the window follows the pointer, whether the pointer moved before
-// the drag was asked (a quick press and drag, issue #528) or after. The
-// window server cannot move a window for a press the app made up, so
-// these drags are MyGo's own: the window server's take a hand on a Mac.
+// TestDragRegionMovesWindow presses a drag region and drags it, of native UI,
+// in a window with a hidden title bar and in a frameless one: the window follows
+// the pointer, whether the pointer moved before the drag was asked (a quick
+// press and drag, issue #528) or after. The window server cannot move a window
+// for a press the app made up, so these drags are MyGo's own: the window
+// server's take a hand on a Mac.
 func TestDragRegionMovesWindow(t *testing.T) {
 	for _, c := range []struct {
 		name string
@@ -28,12 +27,6 @@ func TestDragRegionMovesWindow(t *testing.T) {
 		{"frameless", mygo.WindowOptions{Frameless: true}},
 	} {
 		c.opts.X, c.opts.Y, c.opts.Width, c.opts.Height = 120, 120, 420, 260
-		t.Run(c.name+"/page", func(t *testing.T) {
-			w := newWindow(t, c.opts)
-			w.Page().LoadHTML(`<body style="margin:0"><div id="bar" style="--app-region:drag;height:40px" onmousedown="window.presses=(window.presses||0)+1"></div></body>`, "")
-			waitFor(t, w, "document.getElementById('bar')")
-			dragRegion(t, w, func(n int) { waitFor(t, w, fmt.Sprintf("window.presses === %d", n)) })
-		})
 		t.Run(c.name+"/native UI", func(t *testing.T) {
 			var frames atomic.Int32
 			opts := c.opts
@@ -46,15 +39,14 @@ func TestDragRegionMovesWindow(t *testing.T) {
 			})
 			w := newWindow(t, opts)
 			eventually(t, "a frame", func() bool { return frames.Load() > 0 })
-			dragRegion(t, w, func(int) {})
+			dragRegion(t, w)
 		})
 	}
 }
 
 // dragRegion drags w by its drag region, 40 points tall at the top of its
-// content, slowly then quickly; pressed waits for the content to see its
-// nth press.
-func dragRegion(t *testing.T, w *mygo.Window, pressed func(n int)) {
+// content, slowly then quickly.
+func dragRegion(t *testing.T, w *mygo.Window) {
 	t.Helper()
 	w.Focus()
 	eventually(t, "the window focused", w.IsFocused)
@@ -93,7 +85,6 @@ func dragRegion(t *testing.T, w *mygo.Window, pressed func(n int)) {
 	down := at(x, y)
 	down.Down = true
 	mouse(down)
-	pressed(1)
 	eventually(t, "the drag asked of the window server", func() bool { return phase() == "native" })
 	mouse(at(x+1, y+1))
 	if got := w.ContentBounds(); got != start {
@@ -122,7 +113,6 @@ func dragRegion(t *testing.T, w *mygo.Window, pressed func(n int)) {
 	down = at(x, y)
 	down.Down = true
 	mouse(down, at(x+6, y+3), at(x+12, y+6), at(x+20, y+10))
-	pressed(2)
 	eventually(t, "the window moved by MyGo", func() bool { return phase() == "manual" })
 	if got := w.ContentBounds(); got == start {
 		t.Errorf("the window's content stayed at %+v after the drag was asked", got)

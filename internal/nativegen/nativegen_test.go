@@ -10,10 +10,119 @@ import (
 	"testing"
 )
 
-const example = "../../examples/native-module/modules/language"
+const languageSrc = `package language
 
-func TestLoadExample(t *testing.T) {
-	m, err := Load(example)
+import (
+	"context"
+	"io"
+	"iter"
+	"time"
+
+	"github.com/egoist/mygo/native"
+)
+
+//mygo:native
+type Analyzer interface {
+	DetectLanguage(text string) (string, error)
+	Hypotheses(text string, max int) (map[string]float64, error)
+	Tokens(ctx context.Context, text string, unit Unit) iter.Seq2[Token, error]
+	Embedding(ctx context.Context, language string) (Embedding, error)
+	Suggest(ctx context.Context, e Embedding, word string, r Ranker) iter.Seq2[string, error]
+	Count(text string, progress func(word string, index int)) int
+	Ticks(interval time.Duration, f func(n int)) io.Closer
+	Uppercase(text string, buf *native.Buffer) (int, error)
+	Chunks(ctx context.Context, text string, size int) iter.Seq2[*native.Buffer, error]
+	Sleep(ctx context.Context, d time.Duration) error
+}
+
+type Embedding interface {
+	io.Closer
+	Distance(a, b string) float64
+	Neighbors(word string, n int) []string
+}
+
+type Ranker interface {
+	Score(word string) float64
+	Explain(ctx context.Context, word string) (string, error)
+}
+
+type Unit string
+
+const (
+	Word      Unit = "word"
+	Sentence  Unit = "sentence"
+	Paragraph Unit = "paragraph"
+)
+
+type Token struct {
+	Start, End int
+	Text       string
+}
+
+var (
+	ErrUndetermined = native.NewError("undetermined")
+	ErrNoEmbedding  = native.NewError("no_embedding")
+)
+`
+
+func writeModulePair(t *testing.T) (langDir, placesDir, langImport string) {
+	t.Helper()
+	root, err := os.MkdirTemp("testdata", "pair-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(root) })
+	langDir = filepath.Join(root, "language")
+	placesDir = filepath.Join(root, "places")
+	for _, d := range []string{langDir, placesDir} {
+		if err := os.MkdirAll(d, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(langDir, "language.go"), []byte(languageSrc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	langImport = "github.com/egoist/mygo/internal/nativegen/" + filepath.ToSlash(langDir)
+	placesSrc := `package places
+
+import (
+	"io"
+
+	"github.com/egoist/mygo"
+	"` + langImport + `"
+	"github.com/egoist/mygo/native"
+	"github.com/egoist/mygo/ui"
+)
+
+//mygo:native
+type Map interface {
+	native.View
+	Show(p Place, span float64)
+	Center() Place
+	Pin(p Place, a language.Analyzer, text string)
+	OnMove(f func(center Place)) io.Closer
+}
+
+//mygo:native
+//mygo:mainthread
+type Sharing interface {
+	Share(win *mygo.Window, rect ui.Rect, text string)
+	ShareFrom(view native.View, text string)
+}
+
+type Place struct {
+	Latitude, Longitude float64
+}
+`
+	if err := os.WriteFile(filepath.Join(placesDir, "places.go"), []byte(placesSrc), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return langDir, placesDir, langImport
+}
+
+func TestLoadModule(t *testing.T) {
+	langDir, _, _ := writeModulePair(t)
+	m, err := Load(langDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -42,11 +151,15 @@ func TestLoadExample(t *testing.T) {
 }
 
 func TestModuleUsingAnother(t *testing.T) {
-	m, err := Load("../../examples/native-module/modules/places")
+	langDir, placesDir, langImport := writeModulePair(t)
+	if err := AddLang(langDir, "swift"); err != nil {
+		t.Fatal(err)
+	}
+	m, err := Load(placesDir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	dep := m.Deps["github.com/egoist/mygo/examples/native-module/modules/language"]
+	dep := m.Deps[langImport]
 	if dep == nil || dep.Name != "Language" {
 		t.Fatalf("deps %v", m.Deps)
 	}
@@ -65,29 +178,20 @@ func TestModuleUsingAnother(t *testing.T) {
 	}
 }
 
-// TestExampleUpToDate checks that the example's generated files are those
-// the generator writes now.
-func TestExampleUpToDate(t *testing.T) {
-	stale, err := Stale(example)
-	for _, m := range []string{"places", "motion"} {
-		more, err := Stale("../../examples/native-module/modules/" + m)
+// TestGeneratedUpToDate checks that generated files match what Stale expects.
+func TestGeneratedUpToDate(t *testing.T) {
+	langDir, placesDir, _ := writeModulePair(t)
+	for _, dir := range []string{langDir, placesDir} {
+		if _, err := Generate(dir); err != nil {
+			t.Fatal(err)
+		}
+		stale, err := Stale(dir)
 		if err != nil {
 			t.Fatal(err)
 		}
-		stale = append(stale, more...)
-	}
-	if err != nil {
-		t.Fatal(err)
-	}
-	m, _ := Load(example)
-	src, err := GenerateGo(m, ModuleLangs(m.Dir), SwiftPlatformsOf(m.Dir))
-	if err != nil {
-		t.Fatal(err)
-	}
-	have, _ := os.ReadFile(filepath.Join(m.Dir, GeneratedGo(m.Package)))
-	swift, _ := os.ReadFile(filepath.Join(SwiftDir(m), SwiftFile(m)))
-	if len(stale) > 0 || string(have) != string(src) || string(swift) != string(GenerateSwift(m)) {
-		t.Fatalf("the example's generated files are out of date (%v): run go run ./cmd/mygo generate examples/native-module", stale)
+		if len(stale) > 0 {
+			t.Fatalf("%s generated files unexpectedly stale: %v", dir, stale)
+		}
 	}
 }
 
@@ -162,11 +266,7 @@ func TestScaffoldBuilds(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Every kind of method, in the stub and the glue.
-	example, err := os.ReadFile(filepath.Join(example, "language.go"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	src := strings.Replace(string(example), "package language", "package greeting", 1)
+	src := strings.Replace(languageSrc, "package language", "package greeting", 1)
 	os.Remove(filepath.Join(dir, "greeting.go"))
 	if err := os.WriteFile(filepath.Join(dir, "greeting.go"), []byte(src), 0o644); err != nil {
 		t.Fatal(err)

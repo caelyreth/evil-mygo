@@ -565,7 +565,7 @@ type node struct {
 	image   *Bitmap
 	texture imagesrc.Frames // of an Image showing a native.Texture
 	svg     *SVG            // of an Icon, or an Image in its own colors
-	webView NativeWebView
+	webView embeddedView
 	// maximizeButton marks the window's maximize button (MaximizeButton).
 	maximizeButton bool
 	fit            Fit

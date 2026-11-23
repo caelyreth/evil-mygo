@@ -3,7 +3,6 @@
 package e2e
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"sync/atomic"
@@ -15,9 +14,7 @@ import (
 )
 
 // TestConsumeActivationClickInactiveInput checks wheel, hover, and file drops
-// over an inactive window when ConsumeActivationClick is enabled on Windows:
-// native UI and embedded WebViews keep all three while inactive, while a
-// regular WebView2 page disables its child control until the window activates.
+// over an inactive native UI window when ConsumeActivationClick is enabled on Windows.
 func TestConsumeActivationClickInactiveInput(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "drop.txt")
 	if err := os.WriteFile(file, []byte("hello"), 0o600); err != nil {
@@ -85,118 +82,6 @@ func TestConsumeActivationClickInactiveInput(t *testing.T) {
 		eventually(t, "drop over inactive native UI", func() bool { return dropped.Load() == 1 })
 		if w.IsFocused() {
 			t.Fatal("hover, wheel, or drop activated the window")
-		}
-	})
-
-	t.Run("embedded", func(t *testing.T) {
-		var frames atomic.Int32
-		var view *mygo.WebView
-		w := newWindow(t, mygo.WindowOptions{
-			Width: 300, Height: 200, X: 40, Y: 40,
-			ConsumeActivationClick: true,
-			Content: ui.View(func(c *ui.Context) {
-				frames.Add(1)
-				if view != nil {
-					ui.WebView(c, view).Fill()
-				}
-			}),
-		})
-		v, err := w.NewWebView(mygo.WebViewOptions{})
-		if err != nil {
-			t.Fatal(err)
-		}
-		w.Update(func() {
-			frames.Store(0)
-			view = v
-		})
-		eventually(t, "the embedded frame built", func() bool { return frames.Load() > 0 })
-		page := v.Page()
-		page.LoadHTML(`<body style="margin:0;height:200vh" onmousemove="window.hovered=true" onwheel="window.wheeled=true" ondragover="event.preventDefault()" ondrop="event.preventDefault(); window.dropped=event.dataTransfer.files.length"><script>requestAnimationFrame(() => requestAnimationFrame(() => { window.ready = true }))</script></body>`, "")
-		waitForPage(t, page, "window.ready === true")
-
-		focusOther(t)
-		if _, err := page.Eval("window.hovered = false; window.wheeled = false; true"); err != nil {
-			t.Fatal(err)
-		}
-
-		eventually(t, "hover over inactive embedded WebView", func() bool {
-			mygo.RunOnMain(func() { win.TestInputMove(w.NativeHandle(), 100, 100) })
-			ok, _ := mygo.EvalAs[bool](page, "window.hovered === true")
-			return ok
-		})
-		mygo.RunOnMain(func() { win.TestInputWheel(w.NativeHandle(), 100, 100) })
-		waitForPage(t, page, "window.wheeled === true")
-		droppedFile, supported := dragFiles(w, 100, 100, []string{file})
-		if !supported || !droppedFile {
-			t.Fatalf("inactive embedded drop: supported=%v dropped=%v", supported, droppedFile)
-		}
-		waitForPage(t, page, "window.dropped === 1")
-		if w.IsFocused() {
-			t.Fatal("hover, wheel, or drop activated the window")
-		}
-	})
-
-	t.Run("page", func(t *testing.T) {
-		for _, enabled := range []bool{false, true} {
-			t.Run(fmt.Sprintf("%v", enabled), func(t *testing.T) {
-				w := newWindow(t, mygo.WindowOptions{
-					Width: 300, Height: 200, X: 40, Y: 40,
-					ConsumeActivationClick: enabled,
-				})
-				page := w.Page()
-				page.LoadHTML(`<body style="margin:0;height:200vh" onmousemove="window.hovered=true" onwheel="window.wheeled=true"><script>requestAnimationFrame(() => requestAnimationFrame(() => { window.ready = true }))</script></body>`, "")
-				waitForPage(t, page, "window.ready === true")
-
-				focusOther(t)
-
-				var childEnabled, ok bool
-				mygo.RunOnMain(func() { childEnabled, ok = win.TestWebViewChildEnabled(w.NativeHandle()) })
-				if !ok {
-					t.Fatal("WebView2 child window not found")
-				}
-				if childEnabled == enabled {
-					t.Fatalf("inactive Chrome_WidgetWin_0 enabled = %v, want %v", childEnabled, !enabled)
-				}
-				if _, err := page.Eval("window.hovered = false; window.wheeled = false; true"); err != nil {
-					t.Fatal(err)
-				}
-				if !enabled {
-					eventually(t, "hover over inactive page", func() bool {
-						mygo.RunOnMain(func() { win.TestInputMove(w.NativeHandle(), 100, 100) })
-						got, _ := mygo.EvalAs[bool](page, "window.hovered === true")
-						return got
-					})
-					eventually(t, "wheel over inactive page", func() bool {
-						mygo.RunOnMain(func() { win.TestInputWheel(w.NativeHandle(), 100, 100) })
-						got, _ := mygo.EvalAs[bool](page, "window.wheeled === true")
-						return got
-					})
-					return
-				}
-				// While inactive with ConsumeActivationClick on, disabled Chrome_WidgetWin_0
-				// withholds hover and wheel; once activated, input resumes.
-				mygo.RunOnMain(func() { win.TestInputMove(w.NativeHandle(), 100, 100) })
-				mygo.RunOnMain(func() { win.TestInputWheel(w.NativeHandle(), 100, 100) })
-				if got, err := mygo.EvalAs[bool](page, "Boolean(window.hovered || window.wheeled)"); err != nil || got {
-					t.Fatalf("inactive page received hover/wheel = %v (err=%v), want false", got, err)
-				}
-				w.Focus()
-				eventually(t, "the page window focused", w.IsFocused)
-				mygo.RunOnMain(func() { childEnabled, ok = win.TestWebViewChildEnabled(w.NativeHandle()) })
-				if !ok || !childEnabled {
-					t.Fatalf("active Chrome_WidgetWin_0 enabled = %v (ok=%v), want true", childEnabled, ok)
-				}
-				eventually(t, "hover over active page", func() bool {
-					mygo.RunOnMain(func() { win.TestInputMove(w.NativeHandle(), 100, 100) })
-					got, _ := mygo.EvalAs[bool](page, "window.hovered === true")
-					return got
-				})
-				eventually(t, "wheel over active page", func() bool {
-					mygo.RunOnMain(func() { win.TestInputWheel(w.NativeHandle(), 100, 100) })
-					got, _ := mygo.EvalAs[bool](page, "window.wheeled === true")
-					return got
-				})
-			})
 		}
 	})
 }

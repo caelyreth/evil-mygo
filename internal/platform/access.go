@@ -99,10 +99,8 @@ type AccessNode struct {
 	// HasPopup is the kind of popup the element opens, as ARIA's
 	// aria-haspopup.
 	HasPopup AccessPopup
-	// WebView is the web view whose page the node stands for, if any
-	// (Surface.NewWebView): assistive technology finds the page's elements
-	// inside it, and it has no children of its own.
-	WebView WebView
+	// View is the embedded view the node stands for, if any.
+	View EmbeddedView
 	// TextRuns are the formats of the runes of a text field's Value, as a
 	// rich text editor's: runs in order, from rune Start to End, that
 	// screen readers read as bold, italic, links and headings. Runes no

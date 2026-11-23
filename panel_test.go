@@ -20,29 +20,3 @@ func TestPanelOptions(t *testing.T) {
 		t.Error("a window without Panel is a panel")
 	}
 }
-
-// TestPanelEscape closes a panel on an Escape its page leaves, as the
-// user closing it, which OnClose listeners may prevent.
-func TestPanelEscape(t *testing.T) {
-	w, fw := testWindow(t, WindowOptions{Panel: true})
-	keep, closes := true, 0
-	w.OnClose(func(e *CloseEvent) {
-		closes++
-		if keep {
-			e.PreventDefault()
-		}
-	})
-	escape := func() {
-		page(fw, `{"t":"escape"}`)
-		onMain(func() {}) // the close posted after the message
-	}
-	escape()
-	if closes != 1 || w.IsDestroyed() {
-		t.Fatalf("OnClose heard %d closes, destroyed %v", closes, w.IsDestroyed())
-	}
-	keep = false
-	escape()
-	if !w.IsDestroyed() {
-		t.Error("Escape did not close the panel")
-	}
-}

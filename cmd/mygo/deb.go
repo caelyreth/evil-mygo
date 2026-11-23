@@ -22,23 +22,17 @@ import (
 // Linux configures Linux packaging.
 type Linux struct {
 	// Maintainer of the Debian and RPM packages and of the PKGBUILD,
-	// "Name <email>" (default: the author in package.json, else the app's
-	// name).
+	// "Name <email>" (default: the app's name).
 	Maintainer string `json:"maintainer"`
 	// Comment is a short description of the app, for its desktop entry and
 	// its packages.
 	Comment string `json:"comment"`
 	// Categories of the desktop entry (default Utility).
 	Categories []string `json:"categories"`
-	// Depends lists packages the app needs besides GTK and WebKitGTK, by
+	// Depends lists packages the app needs besides GTK, by
 	// package format or as a list of Debian packages mapped to Arch Linux
 	// and RPM where known.
 	Depends linuxDepends `json:"depends"`
-	// WebView false says that the app shows no web page, in a window or a
-	// ui.WebView, as an app of native UI: its packages depend on GTK
-	// alone, and install.sh does not ask for WebKitGTK, which the app then
-	// never loads (default true).
-	WebView *bool `json:"webview"`
 	// Command is the name of a command that runs the app, or a list of
 	// names, as ["my-app", "ma"], which adds a short one: a link in
 	// /usr/bin from the Debian and RPM packages and the PKGBUILD, and in
@@ -118,16 +112,9 @@ func (d *linuxDepends) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
-// webView reports whether the app may show web pages, which need
-// WebKitGTK.
-func (l *Linux) webView() bool { return l.WebView == nil || *l.WebView }
-
 // debDepends returns the Debian packages the app depends on.
 func (l *Linux) debDepends() []string {
 	depends := []string{"libgtk-3-0 | libgtk-3-0t64"}
-	if l.webView() {
-		depends = append(depends, "libwebkit2gtk-4.1-0")
-	}
 	return append(depends, l.Depends.Deb...)
 }
 

@@ -4,7 +4,6 @@ package mygo
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"image"
 	"image/png"
@@ -225,30 +224,6 @@ func TestContentDrawsAndHandlesInput(t *testing.T) {
 		t.Errorf("%d clicks", clicks)
 	}
 
-	// The window has no page. The methods of its Page, which only MyGo
-	// reaches, report it or do nothing.
-	p := w.pg
-	if w.Page() != nil {
-		t.Error("a window showing Content has a page")
-	}
-	if _, err := p.Eval("1"); !errors.Is(err, errNoPage) {
-		t.Errorf("Eval: %v", err)
-	}
-	if err := p.LoadURL("https://example.com"); !errors.Is(err, errNoPage) || p.URL() != "" {
-		t.Errorf("LoadURL: %v, URL %q", err, p.URL())
-	}
-	if err := p.LoadFile("index.html"); !errors.Is(err, errNoPage) {
-		t.Errorf("LoadFile: %v", err)
-	}
-	if _, err := p.PrintToPDF(PDFOptions{}); !errors.Is(err, errNoPage) {
-		t.Errorf("PrintToPDF: %v", err)
-	}
-	if _, err := p.FindInPage("x", FindOptions{}); !errors.Is(err, errNoPage) {
-		t.Errorf("FindInPage: %v", err)
-	}
-	p.StopFindInPage()
-	p.Reload()
-
 	data, err := w.CapturePage()
 	if err != nil {
 		t.Fatal(err)
@@ -332,8 +307,6 @@ func testContentTitleBar(t *testing.T, style TitleBarStyle) {
 		t.Errorf("after a change: frame %v, TitleBar = %+v", framed, bar)
 	}
 	// Full screen removes the controls, and leaving it restores them.
-	// Native UI must hear both changes without queuing events for a page
-	// that does not exist (or asking the backend for its webview's zoom).
 	for _, room := range []platform.TitleBar{{}, {Height: 46, Left: 80, Bottom: 30}} {
 		onMain(func() {
 			fw.TitleBarRoom = room
@@ -343,12 +316,6 @@ func testContentTitleBar(t *testing.T, style TitleBarStyle) {
 		if !framed || bar != (ui.TitleBar{Height: float32(room.Height), Left: float32(room.Left), Right: float32(room.Right), Bottom: float32(room.Bottom)}) {
 			t.Errorf("after a full screen change: frame %v, TitleBar = %+v, want %+v", framed, bar, room)
 		}
-	}
-	w.outMu.Lock()
-	queued := len(w.held) + len(w.outbox)
-	w.outMu.Unlock()
-	if queued != 0 || len(fw.Scripts()) != 0 {
-		t.Errorf("title bar changes reached a page: %d queued events, scripts %q", queued, fw.Scripts())
 	}
 
 	// A window with its title bar has no room to keep clear of.
@@ -443,23 +410,16 @@ func TestContentMenuRoles(t *testing.T) {
 	view := func(c *ui.Context) {
 		ui.TextInput(c, &name).Absolute().Left(10).Top(10).Width(200)
 	}
-	w, fw, s := contentWindow(t, view)
+	w, _, s := contentWindow(t, view)
 	onMain(func() {
 		s.Send(platform.SurfaceEvent{Kind: platform.PointerDown, X: 30, Y: 25})
 		s.Send(platform.SurfaceEvent{Kind: platform.PointerUp, X: 30, Y: 25})
 		s.Frame()
-		// The page roles find no page; the edit roles edit the input.
-		for _, role := range []MenuRole{RoleReload, RoleForceReload, RoleToggleDevTools, RoleZoomIn, RoleResetZoom} {
-			performRole(role, w)
-		}
 		performRole(RoleSelectAll, w)
 		s.Frame()
 		performRole(RoleCut, w)
 		s.Frame()
 	})
-	if fw.IsDevToolsOpened() || len(fw.Scripts()) != 0 {
-		t.Errorf("page roles reached the window: devtools %v, scripts %q", fw.IsDevToolsOpened(), fw.Scripts())
-	}
 	if name != "" {
 		t.Errorf("Select All and Cut left %q", name)
 	}
@@ -685,8 +645,6 @@ func TestContentMenuKeepsItems(t *testing.T) {
 		"ID":        "the backend's items are numbered anew",
 		"Role":      "the Content's items do what their Chosen does, never a role",
 		"IconColor": "only the menus package ui draws tint icons",
-		"Native":    "only a web view's page has items of its own",
-		"Name":      "only a web view's page has items of its own",
 	}
 	red := platform.Color{R: 220, G: 40, B: 40, A: 255}
 	white := platform.Color{R: 255, G: 255, B: 255, A: 255}
@@ -696,7 +654,7 @@ func TestContentMenuKeepsItems(t *testing.T) {
 		BadgeColor: &red, BadgeTextColor: &white, KeepOpen: true, Role: "copy",
 		Accelerator: "Ctrl+R", Enabled: true, Visible: true, Checked: true, ToolTip: "Tag it red",
 		Icon: &platform.MenuIcon{PNG: []byte{1}}, IconColor: &red, Swatch: &red,
-		Submenu: &platform.Menu{}, Native: 1, Name: "red",
+		Submenu: &platform.Menu{},
 	}
 	v := reflect.ValueOf(item).Elem()
 	for i := range v.NumField() {

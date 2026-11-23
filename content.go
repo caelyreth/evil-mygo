@@ -88,7 +88,7 @@ func (w *Window) attachContent(content Content) {
 				}
 			})
 		},
-		PlaceWebViews: w.placeWebViews,
+		PlaceViews: w.placeViews,
 		PopupMenu: func(m *platform.Menu, x, y float64, chosen func(int)) {
 			pos := &platform.Point{X: int(math.Round(x)), Y: int(math.Round(y))}
 			menu := NewMenu(contentMenu(m, chosen))
@@ -401,5 +401,15 @@ func contentThemeChanged() {
 		if c := w.conn; c != nil && c.ThemeChanged != nil {
 			c.ThemeChanged()
 		}
+	}
+}
+
+// placeViews positions and clips embedded native/plugin views inside the
+// window's surface. Main thread only.
+func (w *Window) placeViews(views []platform.ViewPlacement) {
+	if s, ok := w.native.(platform.ViewSurface); ok {
+		s.PlaceViews(views)
+	} else if s, ok := w.native.(platform.PluginViewSurface); ok {
+		s.PlaceViews(views)
 	}
 }

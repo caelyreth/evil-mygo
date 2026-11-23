@@ -218,9 +218,6 @@ func (s *surface) fingerMessage(m uint32, wp uintptr, x, y, pressure float64, t 
 // StartDrag makes the system's move, which a tap, pressing only as the
 // finger lifts, could not start.
 func (s *surface) leavesFinger(x, y float64) bool {
-	if s.layer != nil && s.webViewAt(x, y) != nil {
-		return true
-	}
 	return s.send(platform.SurfaceEvent{Kind: platform.DragRegionAt, X: x, Y: y})
 }
 

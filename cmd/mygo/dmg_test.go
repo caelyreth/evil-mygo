@@ -397,58 +397,6 @@ func attachDMG(t *testing.T, dmg string) string {
 	return mnt
 }
 
-// TestFrontendOverlay compiles an app with the overlay that embeds its
-// frontendDist, which lives outside the app's package.
-func TestFrontendOverlay(t *testing.T) {
-	if testing.Short() {
-		t.Skip("compiles a program")
-	}
-	files := map[string]string{
-		"cmd/app/main.go":          "package main\n\nimport \"github.com/egoist/mygo\"\n\nfunc main() { mygo.App.Run() }\n",
-		"web/dist/index.html":      "<p>embedded frontend</p>",
-		"web/dist/assets/app-1.js": "console.log('embedded asset')",
-		"web/dist/_routes/.hidden": "hidden file",
-	}
-	dir := testModule(t, files)
-
-	c := &Config{root: dir, Main: "./cmd/app", FrontendDist: "web/missing"}
-	pkg, err := packageDir(c)
-	if err != nil {
-		t.Fatal(err)
-	}
-	work := t.TempDir()
-	if _, err := frontendFiles(c, pkg, work); err == nil || !strings.Contains(err.Error(), "buildCommand") {
-		t.Errorf("missing frontendDist: %v", err)
-	}
-	c.FrontendDist = "web/dist"
-	embedded, err := frontendFiles(c, pkg, work)
-	if err != nil {
-		t.Fatal(err)
-	}
-	overlay, err := writeOverlay(filepath.Join(work, "overlay.json"), embedded)
-	if err != nil {
-		t.Fatal(err)
-	}
-	bin := filepath.Join(t.TempDir(), "app")
-	if err := buildBinary(c, bin, nil, "-overlay", overlay); err != nil {
-		t.Fatal(err)
-	}
-	data, err := os.ReadFile(bin)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, content := range files {
-		if strings.HasPrefix(content, "<p>") || strings.HasPrefix(content, "console") || content == "hidden file" {
-			if !bytes.Contains(data, []byte(content)) {
-				t.Errorf("the binary lacks %q", content)
-			}
-		}
-	}
-	if _, err := os.Stat(filepath.Join(dir, "cmd", "app", frontendGenFile)); err == nil {
-		t.Error("the overlay must not write into the project")
-	}
-}
-
 // testModule writes files into a new Go module that requires MyGo from this
 // checkout, with MyGo's own requirements so that building it downloads
 // nothing, and returns its directory.

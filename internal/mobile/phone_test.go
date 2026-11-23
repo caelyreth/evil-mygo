@@ -306,18 +306,18 @@ func TestPluginCall(t *testing.T) {
 	}
 }
 
-// Web views close with the window that holds them, and hear nothing of it.
+// Embedded plugin views close with the window that holds them, and hear nothing of it.
 func TestHeldViews(t *testing.T) {
 	b, h := startBackend(t)
 	w, _ := surfaceWindow(t, b, h)
-	var v platform.WebView
+	var v platform.EmbeddedView
 	onMain(b, func() {
 		var err error
-		v, err = w.s.NewWebView(&platform.WindowOptions{}, &winHandler{})
+		v, err = w.s.NewPluginView("test.view", nil, &winHandler{})
 		if err != nil {
 			t.Error(err)
 		}
-		w.s.PlaceWebViews([]platform.WebViewPlacement{{WebView: v, Clip: platform.RectF{W: 10, H: 10}, Frame: platform.RectF{W: 10, H: 10}}})
+		w.s.PlaceViews([]platform.ViewPlacement{{View: v, Clip: platform.RectF{W: 10, H: 10}, Frame: platform.RectF{W: 10, H: 10}}})
 	})
 	wait.Until(t, "the host to hear where it goes", func() bool { return h.called(wire.CallPlaceViews) })
 	child := v.(*window)

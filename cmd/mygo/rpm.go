@@ -73,9 +73,6 @@ func (l *Linux) rpmDepends(goarch string) (depends, unknown []string) {
 
 	if !l.Depends.legacy {
 		depends = []string{"libgtk-3.so.0" + suffix}
-		if l.webView() {
-			depends = append(depends, "libwebkit2gtk-4.1.so.0"+suffix)
-		}
 		return append(depends, l.Depends.RPM...), nil
 	}
 

@@ -56,7 +56,7 @@ func (rt *engine) event(ev platform.SurfaceEvent) (taken bool) {
 	// The window's DIPs, zoomed, are the content's.
 	rt.fromWindow(&ev)
 	x, y := float32(ev.X), float32(ev.Y)
-	if ev.Kind == platform.PointerDown || ev.Kind == platform.WebViewPress {
+	if ev.Kind == platform.PointerDown || ev.Kind == platform.ViewPress {
 		// A press is of no element until countPress finds it one.
 		rt.lastPress.prev, rt.lastPress.id = rt.lastPress.id, 0
 	}
@@ -123,7 +123,7 @@ func (rt *engine) event(ev platform.SurfaceEvent) (taken bool) {
 			button = bits.TrailingZeros8(held)
 		}
 		rt.pointerCancel(button)
-	case platform.WebViewPress:
+	case platform.ViewPress:
 		rt.webViewPress(x, y, ev.Button)
 	case platform.PointerLeave:
 		rt.pointerIn = false

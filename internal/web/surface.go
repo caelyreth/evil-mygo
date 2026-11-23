@@ -880,11 +880,6 @@ func (s *surface) UpdateAccessibility(*platform.AccessTree)  {}
 func (s *surface) StartDataDrag(platform.DragRequest)        {}
 func (s *surface) CancelDataDrag()                           {}
 func (s *surface) SetDropFormats([]transfer.Format)          {}
-func (s *surface) PlaceWebViews([]platform.WebViewPlacement) {}
-
-func (s *surface) NewWebView(*platform.WindowOptions, platform.WindowHandler) (platform.WebView, error) {
-	return nil, errUnsupported
-}
 
 func (s *surface) close() {
 	s.closed = true

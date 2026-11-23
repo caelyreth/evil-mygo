@@ -112,33 +112,20 @@ func TestDebCommand(t *testing.T) {
 	}
 }
 
-// An app that shows no web page depends on GTK alone, and install.sh does
-// not ask for WebKitGTK (#551).
-func TestLinuxWebView(t *testing.T) {
-	for _, webview := range []*bool{nil, new(true), new(false)} {
-		c := &Config{root: t.TempDir(), Name: "My App", Version: "1.0.0"}
-		c.Linux.WebView = webview
-		c.Linux.Depends.Deb = []string{"libayatana-appindicator3-1"}
-		stage := t.TempDir()
-		if err := os.WriteFile(filepath.Join(stage, "my-app"), []byte("#!/bin/sh\n"), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		deb, err := writeDeb(c, stage, "my-app", "amd64", []string{"my-app"})
-		if err != nil {
-			t.Fatal(err)
-		}
-		want := "\nDepends: libgtk-3-0 | libgtk-3-0t64, libwebkit2gtk-4.1-0, libayatana-appindicator3-1\n"
-		asks := true
-		if webview != nil && !*webview {
-			want = "\nDepends: libgtk-3-0 | libgtk-3-0t64, libayatana-appindicator3-1\n"
-			asks = false
-		}
-		if control := debMember(t, deb, "control.tar.gz")["control"]; !strings.Contains(control, want) {
-			t.Errorf("webview %v: control:\n%s", c.Linux.webView(), control)
-		}
-		if got := strings.Contains(installScript(c), "if ! has_webkit; then"); got != asks {
-			t.Errorf("webview %v: install.sh checks for WebKitGTK: %v", c.Linux.webView(), got)
-		}
+func TestLinuxGTKOnly(t *testing.T) {
+	c := &Config{root: t.TempDir(), Name: "My App", Version: "1.0.0"}
+	c.Linux.Depends.Deb = []string{"libayatana-appindicator3-1"}
+	stage := t.TempDir()
+	if err := os.WriteFile(filepath.Join(stage, "my-app"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	deb, err := writeDeb(c, stage, "my-app", "amd64", []string{"my-app"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "\nDepends: libgtk-3-0 | libgtk-3-0t64, libayatana-appindicator3-1\n"
+	if control := debMember(t, deb, "control.tar.gz")["control"]; !strings.Contains(control, want) {
+		t.Errorf("control:\n%s", control)
 	}
 }
 

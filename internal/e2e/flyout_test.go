@@ -18,9 +18,6 @@ import (
 	"github.com/egoist/mygo/ui"
 )
 
-const flyoutPage = `<body style="margin:0;background:transparent">` +
-	`<button id="b" style="width:100%;height:100px;background:#fc0" onclick="window.clicked=(window.clicked||0)+1">x</button></body>`
-
 // TestFlyout places a flyout below an anchor in its parent, beyond the
 // parent's bottom edge, flips it above where the work area ends, and
 // keeps it next to the anchor as the parent moves.
@@ -28,7 +25,13 @@ func TestFlyout(t *testing.T) {
 	work := mygo.Screen.PrimaryDisplay().WorkArea
 	parent := newWindow(t, mygo.WindowOptions{Width: 300, Height: 200, X: work.X + 100, Y: work.Y + 100})
 	anchor := mygo.Rectangle{X: 20, Y: 150, Width: 80, Height: 24}
-	fl := mygo.NewFlyout(mygo.FlyoutOptions{Parent: parent, Anchor: anchor, Gap: 4, Width: 220, Height: 160})
+	var clicked atomic.Int32
+	fl := mygo.NewFlyout(mygo.FlyoutOptions{Parent: parent, Anchor: anchor, Gap: 4, Width: 220, Height: 160,
+		Content: ui.View(func(c *ui.Context) {
+			if ui.Box(c).Fill().Clicked() {
+				clicked.Add(1)
+			}
+		})})
 	defer fl.Destroy()
 	if !fl.IsFlyout() || fl.Parent() != parent || !fl.IsVisible() {
 		t.Fatalf("flyout: IsFlyout %v, parent %v, visible %v", fl.IsFlyout(), fl.Parent() == parent, fl.IsVisible())
@@ -42,14 +45,12 @@ func TestFlyout(t *testing.T) {
 		t.Errorf("flyout %+v does not extend beyond its parent %+v", f, p)
 	}
 
-	// A click in a flyout that is not focusable reaches its page and
+	// A click in a flyout that is not focusable reaches its content and
 	// leaves the keyboard in the parent.
-	fl.Page().LoadHTML(flyoutPage, "")
-	waitFor(t, fl, "document.getElementById('b')")
 	parent.Focus()
 	eventually(t, "the parent focused", parent.IsFocused)
 	if click(fl, 50, 50) {
-		waitFor(t, fl, "window.clicked === 1")
+		eventually(t, "the flyout click", func() bool { return clicked.Load() == 1 })
 		if fl.IsFocused() || !parent.IsFocused() {
 			t.Errorf("after a click in the flyout: flyout focused %v, parent focused %v", fl.IsFocused(), parent.IsFocused())
 		}
@@ -168,10 +169,14 @@ func TestPopoverFlyout(t *testing.T) {
 	parent := newWindow(t, mygo.WindowOptions{Width: 300, Height: 200})
 	parent.Focus()
 	eventually(t, "the parent focused", parent.IsFocused)
-	fl := mygo.NewFlyout(mygo.FlyoutOptions{Parent: parent, Anchor: mygo.Rectangle{X: 100, Y: 20, Width: 80, Height: 24}, Width: 200, Height: 100, Popover: true})
+	var clicked atomic.Int32
+	fl := mygo.NewFlyout(mygo.FlyoutOptions{Parent: parent, Anchor: mygo.Rectangle{X: 100, Y: 20, Width: 80, Height: 24}, Width: 200, Height: 100, Popover: true,
+		Content: ui.View(func(c *ui.Context) {
+			if ui.Box(c).Fill().Clicked() {
+				clicked.Add(1)
+			}
+		})})
 	defer fl.Destroy()
-	fl.Page().LoadHTML(flyoutPage, "")
-	waitFor(t, fl, "document.getElementById('b')")
 	if !fl.IsVisible() {
 		t.Fatal("the popover does not show")
 	}
@@ -187,7 +192,7 @@ func TestPopoverFlyout(t *testing.T) {
 		t.Fatal("hiding the popover closed it")
 	}
 	if appClick(fl, 50, 50) {
-		waitFor(t, fl, "window.clicked === 1")
+		eventually(t, "the popover click", func() bool { return clicked.Load() == 1 })
 	}
 	if fl.IsDestroyed() {
 		t.Fatal("a click in the popover closed it")
@@ -330,44 +335,6 @@ func TestFlyoutEscape(t *testing.T) {
 	// It no longer does, from the frame that handles the key on.
 	handled.Store(false)
 	escapeCloses(native, "the flyout of native UI closed")
-
-	parent.Focus()
-	eventually(t, "the parent focused", parent.IsFocused)
-	page := mygo.NewFlyout(mygo.FlyoutOptions{Parent: parent, Width: 150, Height: 100, Focusable: true})
-	defer page.Destroy()
-	page.Page().LoadHTML(`<input id=i autofocus>`, "")
-	waitFor(t, page, "document.activeElement && document.activeElement.id === 'i'")
-	eventually(t, "the page's flyout focused", page.IsFocused)
-	escapeCloses(page, "the page's flyout closed")
-
-	// A flyout of native UI showing a web view whose page has the
-	// keyboard closes on an Escape the page leaves.
-	parent.Focus()
-	eventually(t, "the parent focused", parent.IsFocused)
-	var view *mygo.WebView
-	var shown atomic.Int32
-	reader := mygo.NewFlyout(mygo.FlyoutOptions{Parent: parent, Width: 150, Height: 100, Focusable: true, Content: ui.View(func(c *ui.Context) {
-		if view != nil {
-			ui.WebView(c, view).Fill()
-			shown.Add(1)
-		}
-	})})
-	defer reader.Destroy()
-	v, err := reader.NewWebView(mygo.WebViewOptions{Page: mygo.PageOptions{Untrusted: true}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	reader.Update(func() { view = v })
-	v.Page().LoadHTML(`<p>Text to read.</p><script>window.ready = true</script>`, "")
-	waitForPage(t, v.Page(), "window.ready")
-	eventually(t, "two frames showing the web view", func() bool {
-		reader.Invalidate()
-		return shown.Load() >= 2
-	})
-	eventually(t, "the reader focused", reader.IsFocused)
-	v.Focus()
-	waitForPage(t, v.Page(), "document.hasFocus()")
-	escapeCloses(reader, "the reader closed")
 
 	// A popover of the system's (macOS) closes so too.
 	parent.Focus()

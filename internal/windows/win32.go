@@ -1,7 +1,7 @@
 //go:build windows && (amd64 || arm64)
 
 // Package windows implements the MyGo backend for Windows: Win32 windows
-// hosting WebView2, called through the syscall package (no cgo).
+// and native surfaces called through the syscall package (no cgo).
 package windows
 
 import (
@@ -735,4 +735,25 @@ func commonControl(name string) uintptr {
 	cname := append([]byte(name), 0)
 	p, _, _ := procGetProcAddress.Call(h, uintptr(unsafe.Pointer(&cname[0])))
 	return p
+}
+
+const (
+	hkeyCurrentUser  = 0x80000001
+	hkeyLocalMachine = 0x80000002
+	keyQueryValue    = 0x0001
+)
+
+// regDWORD reads a DWORD value, reporting whether it exists.
+func regDWORD(root uintptr, path, name string) (uint32, bool) {
+	var key uintptr
+	if r, _, _ := procRegOpenKeyExW.Call(root, uintptr(unsafe.Pointer(u16(path))), 0, keyQueryValue, uintptr(unsafe.Pointer(&key))); r != 0 {
+		return 0, false
+	}
+	defer procRegCloseKey.Call(key)
+	var typ, v uint32
+	size := uint32(4)
+	if r, _, _ := procRegQueryValueExW.Call(key, uintptr(unsafe.Pointer(u16(name))), 0, uintptr(unsafe.Pointer(&typ)), uintptr(unsafe.Pointer(&v)), uintptr(unsafe.Pointer(&size))); r != 0 {
+		return 0, false
+	}
+	return v, true
 }

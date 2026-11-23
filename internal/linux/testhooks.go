@@ -16,9 +16,7 @@ import (
 // The functions in this file drive native UI the way a user would, for the
 // GUI tests in internal/e2e. They must run on the main thread.
 
-// TestProgramName returns the name GLib has for the program, after which
-// GTK names the class of its windows and WebKitGTK the directories of its
-// pages' data.
+// TestProgramName returns the name GLib has for the program (Init).
 func TestProgramName() string {
 	var prgname func() ptr
 	if !bind(libGLib, &prgname, "g_get_prgname") {
@@ -213,16 +211,6 @@ func TestDismissPopups() int {
 		gtkMenuShellDeactivate(m)
 	}
 	return len(theBackend.popups)
-}
-
-// TestSetDroppedFiles makes paths the files of the next drop on a window's
-// page, as if they had been dragged there.
-func TestSetDroppedFiles(handle uintptr, paths []string) {
-	for _, w := range theBackend.windows {
-		if w.win == handle {
-			w.dropped = paths
-		}
-	}
 }
 
 // TestDefaultURLHandler returns the id of the application GLib opens URLs
@@ -592,33 +580,6 @@ func clickSurface(handle uintptr, x, y float64, button uint32) bool {
 	return pressButton(button, true) && pressButton(button, false)
 }
 
-// TestClickPage clicks (x, y), in DIPs, in the page of a window's web
-// view, through XTEST, as a user clicks it.
-func TestClickPage(handle uintptr, x, y float64) bool {
-	return clickPage(handle, x, y, 1)
-}
-
-// TestRightClickPage clicks (x, y) in a window's page with the secondary
-// button, as TestClickPage does with the primary.
-func TestRightClickPage(handle uintptr, x, y float64) bool {
-	return clickPage(handle, x, y, 3)
-}
-
-func clickPage(handle uintptr, x, y float64, button uint32) bool {
-	w := windowByHandle(handle)
-	if w == nil || w.surface != nil || w.web == 0 {
-		return false
-	}
-	loadFlyouts() // contentOrigin's
-	loadSurface() // gtk_widget_get_scale_factor
-	ox, oy := w.contentOrigin()
-	scale := float64(max(gtkWidgetGetScaleFactor(w.web), 1))
-	if !TestMovePointer(int((float64(ox)+x)*scale), int((float64(oy)+y)*scale)) {
-		return false
-	}
-	return pressButton(button, true) && pressButton(button, false)
-}
-
 // TestSideButton clicks a mouse's back or forward button (buttons 8 and
 // 9) in a window showing native UI, through XTEST.
 func TestSideButton(handle uintptr, back bool) bool {
@@ -734,50 +695,6 @@ func pinchGdkWindow(win ptr, x, y float64, scales []float64) bool {
 	return true
 }
 
-// pageOf returns the window whose handle is handle, or with webView 0 or
-// more, its web view of that index.
-func pageOf(handle uintptr, webView int) *window {
-	w := windowByHandle(handle)
-	if w == nil || webView < 0 {
-		return w
-	}
-	if webView >= len(w.webViews) {
-		return nil
-	}
-	return w.webViews[webView]
-}
-
-// TestPageGestures reports whether a swipe navigates and a pinch magnifies
-// the page of a window, or with webView 0 or more, of its web view of that
-// index: the web view's enable-back-forward-navigation-gestures setting,
-// and whether its zoom gesture takes events. ok is false without that page
-// or on WebKitGTK older than 2.38, whose zoom gesture can't be reached.
-func TestPageGestures(handle uintptr, webView int) (swipe, pinch, ok bool) {
-	w := pageOf(handle, webView)
-	if w == nil || w.web == 0 || gObjectGetData == nil {
-		return false, false, false
-	}
-	var phase func(c ptr) int32
-	g := gObjectGetData(w.web, cs(zoomGesture))
-	if g == 0 || !bind(libGTK, &phase, "gtk_event_controller_get_propagation_phase") {
-		return false, false, false
-	}
-	var on int32 // gboolean
-	gObjectGetPtr(webkitWebViewGetSettings(w.web), cs("enable-back-forward-navigation-gestures"), unsafe.Pointer(&on), 0)
-	return on != 0, phase(g) != 0, true // GTK_PHASE_NONE
-}
-
-// TestPinchPage pinches a touchpad at (x, y), in DIPs, over the page of a
-// window, or with webView 0 or more, of its web view of that index, from 1
-// through scales, as TestPinchSurface does over native UI.
-func TestPinchPage(handle uintptr, webView int, x, y float64, scales []float64) bool {
-	w := pageOf(handle, webView)
-	if w == nil || w.web == 0 {
-		return false
-	}
-	return pinchGdkWindow(gtkWidgetGetWindow(w.web), x, y, append([]float64{1}, scales...))
-}
-
 // TestTrayActivates tells whether the AppIndicator library can report
 // activation at all; call it after making a tray.
 func TestTrayActivates() bool { return trayActivates() }
@@ -872,130 +789,6 @@ func TestDecorations(handle uintptr) Decorations {
 	d.Room = [4]int{int(box.X), int(box.Y), int(win.Width - box.X - box.Width), int(win.Height - box.Y - box.Height)}
 	d.Content = [2]int{int(content.Width), int(content.Height)}
 	return d
-}
-
-// pageMenu returns the context menu WebKitGTK shows over a page of ours, a
-// GtkMenu in a popup window attached to the web view, or 0.
-func pageMenu() ptr {
-	var toplevels func() ptr
-	var attached func(menu ptr) ptr
-	var menuType func() uintptr
-	if !bind(libGTK, &toplevels, "gtk_window_list_toplevels") || !bind(libGTK, &attached, "gtk_menu_get_attach_widget") ||
-		!bind(libGTK, &menuType, "gtk_menu_get_type") {
-		return 0
-	}
-	loadMenuIcons() // gtk_bin_get_child
-	list := toplevels()
-	defer gListFree(list)
-	for node := list; node != 0; node = field[ptr](node, 8) {
-		win := field[ptr](node, 0)
-		menu := gtkBinGetChild(win)
-		if menu == 0 || !gtkWidgetGetMapped(win) || !gTypeCheckInstanceIsA(menu, menuType()) {
-			continue
-		}
-		if theBackend.byWebView[attached(menu)] != nil {
-			return menu
-		}
-	}
-	return 0
-}
-
-// TestPageMenu returns the labels of the items of the context menu shown
-// over a page, without their mnemonics' underscores, "-" for separators,
-// and false when none is shown.
-func TestPageMenu() ([]string, bool) {
-	menu := pageMenu()
-	if menu == 0 {
-		return nil, false
-	}
-	labels := []string{}
-	list := gtkContainerGetChildren(menu)
-	defer gListFree(list)
-	for node := list; node != 0; node = field[ptr](node, 8) {
-		item := field[ptr](node, 0)
-		if !gtkWidgetGetVisible(item) {
-			continue
-		}
-		label := withoutMnemonic(goStr(gtkMenuItemGetLabel(item)))
-		if label == "" {
-			label = "-"
-		}
-		labels = append(labels, label)
-	}
-	return labels, true
-}
-
-// TestChoosePageMenuItem chooses the item labeled label (without its
-// mnemonic) of the context menu shown over a page, which closes it, and
-// reports whether it has one.
-func TestChoosePageMenuItem(label string) bool {
-	menu := pageMenu()
-	if menu == 0 {
-		return false
-	}
-	list := gtkContainerGetChildren(menu)
-	defer gListFree(list)
-	for node := list; node != 0; node = field[ptr](node, 8) {
-		item := field[ptr](node, 0)
-		if gtkWidgetGetVisible(item) && withoutMnemonic(goStr(gtkMenuItemGetLabel(item))) == label {
-			gtkMenuItemActivate(item)
-			gtkMenuShellDeactivate(menu)
-			return true
-		}
-	}
-	return false
-}
-
-// TestDismissPageMenu closes the context menu shown over a page, if one is.
-func TestDismissPageMenu() {
-	if menu := pageMenu(); menu != 0 {
-		gtkMenuShellDeactivate(menu)
-	}
-}
-
-// TestBackgroundThrottlingOff reports whether the page of a window, or of
-// its first web view, has every background throttling feature WebKitGTK
-// has turned off, and how many it has.
-func TestBackgroundThrottlingOff(handle uintptr, webView bool) (off bool, features int) {
-	w := windowByHandle(handle)
-	if w == nil {
-		return false, 0
-	}
-	web := w.web
-	if webView {
-		if len(w.webViews) == 0 {
-			return false, 0
-		}
-		web = w.webViews[0].web
-	}
-	if web == 0 {
-		return false, 0
-	}
-	var enabled func(settings, f ptr) bool
-	if !bind(libWebKit, &enabled, "webkit_settings_get_feature_enabled") {
-		return false, 0
-	}
-	settings := webkitWebViewGetSettings(web)
-	off = true
-	eachBackgroundFeature(func(f ptr) {
-		features++
-		off = off && !enabled(settings, f)
-	})
-	return off, features
-}
-
-// TestMockCaptureDevices turns on a window's MediaStream and WebKit's
-// mock camera and microphone, which getUserMedia() captures without
-// devices, for the pages it loads from then on.
-func TestMockCaptureDevices(handle uintptr) bool {
-	w := windowByHandle(handle)
-	if w == nil || w.web == 0 {
-		return false
-	}
-	settings := webkitWebViewGetSettings(w.web)
-	gObjectSetBool(settings, cs("enable-media-stream"), true, 0)
-	gObjectSetBool(settings, cs("enable-mock-capture-devices"), true, 0)
-	return true
 }
 
 // TitleBarStyle is how GTK styles a header bar and its title buttons.

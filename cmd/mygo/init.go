@@ -10,9 +10,7 @@ import (
 	"image/png"
 	"io/fs"
 	"math"
-	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -27,31 +25,19 @@ type templateData struct {
 	Slug       string
 	Module     string
 	Identifier string
-	// Runtime is the version of the mygo-runtime npm package.
-	Runtime string
-	// CLI is the version of the mygo-cli npm package, which runs mygo in
-	// the scripts of package.json, and Mygo the command they run.
-	CLI, Mygo string
-	// ConfigImport is the module mygo.config.ts imports defineConfig from.
-	ConfigImport string
 }
 
-// The templates of mygo init: a TypeScript frontend, and native UI.
-const (
-	webTemplate    = "web"
-	nativeTemplate = "native"
-)
+const nativeTemplate = "native"
 
-// cliTool is the package of the CLI, which projects of native UI depend on
-// as a tool of their module.
+// cliTool is the package of the CLI, which projects depend on as a tool
+// of their module.
 const cliTool = "github.com/egoist/mygo/cmd/mygo"
 
 func runInit(args []string) error {
-	flags := newFlags("init", "[flags] <dir>", "Creates a new MyGo project. The web template has a TypeScript frontend built\nwith Vite: Bun installs its dependencies, the mygo-cli package among them,\nand runs its scripts, bun run dev and bun run build. The native template\nshows a user interface MyGo draws itself, written in Go with package ui:\nthe module has the CLI as a tool, for go tool mygo dev and go tool mygo\nbuild.")
+	flags := newFlags("init", "[flags] <dir>", "Creates a new MyGo native UI project in Go with package ui: the module has\nthe CLI as a tool, for go tool mygo dev and go tool mygo build.")
 	name := flags.String("name", "", "application name (default: directory name)")
 	module := flags.String("module", "", "Go module path (default: directory name)")
 	local := flags.String("mygo", "", "path to a local checkout of MyGo to use via a replace directive")
-	tmpl := flags.String("template", webTemplate, "the project: web (a TypeScript frontend) or native (native UI in Go)")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -59,61 +45,11 @@ func runInit(args []string) error {
 		flags.Usage()
 		return flag2Err("missing project directory")
 	}
-	if *tmpl != webTemplate && *tmpl != nativeTemplate {
-		return flag2Err(fmt.Sprintf("unknown template %q: web or native", *tmpl))
-	}
 	dir, data, err := newProject(flags.Arg(0), *name, *module)
 	if err != nil {
 		return err
 	}
-	if *tmpl == nativeTemplate {
-		return initNative(dir, data, *local)
-	}
-	data.Runtime, data.CLI, data.Mygo, data.ConfigImport = "^"+version, "^"+version, "mygo", "mygo-cli"
-	if *local != "" {
-		// The packages of the local checkout, like the Go module, and its
-		// CLI, which go run builds from the replaced module.
-		checkout, err := filepath.Abs(*local)
-		if err != nil {
-			return err
-		}
-		runtime := filepath.Join(checkout, "packages", "runtime")
-		if _, err := os.Stat(filepath.Join(runtime, "dist", "index.js")); err != nil {
-			return fmt.Errorf("the packages of %s are not built: run bun install && bun run build there first", checkout)
-		}
-		data.Runtime = "file:" + runtime
-		data.CLI, data.Mygo = "", "go run github.com/egoist/mygo/cmd/mygo"
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return err
-		}
-		data.ConfigImport = moduleSpecifier(dir, filepath.Join(checkout, "packages", "cli", "index.js"))
-	}
-
-	logf("Creating %s", dir)
-	if err := writeProject(dir, webTemplate, data, *local, false); err != nil {
-		return err
-	}
-
-	if _, err := exec.LookPath("bun"); err != nil {
-		warnf("Bun not found: install it from https://bun.sh, then run bun install")
-	} else {
-		t := con.start("Installing the dependencies")
-		if err := t.end(run(t, "bun", dir, "bun install"), "Installed the dependencies"); err != nil {
-			return err
-		}
-	}
-	if c, err := loadConfig(dir); err != nil {
-		warnf("%v; run mygo generate once it can be read", err)
-	} else {
-		bin := tempBinary(c.executableName())
-		defer os.Remove(bin)
-		if err := buildBinary(c, bin, nil); err == nil {
-			_, _ = generateBindings(c, bin)
-		}
-	}
-
-	fmt.Printf("\nCreated %s. Next steps:\n\n  cd %s\n  bun run dev      # develop with live reload\n  bun run dev:ios      # on the iOS simulator (needs Xcode)\n  bun run dev:android  # on an Android device or emulator (needs Android Studio)\n  bun run build    # package the app\n\n", data.Name, relPath(dir))
-	return nil
+	return initNative(dir, data, *local)
 }
 
 // newProject returns the absolute directory of a new project, which must
@@ -202,32 +138,6 @@ func relPath(dir string) string {
 	return dir
 }
 
-// moduleSpecifier returns how a module in dir imports the file target: a
-// relative path between their real locations, which runtimes resolve
-// imports from, or a file URL where there is none, as between the drives
-// of Windows.
-func moduleSpecifier(dir, target string) string {
-	if real, err := filepath.EvalSymlinks(dir); err == nil {
-		dir = real
-	}
-	if real, err := filepath.EvalSymlinks(target); err == nil {
-		target = real
-	}
-	rel, err := filepath.Rel(dir, target)
-	if err != nil {
-		path := filepath.ToSlash(target)
-		if !strings.HasPrefix(path, "/") {
-			path = "/" + path // C:/…
-		}
-		return (&url.URL{Scheme: "file", Path: path}).String()
-	}
-	rel = filepath.ToSlash(rel)
-	if !strings.HasPrefix(rel, "../") {
-		rel = "./" + rel
-	}
-	return rel
-}
-
 // templateFuncs are the functions of the templates: json renders a value
 // as JSON, which is also a JavaScript literal.
 var templateFuncs = template.FuncMap{
@@ -237,11 +147,8 @@ var templateFuncs = template.FuncMap{
 	},
 }
 
-// writeTemplate installs the bundled skills and template/<tmpl> into dir.
+// writeTemplate installs template/<tmpl> into dir.
 func writeTemplate(dir, tmpl string, data templateData) error {
-	if err := installSkills(dir); err != nil {
-		return err
-	}
 	return writeTemplateDir(dir, tmpl, data)
 }
 
