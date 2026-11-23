@@ -189,7 +189,7 @@ mygo.NewWindow(mygo.WindowOptions{URL: "/", Hidden: mygo.App.WasOpenedAtLogin()}
 | `PathResources` | 应用随附的文件，见[资源](distribution.md#资源) |
 | `PathAppData` | 每用户配置目录，不带应用名称 |
 | `PathHome`、`PathTemp`、`PathExe` | 主目录、临时目录、可执行文件 |
-| `PathDesktop`、`PathDocuments`、`PathDownloads`、`PathMusic`、`PathPictures`、`PathVideos` | 用户的文件夹 |
+| `PathDesktop`、`PathDocuments`、`PathDownloads`、`PathMusic`、`PathPictures`、`PathVideos` | 用户的文件夹：Windows 上是已知文件夹（用户或管理员移到哪里就是哪里）；Linux 上是 XDG 用户目录（`XDG_DOCUMENTS_DIR` 等环境变量，否则读 `user-dirs.dirs`） |
 
 ```go
 dir, err := mygo.App.Path(mygo.PathUserData)

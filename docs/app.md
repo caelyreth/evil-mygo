@@ -283,7 +283,7 @@ command an argument of the app's own for that.
 | `PathResources` | the files the app ships with, see [resources](distribution.md#resources) |
 | `PathAppData` | the per-user configuration directory, without the app's name |
 | `PathHome`, `PathTemp`, `PathExe` | the home directory, the temporary directory, the executable |
-| `PathDesktop`, `PathDocuments`, `PathDownloads`, `PathMusic`, `PathPictures`, `PathVideos` | the user's folders |
+| `PathDesktop`, `PathDocuments`, `PathDownloads`, `PathMusic`, `PathPictures`, `PathVideos` | the user's folders: Windows' known folders, wherever the user or their administrator moved them; on Linux the XDG user dirs (`XDG_DOCUMENTS_DIR` and the others, else `user-dirs.dirs`) |
 
 ```go
 dir, err := mygo.App.Path(mygo.PathUserData)

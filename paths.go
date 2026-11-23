@@ -149,9 +149,14 @@ func goBuildTemp(dir string) bool {
 	return false
 }
 
-// userDir resolves the user's standard folders, honoring the XDG user dirs
-// configuration on Linux.
+// userDir resolves the user's standard folders: the known folders of
+// Windows, wherever the user or their administrator moved them (OneDrive
+// among them), and on Linux the XDG user dirs, from the environment or
+// their configuration.
 func userDir(home string, name PathName) string {
+	if dir := knownFolder(name); dir != "" {
+		return dir
+	}
 	folder := map[PathName]string{
 		PathDesktop: "Desktop", PathDocuments: "Documents", PathDownloads: "Downloads",
 		PathMusic: "Music", PathPictures: "Pictures", PathVideos: "Videos",
@@ -164,6 +169,9 @@ func userDir(home string, name PathName) string {
 			PathDesktop: "XDG_DESKTOP_DIR", PathDocuments: "XDG_DOCUMENTS_DIR", PathDownloads: "XDG_DOWNLOAD_DIR",
 			PathMusic: "XDG_MUSIC_DIR", PathPictures: "XDG_PICTURES_DIR", PathVideos: "XDG_VIDEOS_DIR",
 		}[name]
+		if v := os.Getenv(key); v != "" {
+			return strings.Replace(v, "$HOME", home, 1)
+		}
 		config, err := os.UserConfigDir()
 		if err == nil {
 			if f, err := os.Open(filepath.Join(config, "user-dirs.dirs")); err == nil {
