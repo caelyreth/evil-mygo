@@ -324,9 +324,14 @@ func (c *contextFill) app(it *platform.MenuItem) id {
 	plain.Submenu = nil
 	item := theBackend.buildItem(&plain, contextOwner, menuMetrics{})
 	if it.Submenu != nil {
-		sub := autorelease(send(send(class("NSMenu"), "alloc"), "initWithTitle:", uintptr(nsString(it.Label))))
-		send(sub, "setAutoenablesItems:", 0)
-		c.fill(sub, it.Submenu.Items)
+		var sub id
+		if it.Submenu.Palette && hasPalettes() {
+			sub = theBackend.buildPalette(it.Submenu, contextOwner, sel("mygoContextItemClicked:"))
+		} else {
+			sub = autorelease(send(send(class("NSMenu"), "alloc"), "initWithTitle:", uintptr(nsString(it.Label))))
+			send(sub, "setAutoenablesItems:", 0)
+			c.fill(sub, it.Submenu.Items)
+		}
 		send(item, "setAction:", 0)
 		send(item, "setTarget:", 0)
 		send(item, "setSubmenu:", uintptr(sub))

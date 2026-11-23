@@ -3,6 +3,7 @@ package mygo
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"image"
 	"image/png"
 	"math"
@@ -115,6 +116,9 @@ func contentMenu(m *platform.Menu, chosen func(int)) []*MenuItem {
 		if p.Icon != nil {
 			it.Icon = &MenuIcon{p.Icon}
 		}
+		if c := p.Swatch; c != nil {
+			it.Swatch = fmt.Sprintf("#%02x%02x%02x%02x", c.R, c.G, c.B, c.A)
+		}
 		switch p.Type {
 		case platform.MenuItemSeparator:
 			it.Type = MenuItemSeparator
@@ -126,7 +130,7 @@ func contentMenu(m *platform.Menu, chosen func(int)) []*MenuItem {
 			it.Type = MenuItemSubmenu
 			it.Submenu = []*MenuItem{}
 			if p.Submenu != nil {
-				it.Submenu = contentMenu(p.Submenu, chosen)
+				it.Submenu, it.Palette = contentMenu(p.Submenu, chosen), p.Submenu.Palette
 			}
 		}
 		id := p.ID

@@ -370,8 +370,8 @@ func (b *Backend) buildItem(it *platform.MenuItem, owner int, metrics menuMetric
 	}
 	if it.Submenu != nil {
 		var sub id
-		if it.Submenu.Palette && respondsTo(class("NSMenu"), "paletteMenuWithColors:titles:selectionHandler:") {
-			sub = b.buildPalette(it.Submenu, owner)
+		if it.Submenu.Palette && hasPalettes() {
+			sub = b.buildPalette(it.Submenu, owner, sel("mygoMenuItemClicked:"))
 		} else {
 			sub = b.buildMenu(it.Submenu, it.Label, owner)
 		}
@@ -430,9 +430,10 @@ func applyItemState(item id, it *platform.MenuItem) {
 // macOS 14: the system's palette, a row of its items' swatches shown in
 // place of the item it is the submenu of, each checked as its item is and
 // named by its label as the pointer rests on it. Choosing a swatch acts
-// as choosing any item: the menu's target is told its tag. Radio items
-// make it choose one at a time, checkboxes any number.
-func (b *Backend) buildPalette(m *platform.Menu, owner int) id {
+// as choosing any item: the menu's target is sent action with it, which
+// reads its tag. Radio items make it choose one at a time, checkboxes any
+// number.
+func (b *Backend) buildPalette(m *platform.Menu, owner int, action objc.SEL) id {
 	var items []*platform.MenuItem
 	var colors, titles []id
 	radio := false
@@ -458,12 +459,17 @@ func (b *Backend) buildPalette(m *platform.Menu, owner int) id {
 	for i, it := range items {
 		item := send(menu, "itemAtIndex:", uintptr(i))
 		send(item, "setTarget:", uintptr(b.menuTarget))
-		send(item, "setAction:", uintptr(sel("mygoMenuItemClicked:")))
+		send(item, "setAction:", uintptr(action))
 		send(item, "setTag:", uintptr(it.ID))
 		applyItemState(item, it)
 		track(owner, it.ID, item)
 	}
 	return menu
+}
+
+// hasPalettes reports whether the system has palette menus (macOS 14).
+func hasPalettes() bool {
+	return respondsTo(class("NSMenu"), "paletteMenuWithColors:titles:selectionHandler:")
 }
 
 // inPalette reports whether item is a swatch of a palette menu.

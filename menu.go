@@ -172,7 +172,14 @@ type MenuItem struct {
 	// without a background. Empty picks white or black for contrast with
 	// BadgeColor, or the menu's color when there is none.
 	BadgeTextColor string
-	Submenu        []*MenuItem
+	// Swatch is the color the item stands for in a Palette, as a CSS
+	// color; empty for none.
+	Swatch string
+	// Palette shows Submenu as a row of its items' Swatch colors in place
+	// of the item, where the system's menus have one (macOS 14 and later);
+	// elsewhere it is a submenu as any other.
+	Palette bool
+	Submenu []*MenuItem
 	// Click is called on the main thread when the item is chosen. On Linux
 	// and Windows, win is the window whose menu bar or context menu was
 	// chosen. Other menus use the focused window, which may be nil.
@@ -661,8 +668,10 @@ func (it *MenuItem) snapshotLocked() *platform.MenuItem {
 	case MenuItemRadio:
 		p.Type = platform.MenuItemRadio
 	}
+	p.Swatch = menuColor(it.Swatch)
 	if it.sub != nil {
 		p.Submenu = it.sub.snapshotLocked()
+		p.Submenu.Palette = it.Palette
 	}
 	return p
 }

@@ -67,3 +67,32 @@ func TestMenuPalette(t *testing.T) {
 		}
 	})
 }
+
+// TestContextMenuPalette builds a palette in a page's context menu too,
+// its swatches telling the window.
+func TestContextMenuPalette(t *testing.T) {
+	load()
+	registerMenuTarget()
+	if !hasPalettes() {
+		t.Skip("no palette menus before macOS 14")
+	}
+	if theBackend == nil {
+		theBackend = &Backend{}
+		defer func() { theBackend = nil }()
+	}
+	withPool(func() {
+		red := platform.Color{R: 220, A: 255}
+		c := &contextFill{was: map[int]*platform.MenuItem{}}
+		item := c.app(&platform.MenuItem{ID: 1, Label: "Color", Type: platform.MenuItemSubmenu, Visible: true, Enabled: true,
+			Submenu: &platform.Menu{Palette: true, Items: []*platform.MenuItem{
+				{ID: 2, Label: "Red", Type: platform.MenuItemRadio, Visible: true, Enabled: true, Swatch: &red},
+			}}})
+		pal := send(item, "submenu")
+		if pal == 0 || sendInt(pal, "presentationStyle") != 1 {
+			t.Fatal("the Color item's submenu is not a palette")
+		}
+		if objc.SEL(send(send(pal, "itemAtIndex:", 0), "action")) != sel("mygoContextItemClicked:") {
+			t.Error("the swatch does not tell the window")
+		}
+	})
+}

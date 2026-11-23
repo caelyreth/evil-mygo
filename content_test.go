@@ -674,3 +674,22 @@ func TestBackgroundShowsWindowsInactive(t *testing.T) {
 		}
 	}
 }
+
+// TestContentMenuPalette keeps a palette, and its items' swatches, from
+// the Content's menu to the backend's.
+func TestContentMenuPalette(t *testing.T) {
+	red := platform.Color{R: 220, G: 40, B: 40, A: 255}
+	m := &platform.Menu{Items: []*platform.MenuItem{
+		{ID: 1, Label: "Color", Type: platform.MenuItemSubmenu, Enabled: true, Visible: true, Submenu: &platform.Menu{Palette: true, Items: []*platform.MenuItem{
+			{ID: 2, Label: "Red", Type: platform.MenuItemRadio, Checked: true, Enabled: true, Visible: true, Swatch: &red},
+		}}},
+	}}
+	snap := NewMenu(contentMenu(m, func(int) {})).snapshot()
+	sub := snap.Items[0].Submenu
+	if sub == nil || !sub.Palette {
+		t.Fatal("the Color item's submenu is not a palette")
+	}
+	if got := sub.Items[0].Swatch; got == nil || *got != red {
+		t.Errorf("Red's swatch is %v, want %v", got, red)
+	}
+}
