@@ -1524,3 +1524,28 @@ func TestFileWatchHintsOnlyOptIn(t *testing.T) {
 		t.Fatalf("batch %+v", batch)
 	}
 }
+
+func findRenamed(dir string, ids []fileWatchGone) string {
+	if !slices.ContainsFunc(ids, func(id fileWatchGone) bool { return id.ok }) {
+		return ""
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return ""
+	}
+	found, at := "", len(ids)
+	for _, entry := range entries {
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+		id := fileWatchEntryOf(info).id
+		for i, want := range ids[:at] {
+			if want.ok && want.id == id {
+				found, at = filepath.Join(dir, entry.Name()), i
+				break
+			}
+		}
+	}
+	return found
+}

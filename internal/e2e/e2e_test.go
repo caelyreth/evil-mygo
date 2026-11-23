@@ -138,10 +138,6 @@ func TestMain(m *testing.M) {
 		cookieViewApp()
 		return
 	}
-	if os.Getenv("MYGO_E2E_AUTOMATION_APP") == "1" {
-		automationApp()
-		return
-	}
 	if os.Getenv("MYGO_E2E_PROGRAM_NAME") == "1" {
 		programName()
 		return
@@ -174,7 +170,6 @@ func TestMain(m *testing.M) {
 		b, _ := io.ReadAll(r.Body)
 		fmt.Fprintf(w, "echo:%s", b)
 	})
-	usePlugins(mux)
 	useBench(mux)
 	useSchemeStreams(mux)
 	if err := mygo.Protocol.Handle("app", mux); err != nil {

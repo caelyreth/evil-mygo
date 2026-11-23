@@ -133,17 +133,63 @@ func saveRecentLocked() error {
 	return writeAppFile(f, func(w io.Writer) error { return json.MarshalWrite(w, paths) })
 }
 
-// openRecentDocument opens a document of the Open Recent menu: as a
-// document of the kind of its extension, or the first kind, or else
-// through OnOpenFile, as the system opens those of the Dock menu and the
-// jump list. Main thread only.
+// openRecentDocument opens a document of the Open Recent menu through
+// OnOpenFile, as the system opens those of the Dock menu and the jump list.
+// Main thread only.
 func openRecentDocument(path string) {
-	_, open := linkedDocuments()
-	if open == nil {
-		fire1(&App.onOpenFile, path)
+	fire1(&App.onOpenFile, path)
+}
+
+// recentMenuItems are the items of the Open Recent submenu.
+func recentMenuItems() []*MenuItem {
+	var items []*MenuItem
+	for _, p := range App.RecentDocuments() {
+		items = append(items, &MenuItem{Label: filepath.Base(p), ToolTip: p, Click: func(*MenuItem, *Window) {
+			openRecentDocument(p)
+		}})
+	}
+	if len(items) > 0 {
+		items = append(items, Separator())
+	}
+	return append(items, &MenuItem{Label: menuMessages().MenuClearRecent(), Disabled: len(items) == 0, Click: func(*MenuItem, *Window) {
+		go func() {
+			if err := App.ClearRecentDocuments(); err != nil {
+				log.Printf("mygo: recent documents: %v", err)
+			}
+		}()
+	}})
+}
+
+// updateRecentMenus gives the Open Recent submenus the recent documents.
+// Main thread only.
+func updateRecentMenus() {
+	if !App.IsReady() {
 		return
 	}
-	go open(path)
+	changed := false
+	menus := []*Menu{App.Menu()}
+	for _, w := range Windows() {
+		menus = append(menus, w.menu)
+	}
+	for _, m := range menus {
+		walkMenu(m, func(it *MenuItem) {
+			if it.Role != RoleOpenRecent {
+				return
+			}
+			items := recentMenuItems()
+			menuMu.Lock()
+			sub := &Menu{}
+			for _, child := range items {
+				sub.items = append(sub.items, prepareItem(child, sub))
+			}
+			it.Submenu, it.sub = items, sub
+			menuMu.Unlock()
+			changed = true
+		})
+	}
+	if changed {
+		refreshMenus()
+	}
 }
 
 // addRecent records a document's file, as AddRecentDocument does, and logs

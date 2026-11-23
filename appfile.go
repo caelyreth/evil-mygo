@@ -2,6 +2,7 @@ package mygo
 
 import (
 	"errors"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -82,4 +83,42 @@ func retryInUse(f func() error) error {
 		}
 		time.Sleep(time.Duration(i) * 100 * time.Millisecond)
 	}
+}
+
+// writeAppFile writes a file of the app's own: a new file renamed over
+// it, so that it is whole or not there.
+func writeAppFile(path string, write func(io.Writer) error) error {
+	f, err := createSibling(path)
+	if err != nil {
+		return err
+	}
+	err = writeAndSync(f, write)
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err == nil {
+		err = replaceAppFile(f.Name(), path)
+	}
+	if err != nil {
+		os.Remove(f.Name())
+	}
+	return err
+}
+
+func createSibling(path string) (*os.File, error) {
+	dir, base := filepath.Split(path)
+	for range 10 {
+		f, err := os.OpenFile(filepath.Join(dir, "."+base+"."+randomText()[:8]+".tmp"), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o666)
+		if !errors.Is(err, fs.ErrExist) {
+			return f, err
+		}
+	}
+	return nil, errors.New("mygo: cannot create a temporary file next to " + path)
+}
+
+func writeAndSync(f *os.File, write func(io.Writer) error) error {
+	if err := write(f); err != nil {
+		return err
+	}
+	return f.Sync()
 }

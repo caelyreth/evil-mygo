@@ -115,15 +115,6 @@ func TestClearRecentDocuments(t *testing.T) {
 // chooses to OnOpenFile.
 func TestOpenRecentWithoutDocuments(t *testing.T) {
 	testRecent(t)
-	docRegistry.Lock()
-	kinds := docRegistry.kinds
-	docRegistry.kinds = nil
-	docRegistry.Unlock()
-	t.Cleanup(func() {
-		docRegistry.Lock()
-		docRegistry.kinds = kinds
-		docRegistry.Unlock()
-	})
 	p := filepath.Join(t.TempDir(), "folder")
 	if err := os.Mkdir(p, 0o755); err != nil {
 		t.Fatal(err)

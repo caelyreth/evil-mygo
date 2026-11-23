@@ -44,11 +44,7 @@ func main() {
 // reports whether one failed.
 func run() bool {
 	failed := false
-	checks := append(check.All, struct {
-		Name string
-		Run  func(check.T)
-	}{"SQLite", checkSQLite})
-	for _, c := range checks {
+	for _, c := range check.All {
 		t := &tester{name: c.Name}
 		done := make(chan struct{})
 		go func() {

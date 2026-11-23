@@ -723,12 +723,7 @@ func performRole(role MenuRole, win *Window) {
 	case RoleQuit:
 		App.Quit()
 		return
-	case "":
-		return
-	case RoleNew, RoleOpen, RoleSave, RoleSaveAs, RoleDuplicate, RoleRename, RoleMoveTo, RoleRevert:
-		if perform, _ := linkedDocuments(); perform != nil {
-			perform(role, win)
-		}
+	case "", RoleNew, RoleOpen, RoleSave, RoleSaveAs, RoleDuplicate, RoleRename, RoleMoveTo, RoleRevert:
 		return
 	}
 	if win == nil || win.native == nil {
@@ -863,9 +858,6 @@ func roleDefaults(r MenuRole) (label, accel string) {
 	case RoleZoom:
 		return tx.MenuZoom(), ""
 	case RoleClose:
-		if hasDocuments() {
-			return tx.MenuClose(), "CmdOrCtrl+W"
-		}
 		return tx.MenuCloseWindow(), "CmdOrCtrl+W"
 	case RoleNew:
 		return tx.MenuNew(), "CmdOrCtrl+N"
@@ -976,22 +968,6 @@ func roleSubmenu(r MenuRole) []*MenuItem {
 			{Role: RoleQuit},
 		}
 	case RoleFileMenu:
-		if hasDocuments() {
-			// DocumentGroup's File menu on macOS; KStandardAction's and
-			// Notepad's elsewhere.
-			if mac {
-				return []*MenuItem{
-					{Role: RoleNew}, {Role: RoleOpen}, {Role: RoleOpenRecent}, Separator(),
-					{Role: RoleClose}, {Role: RoleSave}, {Role: RoleDuplicate},
-					{Role: RoleRename}, {Role: RoleMoveTo}, {Role: RoleRevert},
-				}
-			}
-			return []*MenuItem{
-				{Role: RoleNew}, {Role: RoleOpen}, {Role: RoleOpenRecent}, Separator(),
-				{Role: RoleSave}, {Role: RoleSaveAs}, {Role: RoleRevert}, Separator(),
-				{Role: RoleClose}, Separator(), {Role: RoleQuit},
-			}
-		}
 		if mac {
 			return []*MenuItem{{Role: RoleClose}}
 		}
@@ -1058,13 +1034,9 @@ func roleSubmenu(r MenuRole) []*MenuItem {
 }
 
 // defaultMenu is installed when the app does not set one. Only macOS gets a
-// default menu bar: it hosts the standard shortcuts (copy, paste, quit, ...),
-// and apps with documents, whose File menu saves them.
+// default menu bar: it hosts the standard shortcuts (copy, paste, quit, ...).
 func defaultMenu() *Menu {
 	if runtime.GOOS != "darwin" {
-		if hasDocuments() {
-			return NewMenu([]*MenuItem{{Role: RoleFileMenu}, {Role: RoleEditMenu}})
-		}
 		return nil
 	}
 	return NewMenu([]*MenuItem{
@@ -1074,4 +1046,18 @@ func defaultMenu() *Menu {
 		{Role: RoleViewMenu},
 		{Role: RoleWindowMenu},
 	})
+}
+
+// walkMenu calls fn with every item of m and its submenus.
+func walkMenu(m *Menu, fn func(*MenuItem)) {
+	if m == nil {
+		return
+	}
+	for _, it := range m.Items() {
+		fn(it)
+		menuMu.Lock()
+		sub := it.sub
+		menuMu.Unlock()
+		walkMenu(sub, fn)
+	}
 }

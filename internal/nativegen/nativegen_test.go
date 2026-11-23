@@ -295,7 +295,7 @@ func TestKotlinNames(t *testing.T) {
 // TestKotlinUpToDate checks the committed Kotlin of the modules that have
 // it, which no test compiles here: CI builds it into an app.
 func TestKotlinUpToDate(t *testing.T) {
-	for _, dir := range []string{"../../native/internal/roundtrip", "../../plugins/sqlite/internal/sqlitecore"} {
+	for _, dir := range []string{"../../native/internal/roundtrip"} {
 		m, err := Load(dir)
 		if err != nil {
 			t.Fatal(err)
