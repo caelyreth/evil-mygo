@@ -100,6 +100,9 @@ func (w *Window) attachContent(content Content) {
 				}
 			})
 		},
+		Flyout: func(spec surface.FlyoutSpec, content surface.Content) surface.Flyout {
+			return w.contentFlyout(spec, content)
+		},
 	}
 	if f := w.fit; f != nil && f.native != nil && w.flyout != nil {
 		f.native(w, w.conn)
@@ -112,12 +115,14 @@ func (w *Window) attachContent(content Content) {
 func contentMenu(m *platform.Menu, chosen func(int)) []*MenuItem {
 	items := make([]*MenuItem, 0, len(m.Items))
 	for _, p := range m.Items {
-		it := &MenuItem{Label: p.Label, Accelerator: p.Accelerator, Disabled: !p.Enabled, Hidden: !p.Visible, Checked: p.Checked}
+		it := &MenuItem{
+			Label: p.Label, Subtitle: p.Subtitle, Accelerator: p.Accelerator, ToolTip: p.ToolTip,
+			Disabled: !p.Enabled, Hidden: !p.Visible, Checked: p.Checked, KeepOpen: p.KeepOpen,
+			Badge: p.Badge, BadgeAlign: BadgeAlignment(p.BadgeAlign), BadgeShape: BadgeShape(p.BadgeShape),
+			BadgeColor: hexColor(p.BadgeColor), BadgeTextColor: hexColor(p.BadgeTextColor), Swatch: hexColor(p.Swatch),
+		}
 		if p.Icon != nil {
 			it.Icon = &MenuIcon{p.Icon}
-		}
-		if c := p.Swatch; c != nil {
-			it.Swatch = fmt.Sprintf("#%02x%02x%02x%02x", c.R, c.G, c.B, c.A)
 		}
 		switch p.Type {
 		case platform.MenuItemSeparator:
@@ -139,6 +144,55 @@ func contentMenu(m *platform.Menu, chosen func(int)) []*MenuItem {
 	}
 	return items
 }
+
+// hexColor writes c as menuColor reads it, "" for nil.
+func hexColor(c *platform.Color) string {
+	if c == nil {
+		return ""
+	}
+	return fmt.Sprintf("#%02x%02x%02x%02x", c.R, c.G, c.B, c.A)
+}
+
+// contentFlyout opens a flyout for the window's Content (surface.Conn.Flyout):
+// a focusable flyout of the window, or of the flyout spec.Parent, that fits
+// its content and casts the system's shadow, hidden until shown.
+func (w *Window) contentFlyout(spec surface.FlyoutSpec, content surface.Content) surface.Flyout {
+	parent := w
+	if p, ok := spec.Parent.(*flyoutOfContent); ok {
+		parent = p.w
+	}
+	a := spec.Anchor
+	f := NewFlyout(FlyoutOptions{
+		Parent: parent,
+		Anchor: Rectangle{
+			X: int(math.Round(a[0])), Y: int(math.Round(a[1])),
+			Width: int(math.Round(a[2])), Height: int(math.Round(a[3])),
+		},
+		Placement:  Placement(spec.Placement),
+		Gap:        spec.Gap,
+		FitContent: true,
+		Focusable:  true,
+		Shadow:     true,
+		Hidden:     true,
+		Content:    content,
+	})
+	return &flyoutOfContent{f}
+}
+
+// flyoutOfContent is a flyout contentFlyout opened.
+type flyoutOfContent struct{ w *Window }
+
+func (f *flyoutOfContent) Show(focus bool) {
+	if focus {
+		f.w.Show()
+	} else {
+		f.w.ShowInactive()
+	}
+}
+func (f *flyoutOfContent) Focus()            { f.w.Focus() }
+func (f *flyoutOfContent) Invalidate()       { f.w.Invalidate() }
+func (f *flyoutOfContent) Close()            { f.w.Close() }
+func (f *flyoutOfContent) OnClose(fn func()) { f.w.OnClosed(fn) }
 
 // page runs fn with the native window, unless the window shows Content
 // and so has no page.

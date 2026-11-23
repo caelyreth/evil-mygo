@@ -13,6 +13,7 @@ import (
 	"github.com/egoist/mygo/internal/platform"
 	"github.com/egoist/mygo/internal/raster"
 	"github.com/egoist/mygo/internal/scene"
+	"github.com/egoist/mygo/internal/surface"
 	"github.com/egoist/mygo/internal/text"
 	"github.com/egoist/mygo/transfer"
 )
@@ -20,6 +21,9 @@ import (
 // headless renders frames in memory with the software renderer.
 type headless struct {
 	w, h, scale float32
+	// flyouts opens the flyouts a test's window opens (flyout), nil for
+	// none.
+	flyouts func(spec surface.FlyoutSpec, content surface.Content) surface.Flyout
 	// maxButton is where the view shows the maximize button.
 	maxButton Rect
 	img       raster.Renderer
@@ -252,6 +256,16 @@ func (h *headless) keepAccess(t *platform.AccessTree) {
 func (h *headless) popupMenu(m *platform.Menu, x, y float32, chosen func(int)) {
 	h.menu, h.menuAt, h.chosen = m, [2]float32{x, y}, chosen
 }
+
+// flyout opens none, a Tester's window drawing its menus in it, unless a
+// test opens its own (flyouts).
+func (h *headless) flyout(spec surface.FlyoutSpec, content surface.Content) surface.Flyout {
+	if h.flyouts == nil {
+		return nil
+	}
+	return h.flyouts(spec, content)
+}
+
 func (h *headless) placeWebViews(views []placedWebView) {
 	h.webViews = append(h.webViews[:0], views...)
 }

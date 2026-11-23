@@ -10,6 +10,7 @@ import (
 	"image/png"
 	"log"
 	"os"
+	"reflect"
 	"runtime"
 	"slices"
 	"strings"
@@ -675,21 +676,51 @@ func TestBackgroundShowsWindowsInactive(t *testing.T) {
 	}
 }
 
-// TestContentMenuPalette keeps a palette, and its items' swatches, from
-// the Content's menu to the backend's.
-func TestContentMenuPalette(t *testing.T) {
+// TestContentMenuKeepsItems keeps every field of the Content's menu items on
+// the way to the backend's menus, but those no system menu shows: a field
+// added to platform.MenuItem fails it until contentMenu carries it, or it
+// joins the fields left out here, with the reason.
+func TestContentMenuKeepsItems(t *testing.T) {
+	leftOut := map[string]string{
+		"ID":        "the backend's items are numbered anew",
+		"Role":      "the Content's items do what their Chosen does, never a role",
+		"IconColor": "only the menus package ui draws tint icons",
+		"Native":    "only a web view's page has items of its own",
+		"Name":      "only a web view's page has items of its own",
+	}
 	red := platform.Color{R: 220, G: 40, B: 40, A: 255}
-	m := &platform.Menu{Items: []*platform.MenuItem{
-		{ID: 1, Label: "Color", Type: platform.MenuItemSubmenu, Enabled: true, Visible: true, Submenu: &platform.Menu{Palette: true, Items: []*platform.MenuItem{
-			{ID: 2, Label: "Red", Type: platform.MenuItemRadio, Checked: true, Enabled: true, Visible: true, Swatch: &red},
-		}}},
-	}}
+	white := platform.Color{R: 255, G: 255, B: 255, A: 255}
+	item := &platform.MenuItem{
+		ID: 2, Type: platform.MenuItemRadio, Label: "Red", Subtitle: "A warm one", Badge: "3",
+		BadgeAlign: platform.BadgeAlignLeft, BadgeShape: platform.BadgeShapePill,
+		BadgeColor: &red, BadgeTextColor: &white, KeepOpen: true, Role: "copy",
+		Accelerator: "Ctrl+R", Enabled: true, Visible: true, Checked: true, ToolTip: "Tag it red",
+		Icon: &platform.MenuIcon{PNG: []byte{1}}, IconColor: &red, Swatch: &red,
+		Submenu: &platform.Menu{}, Native: 1, Name: "red",
+	}
+	v := reflect.ValueOf(item).Elem()
+	for i := range v.NumField() {
+		if f := v.Type().Field(i); f.IsExported() && v.Field(i).IsZero() {
+			t.Fatalf("the test sets no %s: give it a value, to see it carried", f.Name)
+		}
+	}
+	m := &platform.Menu{Items: []*platform.MenuItem{{
+		ID: 1, Label: "Color", Type: platform.MenuItemSubmenu, Enabled: true, Visible: true,
+		Submenu: &platform.Menu{Palette: true, Items: []*platform.MenuItem{item}},
+	}}}
 	snap := NewMenu(contentMenu(m, func(int) {})).snapshot()
 	sub := snap.Items[0].Submenu
 	if sub == nil || !sub.Palette {
 		t.Fatal("the Color item's submenu is not a palette")
 	}
-	if got := sub.Items[0].Swatch; got == nil || *got != red {
-		t.Errorf("Red's swatch is %v, want %v", got, red)
+	got := reflect.ValueOf(sub.Items[0]).Elem()
+	for i := range v.NumField() {
+		f := v.Type().Field(i)
+		if _, ok := leftOut[f.Name]; ok || !f.IsExported() || f.Name == "Submenu" {
+			continue
+		}
+		if !reflect.DeepEqual(got.Field(i).Interface(), v.Field(i).Interface()) {
+			t.Errorf("%s is %v on the way to the backend, want %v", f.Name, got.Field(i).Interface(), v.Field(i).Interface())
+		}
 	}
 }

@@ -49,6 +49,9 @@ func (e *node) ContextMenu(build func(m *Menu)) *node {
 	if rt := e.c.rt; rt.drawsMenus() {
 		// As PopoverMenu, through menusInWindow (drawMenuWith).
 		e.buildMenu(false, true, build)
+		if d := rt.menu.drawn; d != nil && d.id == e.id {
+			d.style = rt.menuStyle
+		}
 		drawMenuWith(rt, e, build, menusInWindow.beginMenu, menusInWindow.menuBuilt)
 		return e
 	}
@@ -85,7 +88,7 @@ func (e *node) Menu(build func(m *Menu)) *node {
 		// (drawMenuWith).
 		e.buildMenu(true, true, build)
 		if d := rt.menu.drawn; d != nil && d.id == e.id {
-			d.menu.attach = 0
+			d.menu.attach, d.style = 0, rt.menuStyle
 		}
 		drawMenuWith(rt, e, build, menusInWindow.beginMenu, menusInWindow.menuBuilt)
 		return e
@@ -635,8 +638,10 @@ type menuState struct {
 	later          uint64
 	laterX, laterY float32
 	// drawn is the menu drawn in the window that shows (PopoverMenu,
-	// PopoverMenuButton), nil while none does.
+	// PopoverMenuButton), nil while none does, and flown the flyouts of
+	// one drawn in them (FlyoutMenus), until they close.
 	drawn *drawnMenu
+	flown *menuFlyouts
 }
 
 // shownMenu is a context menu built for the element id. commands are the

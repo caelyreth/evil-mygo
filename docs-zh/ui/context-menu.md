@@ -216,6 +216,30 @@ func (app *App) View(c *ui.Context) {
 }
 ```
 
+`ui.FlyoutMenus` 以同样的方式绘制它们，但每个菜单和子菜单都放在窗口的一个浮出窗口中
+（[`mygo.NewFlyout`](../windows.md#浮出窗口)）：与系统菜单一样，窗口空间不足时它们会超出窗口边缘，
+并带有系统阴影。在无法打开浮出窗口的窗口中（例如 `Tester` 的窗口），它们绘制在窗口内。
+在一个平台上保留系统菜单、在其他平台上绘制自己菜单的应用，可以按平台选择：
+
+```go
+c.SetMenuPresentation(ui.FlyoutMenus) // 放在为 Windows 和 Linux 构建的文件中
+```
+
+`Context.SetMenuStyle` 为窗口绘制的菜单提供主题之外的外观，如同 `PopoverMenuOptions`
+之于 `PopoverMenu`：面板、行，以及指针所在行的突出方式——使用强调色
+（`AccentHighlight`，默认，如 macOS 的菜单）或表面的悬停色（`SurfaceHighlight`，
+如 Windows 和 GNOME 的菜单）：
+
+```go
+c.SetMenuStyle(ui.PopoverMenuOptions{
+	Panel:     func(panel ui.Element) { panel.Radius(11).Background(app.raised) },
+	Highlight: ui.SurfaceHighlight,
+})
+```
+
+`Palette` 在绘制的菜单中与在 macOS 上一样显示：在其菜单项的位置显示一行色板，
+已选中的那个带有对勾；键盘把这一行当作一个菜单项，左右方向键在其中移动。
+
 无论该设置是什么，`PopoverMenu` 和 `PopoverMenuButton` 都会在窗口中绘制它们的菜单。
 只有 MyGo 构建的菜单遵循该设置：菜单栏、托盘菜单和 Dock 菜单仍由系统显示，
 [webview](web-view.md) 的菜单仍由 webview 自己显示。

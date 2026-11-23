@@ -10,6 +10,7 @@ import (
 	"github.com/egoist/mygo/i18n"
 	"github.com/egoist/mygo/internal/platform"
 	"github.com/egoist/mygo/internal/scene"
+	"github.com/egoist/mygo/internal/surface"
 	"github.com/egoist/mygo/internal/text"
 	"github.com/egoist/mygo/transfer"
 )
@@ -89,6 +90,9 @@ type host interface {
 	// popupMenu shows a context menu at (x, y) after the event being
 	// handled; chosen receives the ID of the item chosen.
 	popupMenu(m *platform.Menu, x, y float32, chosen func(id int))
+	// flyout opens a flyout of the window showing content, hidden, or
+	// returns nil where the window opens none (surface.Conn.Flyout).
+	flyout(spec surface.FlyoutSpec, content surface.Content) surface.Flyout
 	// placeWebViews shows the web views where the frame shows them, and
 	// hides the others.
 	placeWebViews(views []placedWebView)
@@ -155,6 +159,8 @@ type engine struct {
 	// menuPresentation is how the window shows its popup menus
 	// (Context.SetMenuPresentation).
 	menuPresentation MenuPresentation
+	// menuStyle is the look of the menus it draws (SetMenuStyle).
+	menuStyle PopoverMenuOptions
 
 	// building counts the public constructors under way: input queued
 	// while more were under way than now belongs to controls built since,
@@ -889,6 +895,7 @@ func (rt *engine) runFrame() {
 		rt.runActions()
 		rt.prepareSelectable(rt.c.root)
 		rt.resolveMenu()
+		rt.settleMenuFlyouts()
 		rt.endPass()
 		if rt.closing {
 			return // an action closed it

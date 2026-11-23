@@ -260,6 +260,34 @@ func (app *App) View(c *ui.Context) {
 }
 ```
 
+`ui.FlyoutMenus` draws them the same way, each menu and submenu in a
+flyout of the window ([`mygo.NewFlyout`](../windows.md#flyouts)): as the system's
+menus, they go past the window's edges where it has no room, and cast
+the system's shadow. Where the window opens no flyout, as a `Tester`'s,
+they draw in it. An app that keeps the system's menus on one platform and
+draws its own on the others chooses by platform:
+
+```go
+c.SetMenuPresentation(ui.FlyoutMenus) // in a file built for Windows and Linux
+```
+
+`Context.SetMenuStyle` gives the menus the window draws a look beyond
+the theme's, as `PopoverMenuOptions` give `PopoverMenu`'s: their panels,
+their rows, and how the row under the pointer stands out, in the accent
+(`AccentHighlight`, the default, as macOS's menus) or in the surface's
+hover color (`SurfaceHighlight`, as Windows' and GNOME's):
+
+```go
+c.SetMenuStyle(ui.PopoverMenuOptions{
+	Panel:     func(panel ui.Element) { panel.Radius(11).Background(app.raised) },
+	Highlight: ui.SurfaceHighlight,
+})
+```
+
+A `Palette` shows in a drawn menu as on macOS: a row of its items'
+swatches in place of its item, the one checked with a check, which the
+keys take as one item, Left and Right moving along it.
+
 `PopoverMenu` and `PopoverMenuButton` draw their menus in the window
 whatever it is. Only the menus MyGo builds follow it: the menu bar, the
 tray's menu and the Dock's stay the system's, and a [web

@@ -5183,6 +5183,22 @@ either.
   widgets built on them. The drawn path is reached only through function
   values `SetMenuPresentation` sets (`menusInWindow`), so apps that never
   draw their menus do not link it.
+  `FlyoutMenus` (`ui/menuflyout.go`) draws the same menus in flyouts of
+  the window, one per level. The window's build of the menu still
+  collects it every frame, and its drawn menu still holds the menu's
+  state (`drawnMenu.menu`): the highlight of each level, the submenus
+  open, the level the focus goes to. `menuFlyouts` opens a flyout for the
+  menu through the host (`surface.Conn.Flyout`, which the window answers
+  with `mygo.NewFlyout`), whose own view builds that level's panel with
+  the drawn menu's parts (`menuParts.panel` with no anchor) and rows
+  (`drawnRows`) from what the window last collected. What a level's build
+  changes in the shared state asks the window for a frame, whose build
+  opens and closes the submenus' flyouts to match (`menuFlyouts.sync`),
+  each a flyout of the one holding it, after its row; the item clicked
+  goes back through the window's build, as a drawn menu's does. A flyout
+  the user dismisses closes its level, and the menu's closes the menu;
+  `settleMenuFlyouts` closes the flyouts of a menu gone after a pass. A
+  window that opens none, as a `Tester`'s, draws the menu in it.
   A text input's or selectable text's own editing menu has no function of
   the view's to build it. `resolveMenu` notes it as a drawn menu
   (`drawnMenu.edit`) and asks for another pass. After that pass's view,

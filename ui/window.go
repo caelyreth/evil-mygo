@@ -1189,3 +1189,10 @@ func (h *windowHost) popupMenu(m *platform.Menu, x, y float32, chosen func(int))
 		h.conn.PopupMenu(m, float64(x), float64(y), chosen)
 	}
 }
+
+func (h *windowHost) flyout(spec surface.FlyoutSpec, content surface.Content) surface.Flyout {
+	if h.conn.Flyout == nil {
+		return nil
+	}
+	return h.conn.Flyout(spec, content)
+}

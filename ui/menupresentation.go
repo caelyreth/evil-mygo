@@ -17,6 +17,12 @@ const (
 	// PopoverMenus draws popup menus in the window with the theme's look,
 	// as PopoverMenu and PopoverMenuButton draw theirs.
 	PopoverMenus
+	// FlyoutMenus draws popup menus as PopoverMenus does, each menu and
+	// submenu in a flyout of the window (mygo.NewFlyout), so that, as the
+	// system's menus, they go past the window's edges where it has no
+	// room, and cast the system's shadow. Where the window opens no
+	// flyout, as a Tester's or a web page's, they draw in the window.
+	FlyoutMenus
 )
 
 // SetMenuPresentation sets how the window shows its popup menus: those of
@@ -25,7 +31,8 @@ const (
 // selectable text. With PopoverMenus they draw in the window as
 // PopoverMenu draws its menu, with its keys, focus and roles, so that an
 // app with a look of its own shows no menu of the desktop's beside its
-// own; with SystemMenus, the default, the system shows them. It stays
+// own, and with FlyoutMenus so too, in flyouts that may go past the
+// window's edges; with SystemMenus, the default, the system shows them. It stays
 // until set again. PopoverMenu and PopoverMenuButton draw theirs in the
 // window whatever it is. Only the menus MyGo builds follow it: the menu
 // bar, the tray's menu and the Dock's stay the system's, and a web view's
@@ -33,14 +40,23 @@ const (
 //
 //	c.SetMenuPresentation(ui.PopoverMenus)
 func (c *context) SetMenuPresentation(p MenuPresentation) {
-	if p == PopoverMenus {
+	if p != SystemMenus {
 		linkMenusInWindow.Do(func() {
-			menusInWindow.beginMenu, menusInWindow.menuBuilt = (*engine).beginDrawnMenu, (*engine).drawnMenuBuilt
+			menusInWindow.beginMenu, menusInWindow.menuBuilt = (*engine).beginDrawnMenu, (*engine).drawnOrFlownMenuBuilt
 			menusInWindow.openEditMenu, menusInWindow.drawEditMenu = (*engine).openDrawnEditMenu, (*engine).drawEditMenu
 		})
 	}
 	c.rt.menuPresentation = p
 }
+
+// SetMenuStyle gives the menus the window draws (PopoverMenus,
+// FlyoutMenus) a look beyond the theme's, as PopoverMenuOptions give
+// PopoverMenu's: their panels, their rows and their highlight. It stays
+// until set again; PopoverMenu and PopoverMenuButton keep the options
+// they are given.
+//
+//	c.SetMenuStyle(ui.PopoverMenuOptions{Highlight: ui.SurfaceHighlight})
+func (c *context) SetMenuStyle(o PopoverMenuOptions) { c.rt.menuStyle = o }
 
 // menusInWindow are what draws the menus of a window that draws them
 // (PopoverMenus): ContextMenu's, Menu's, and the editing menu of text.
@@ -63,7 +79,17 @@ func (c *context) MenuPresentation() MenuPresentation { return c.rt.menuPresenta
 
 // drawsMenus reports whether the window draws its popup menus
 // (PopoverMenus).
-func (rt *engine) drawsMenus() bool { return rt.menuPresentation == PopoverMenus }
+func (rt *engine) drawsMenus() bool { return rt.menuPresentation != SystemMenus }
+
+// drawnOrFlownMenuBuilt draws the menu d drawn for e, which its build
+// filled as m, in flyouts of the window while it draws its menus so
+// (FlyoutMenus), else in it.
+func (rt *engine) drawnOrFlownMenuBuilt(e *node, d *drawnMenu, m *Menu) *platform.MenuItem {
+	if rt.menuPresentation == FlyoutMenus && !d.inWindow {
+		return rt.flownMenuBuilt(e, d, m)
+	}
+	return rt.drawnMenuBuilt(e, d, m)
+}
 
 // drawsEditMenuOf reports whether the editing menu of the text input or
 // selectable text s draws in the window: while it draws its menus, but not
@@ -102,7 +128,8 @@ func (rt *engine) drawEditMenu() {
 	c := e.c
 	saved := c.theme
 	c.theme = e.theme()
-	rt.drawMenu(e, editItems)
+	d.style = rt.menuStyle
+	drawMenuWith(rt, e, editItems, menusInWindow.beginMenu, menusInWindow.menuBuilt)
 	c.theme = saved
 }
 

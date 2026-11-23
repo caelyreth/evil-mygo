@@ -311,6 +311,9 @@ func (w *window) create() {
 	}
 }
 
+// nsWindowAnimationBehaviorNone is NSWindowAnimationBehaviorNone.
+const nsWindowAnimationBehaviorNone = 2
+
 // createFlyout creates the panel of a flyout (WindowOptions.Flyout):
 // borderless and nonactivating, so that it never activates the app,
 // and the key window only when it is focusable, while its parent stays
@@ -334,6 +337,9 @@ func (w *window) createFlyout() {
 	// parent instead, and one that takes the keyboard closes.
 	send(w.win, "setHidesOnDeactivate:", 0)
 	send(w.win, "setCollectionBehavior:", collectionTransient|collectionIgnoresCycle|collectionFullScreenAuxiliary)
+	// AppKit grows a panel in as it orders it in, as an alert, its content
+	// oversized for a moment: a flyout shows at once, as a menu does.
+	send(w.win, "setAnimationBehavior:", nsWindowAnimationBehaviorNone)
 	if w.flyout.Tray != nil {
 		// Over the windows of other apps, as the menus of the menu bar.
 		send(w.win, "setLevel:", nsPopUpMenuWindowLevel)

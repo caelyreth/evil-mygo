@@ -85,6 +85,11 @@ type Conn struct {
 	// DIPs, once the event being handled returns. chosen receives the ID of
 	// the item chosen, if one is.
 	PopupMenu func(m *platform.Menu, x, y float64, chosen func(id int))
+	// Flyout opens a flyout of the window, or of a flyout it opened,
+	// showing content, placed as spec says and hidden until shown: the
+	// panels of the menus package ui draws in flyouts (ui.FlyoutMenus).
+	// It is nil where the window opens none.
+	Flyout func(spec FlyoutSpec, content Content) Flyout
 	// PlaceWebViews shows the window's web views where the content's last
 	// frame shows them (Surface.PlaceWebViews).
 	PlaceWebViews func(views []platform.WebViewPlacement)
@@ -130,6 +135,34 @@ type Conn struct {
 // Content is implemented by package ui.
 type Content interface {
 	AttachContent(conn *Conn)
+}
+
+// FlyoutSpec places a flyout Conn.Flyout opens: against Anchor, a
+// rectangle in DIPs of the content area of Parent, a flyout Conn.Flyout
+// returned, or of the window when Parent is nil, on the side and along
+// it as Placement names (mygo.Placement), Gap DIPs from it. It sizes to
+// its content, takes the keyboard as a menu does when shown so, and
+// casts the system's shadow.
+type FlyoutSpec struct {
+	Parent    Flyout
+	Anchor    [4]float64 // x, y, width, height
+	Placement string
+	Gap       int
+}
+
+// Flyout is a flyout Conn.Flyout opened. Main thread only.
+type Flyout interface {
+	// Show shows it, taking the keyboard when focus is set.
+	Show(focus bool)
+	// Focus gives it the keyboard.
+	Focus()
+	// Invalidate asks its content for a frame built anew.
+	Invalidate()
+	// Close closes it and the flyouts it holds.
+	Close()
+	// OnClose has fn called once as it closes, by Close or as the user
+	// dismisses it.
+	OnClose(fn func())
 }
 
 // WebView is a web view a window made for its content to show

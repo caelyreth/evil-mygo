@@ -64,7 +64,7 @@ func (e *node) PopoverMenu(build func(m *Menu), options ...PopoverMenuOptions) *
 	e.flags |= flagContextMenu
 	e.buildMenu(false, true, build)
 	if d := e.c.rt.menu.drawn; d != nil && d.id == e.id {
-		d.panel, d.item = o.Panel, o.Item
+		d.style = o
 	}
 	e.c.rt.drawMenu(e, build)
 	return e
@@ -81,7 +81,24 @@ type PopoverMenuOptions struct {
 	// Item, when set, styles the row of each item of the menu and of its
 	// submenus, after the theme's look, as PopoverMenuButtonOptions.Item.
 	Item func(item Element)
+	// Highlight is how the row the pointer or the keys are on stands out,
+	// as PopoverMenuButtonOptions.Highlight.
+	Highlight MenuHighlight
 }
+
+// MenuHighlight is how a drawn menu shows the row the pointer or the keys
+// are on.
+type MenuHighlight uint8
+
+const (
+	// AccentHighlight fills the row with the theme's Accent, its text in
+	// AccentText, as macOS's menus do: the default.
+	AccentHighlight MenuHighlight = iota
+	// SurfaceHighlight fills the row with the theme's SurfaceHover, its
+	// text and icons keeping their colors, as Windows' and GNOME's menus
+	// do, and lists of a look of their own.
+	SurfaceHighlight
+)
 
 // PopoverMenuButton makes the element a menu button, as Menu does, whose
 // menu MyGo draws in the window with the theme's look, as PopoverMenu
@@ -154,7 +171,7 @@ func (e *node) PopoverMenuButton(build func(m *Menu), options ...PopoverMenuButt
 		if o.At != 0 || o.Self != 0 {
 			d.menu.attach = attachment(1 + min(o.At, AnchorBottomEnd)*15 + min(o.Self, AnchorBottomEnd))
 		}
-		d.panel, d.item = o.Panel, o.Item
+		d.style = PopoverMenuOptions{Panel: o.Panel, Item: o.Item, Highlight: o.Highlight}
 	}
 	rt.drawMenu(e, build)
 	if synced != nil {
@@ -212,9 +229,12 @@ type PopoverMenuButtonOptions struct {
 	//		item.Padding(4, 8).Radius(6)
 	//	}}
 	//
-	// The row keeps its content and the theme's highlight; Item adds no
-	// children.
+	// The row keeps its content and its highlight (Highlight); Item adds
+	// no children.
 	Item func(item Element)
+	// Highlight is how the row the pointer or the keys are on stands out:
+	// in the accent, as the default, or in the surface's hover color.
+	Highlight MenuHighlight
 }
 
 type menuOpenKey struct{}
@@ -499,6 +519,8 @@ func (m *menuParts) panel(level int, anchor *node, fn func(panel *node)) *node {
 	}
 	s.levels[level].panel = panel.id
 	switch {
+	case anchor == nil:
+		// In a flyout of its own (FlyoutMenus), which places it.
 	case level == 0 && s.below:
 		at, self := s.buttonAnchors()
 		panel.AttachTo(anchor, at, self)
@@ -513,7 +535,7 @@ func (m *menuParts) panel(level int, anchor *node, fn func(panel *node)) *node {
 	m.level = level
 	panel.Children(func() { fn(panel) })
 	m.level = saved
-	if level > 0 && panel.label == "" {
+	if level > 0 && panel.label == "" && anchor != nil {
 		// Named by the item opening it.
 		panel.Label(menuItemName(anchor))
 	}
@@ -1015,12 +1037,14 @@ type drawnMenu struct {
 	// icons are the bitmaps of its items' icons, by image and tint, as the
 	// menu builds in every frame it shows.
 	icons map[drawnIcon]*Bitmap
-	// panel styles its panels after the theme's look, as the menu button
-	// asked in this build (PopoverMenuButtonOptions.Panel).
-	panel func(panel Element)
-	// item styles the rows of its items after the theme's look
-	// (PopoverMenuButtonOptions.Item).
-	item func(item Element)
+	// style is its look beyond the theme's, as its element asked in this
+	// build (PopoverMenuOptions, PopoverMenuButtonOptions), or the window
+	// (Context.SetMenuStyle).
+	style PopoverMenuOptions
+	// flyouts are the flyouts it shows in (FlyoutMenus), nil while it
+	// draws in the window; inWindow is set where the window opens none.
+	flyouts  *menuFlyouts
+	inWindow bool
 }
 
 // drawnIcon is an icon of a drawn menu in a color: the color of the text
@@ -1130,101 +1154,219 @@ func (rt *engine) beginDrawnMenu(e *node) (*drawnMenu, *Menu) {
 // returns the item chosen from it, nil if none.
 func (rt *engine) drawnMenuBuilt(e *node, d *drawnMenu, m *Menu) *platform.MenuItem {
 	run, pm := m.run, m.menu
-	if !slices.ContainsFunc(pm.Items, func(it *platform.MenuItem) bool { return it.Visible && it.Type != platform.MenuItemSeparator }) {
+	if it, done := d.settle(pm, run); done {
 		rt.menu.drawn = nil
-		return nil
+		return it
+	}
+	c := e.c
+	open := true
+	parts := &menuParts{Trigger: e, c: c, open: &open, s: &d.menu, level: -1}
+	b := &drawnRows{d: d, run: run, parts: parts, t: c.theme, refs: map[uint64]menuRef{}}
+	parts.Popup(func(panel *node) {
+		width := run.widths[pm]
+		b.style(panel, width, true)
+		if d.menu.below {
+			// Apart from the menu button, on the side it shows.
+			at, self := d.menu.buttonAnchors()
+			menuGap(panel, at, self, b.t.Space(1))
+		}
+		b.items(pm, width)
+	})
+	if !open {
+		rt.menu.drawn = nil
+	} else {
+		if d.menu.below {
+			e.expanded = true
+		}
+		d.keepHighlighted(rt, b.refs)
+	}
+	return b.chosen
+}
+
+// settle takes the menu as its build left it, pm of the items run
+// collected: done, it closes, as one with no item to show does, or one
+// the Tester chose an item of, which it returns.
+func (d *drawnMenu) settle(pm *platform.Menu, run *menuRun) (chosen *platform.MenuItem, done bool) {
+	if !slices.ContainsFunc(pm.Items, func(it *platform.MenuItem) bool { return it.Visible && it.Type != platform.MenuItemSeparator }) {
+		return nil, true
 	}
 	keys := d.keys
 	d.items, d.keys = pm, run.keys
 	if id := d.choose; id != 0 {
-		rt.menu.drawn = nil
 		if id <= len(keys) && keys[id-1] != "" {
 			// The item with the ID of the one chosen, wherever it is now.
 			id = slices.Index(run.keys, keys[id-1]) + 1
 		}
-		return menuItemByID(pm.Items, id)
+		return menuItemByID(pm.Items, id), true
 	}
-	c := e.c
-	t := c.theme
-	open := true
-	parts := &menuParts{Trigger: e, c: c, open: &open, s: &d.menu, level: -1}
-	var chosen *platform.MenuItem
-	// The item of each row, by the row's element, for the highlight.
-	refs := map[uint64]menuRef{}
-	style := func(panel *node, width float32) {
-		panel.widget = "PopoverMenu"
-		panel.MinWidth(t.Space(45)).Padding(t.Space(1)).Radius(t.Radius+2).Background(t.Background).Border(1, t.Border)
+	return nil, false
+}
+
+// keepHighlighted keeps the items highlighted once built, by their rows in
+// refs, for the next pass's build, which runs at once when they changed
+// (MenuItem.Highlighted).
+func (d *drawnMenu) keepHighlighted(rt *engine, refs map[uint64]menuRef) {
+	var hi []menuRef
+	for _, lv := range d.menu.levels {
+		if ref, ok := refs[lv.hi]; ok {
+			hi = append(hi, ref)
+		}
+	}
+	if !slices.Equal(hi, d.highlighted) {
+		d.highlighted = hi
+		rt.consumed = true
+	}
+}
+
+// drawnRows builds the panels and the rows of the drawn menu d, of the
+// items run collected, as the items of parts, in the theme t: the
+// submenus open in place, or in flyouts of their own, where rows keeps
+// the box of each row opening one. chosen is the item clicked, and refs
+// the item of each row, for the highlight.
+type drawnRows struct {
+	d      *drawnMenu
+	run    *menuRun
+	parts  *menuParts
+	t      *Theme
+	flyout bool
+	chosen *platform.MenuItem
+	refs   map[uint64]menuRef
+	rows   map[uint64]Rect
+}
+
+// style gives a panel of the menu the theme's look, at most width wide
+// when it is not 0, with a shadow of its own when shadow is set, then the
+// look the menu was given (PopoverMenuOptions.Panel).
+func (b *drawnRows) style(panel *node, width float32, shadow bool) {
+	t := b.t
+	panel.widget = "PopoverMenu"
+	panel.MinWidth(t.Space(45)).Padding(t.Space(1)).Radius(t.Radius+2).Background(t.Background).Border(1, t.Border)
+	if shadow {
 		panel.Shadow(0, 6, 20, 0, RGBA(0, 0, 0, 0.18))
-		if width > 0 {
-			panel.MaxWidth(max(width, t.Space(45)))
-		}
-		if d.panel != nil {
-			d.panel(wrapElement(panel))
-		}
 	}
-	var items func(menu *platform.Menu, width float32)
-	items = func(menu *platform.Menu, width float32) {
-		list := menu.Items
-		marks := slices.ContainsFunc(list, func(it *platform.MenuItem) bool {
-			return it.Type == platform.MenuItemCheckbox || it.Type == platform.MenuItemRadio
-		})
-		icons := slices.ContainsFunc(list, func(it *platform.MenuItem) bool { return it.Icon != nil })
-		for _, it := range list {
-			if !it.Visible {
-				continue
-			}
-			if it.Type == platform.MenuItemSeparator {
-				coreBox(c).Height(1).Margin(t.Space(1), t.Space(2)).Background(t.Border).Shrink(0)
-				continue
-			}
-			mi := run.items[it.ID-1]
-			row := parts.drawnItem(d, it, mi, marks, icons)
-			refs[row.id] = menuRef{seq: it.ID, label: it.Label, key: mi.key}
-			if sub := it.Submenu; it.Type == platform.MenuItemSubmenu && sub != nil && it.Enabled {
-				parts.Submenu(row, func(panel *node) {
-					w, ok := run.widths[sub]
-					if !ok {
-						w = width
-					}
-					style(panel, w)
-					panel.Margin(-t.Space(1)-1, 0, 0, 0)
-					items(sub, w)
-				})
-			} else if !row.unavailable && row.Clicked() {
-				chosen = it
-			}
-		}
+	if width > 0 {
+		panel.MaxWidth(max(width, t.Space(45)))
 	}
-	parts.Popup(func(panel *node) {
-		width := run.widths[pm]
-		style(panel, width)
-		if d.menu.below {
-			// Apart from the menu button, on the side it shows.
-			at, self := d.menu.buttonAnchors()
-			menuGap(panel, at, self, t.Space(1))
-		}
-		items(pm, width)
+	if f := b.d.style.Panel; f != nil {
+		f(wrapElement(panel))
+	}
+}
+
+// items builds the rows of menu, at most width wide, and of its submenus
+// open in place.
+func (b *drawnRows) items(menu *platform.Menu, width float32) {
+	c, t, parts, run := b.parts.c, b.t, b.parts, b.run
+	list := menu.Items
+	// Room for the marks only while one shows, as macOS's menus keep it.
+	marks := slices.ContainsFunc(list, func(it *platform.MenuItem) bool {
+		return (it.Type == platform.MenuItemCheckbox || it.Type == platform.MenuItemRadio) && it.Checked
 	})
-	if !open {
-		rt.menu.drawn = nil
-	} else if d.menu.below {
-		e.expanded = true
+	icons := slices.ContainsFunc(list, func(it *platform.MenuItem) bool { return it.Icon != nil })
+	for _, it := range list {
+		if !it.Visible {
+			continue
+		}
+		if it.Type == platform.MenuItemSeparator {
+			coreBox(c).Height(1).Margin(t.Space(1), t.Space(2)).Background(t.Border).Shrink(0)
+			continue
+		}
+		sub := it.Submenu
+		if it.Type == platform.MenuItemSubmenu && sub != nil && sub.Palette {
+			b.palette(it, sub, marks)
+			continue
+		}
+		mi := run.items[it.ID-1]
+		row := parts.drawnItem(b.d, it, mi, marks, icons)
+		b.refs[row.id] = menuRef{seq: it.ID, label: it.Label, key: mi.key}
+		switch {
+		case it.Type == platform.MenuItemSubmenu && sub != nil && it.Enabled:
+			w, ok := run.widths[sub]
+			if !ok {
+				w = width
+			}
+			if b.flyout {
+				b.rows[row.id] = row.Bounds()
+				break
+			}
+			parts.Submenu(row, func(panel *node) {
+				b.style(panel, w, true)
+				panel.Margin(-t.Space(1)-1, 0, 0, 0)
+				b.items(sub, w)
+			})
+		case !row.unavailable && row.Clicked():
+			b.chosen = it
+		}
 	}
-	if open {
-		// The items highlighted once built, for the next pass's build,
-		// which runs at once when they changed (MenuItem.Highlighted).
-		var hi []menuRef
-		for _, lv := range d.menu.levels {
-			if ref, ok := refs[lv.hi]; ok {
-				hi = append(hi, ref)
+}
+
+// The swatches of a palette's row: discs of the menu's icons' size,
+// paletteGap apart, a ring standing out of the one the pointer or the keys
+// are on.
+const (
+	paletteSwatch  float32 = platform.MenuIconSize
+	paletteGap     float32 = 9
+	paletteRingOut float32 = 2.5
+	paletteRing    float32 = 1.5
+)
+
+// palette builds the items of sub, the Palette submenu of it, in place of
+// it as a row of swatches, each its item's Swatch, checked with a check:
+// a group the keys take as one item, Left and Right moving along it. Its
+// first swatch stands where the rows' icons do, after their marks when
+// marks is set.
+func (b *drawnRows) palette(it *platform.MenuItem, sub *platform.Menu, marks bool) {
+	c, t, parts := b.parts.c, b.t, b.parts
+	lead := t.Space(2) - paletteRingOut
+	if marks {
+		lead += t.Space(4) + t.Space(2)
+	}
+	g := parts.Group(func(g *node) {
+		g.Label(it.Label).AlignItems(Center).Gap(paletteGap-2*paletteRingOut).
+			Padding(t.Space(1.5)-paletteRingOut, t.Space(2)-paletteRingOut).PaddingStart(lead).Shrink(0)
+		for _, sw := range sub.Items {
+			if !sw.Visible || sw.Type == platform.MenuItemSeparator {
+				continue
+			}
+			mi := b.run.items[sw.ID-1]
+			if mi.key != "" {
+				c.nextKey, c.keySet = menuItemKey{mi.key}, true
+			}
+			disc := parts.RadioItem(sw.Checked)
+			disc.Label(sw.Label).Disabled(!sw.Enabled || !it.Enabled).Tooltip(sw.Label)
+			side := paletteSwatch + 2*paletteRingOut
+			disc.Size(side, side).Radius(side / 2).Shrink(0)
+			fill, checked, ring := t.TextMuted, sw.Checked, disc.highlighted
+			if sw.Swatch != nil {
+				fill = Color{R: sw.Swatch.R, G: sw.Swatch.G, B: sw.Swatch.B, A: sw.Swatch.A}
+			}
+			if !sw.Enabled || !it.Enabled {
+				fill = fill.Alpha(0.4)
+			}
+			mark := RGB(0, 0, 0)
+			if relativeLuminance(fill) < 0.4 {
+				mark = RGB(255, 255, 255)
+			}
+			ink := t.Text
+			disc.Draw(func(p *Painter, r Rect) {
+				if ring {
+					in := paletteRingOut - paletteRing/2
+					o := Rect{X: r.X + in, Y: r.Y + in, W: r.W - 2*in, H: r.H - 2*in}
+					p.Stroke(o, ink, o.W/2, paletteRing)
+				}
+				d := Rect{X: r.X + paletteRingOut, Y: r.Y + paletteRingOut, W: paletteSwatch, H: paletteSwatch}
+				p.Fill(d, fill, d.W/2)
+				if checked {
+					k := Rect{X: d.X + d.W/4, Y: d.Y + d.H/4, W: d.W / 2, H: d.H / 2}
+					p.StrokePath(checkPath(k), 1.5, mark)
+				}
+			})
+			b.refs[disc.id] = menuRef{seq: sw.ID, label: sw.Label, key: mi.key}
+			if disc.Clicked() {
+				b.chosen = sw
 			}
 		}
-		if !slices.Equal(hi, d.highlighted) {
-			d.highlighted = hi
-			rt.consumed = true
-		}
-	}
-	return chosen
+	})
+	g.widget = "MenuPalette"
 }
 
 // buttonAnchors returns the points of a menu button's box and of its menu
@@ -1341,6 +1483,8 @@ func (m *menuParts) drawnItem(d *drawnMenu, it *platform.MenuItem, mi *MenuItem,
 	case row.highlighted && row.expanded && m.s.levels[m.level+1].hi != 0:
 		// The way to the item highlighted in the submenu.
 		row.Background(t.SurfaceHover).TextColor(color)
+	case row.highlighted && d.style.Highlight == SurfaceHighlight:
+		row.Background(t.SurfaceHover).TextColor(color)
 	case row.highlighted:
 		color, muted = t.AccentText, t.AccentText
 		if mi.danger && legibleOn(t.Danger, t.Accent, t.AccentText) {
@@ -1350,8 +1494,8 @@ func (m *menuParts) drawnItem(d *drawnMenu, it *platform.MenuItem, mi *MenuItem,
 	case mi.danger:
 		row.TextColor(color)
 	}
-	if d.item != nil {
-		d.item(wrapElement(row))
+	if f := d.style.Item; f != nil {
+		f(wrapElement(row))
 	}
 	rtl := row.rtl()
 	row.Children(func() {
@@ -1373,7 +1517,7 @@ func (m *menuParts) drawnItem(d *drawnMenu, it *platform.MenuItem, mi *MenuItem,
 			var b *Bitmap
 			if it.Icon != nil {
 				tint := color
-				accent := row.highlighted && !(row.expanded && m.s.levels[m.level+1].hi != 0)
+				accent := row.highlighted && d.style.Highlight != SurfaceHighlight && !(row.expanded && m.s.levels[m.level+1].hi != 0)
 				if ic := it.IconColor; ic != nil && it.Enabled && !accent {
 					// Its own color, but on the highlight, the highlight's
 					// text color.

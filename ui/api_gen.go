@@ -600,7 +600,8 @@ func (_handle *Context) SafeArea() (float32, float32, float32, float32) {
 // selectable text. With PopoverMenus they draw in the window as
 // PopoverMenu draws its menu, with its keys, focus and roles, so that an
 // app with a look of its own shows no menu of the desktop's beside its
-// own; with SystemMenus, the default, the system shows them. It stays
+// own, and with FlyoutMenus so too, in flyouts that may go past the
+// window's edges; with SystemMenus, the default, the system shows them. It stays
 // until set again. PopoverMenu and PopoverMenuButton draw theirs in the
 // window whatever it is. Only the menus MyGo builds follow it: the menu
 // bar, the tray's menu and the Dock's stay the system's, and a web view's
@@ -613,6 +614,21 @@ func (_handle *Context) SetMenuPresentation(p MenuPresentation) {
 		return
 	}
 	_ctx.SetMenuPresentation(p)
+}
+
+// SetMenuStyle gives the menus the window draws (PopoverMenus,
+// FlyoutMenus) a look beyond the theme's, as PopoverMenuOptions give
+// PopoverMenu's: their panels, their rows and their highlight. It stays
+// until set again; PopoverMenu and PopoverMenuButton keep the options
+// they are given.
+//
+//	c.SetMenuStyle(ui.PopoverMenuOptions{Highlight: ui.SurfaceHighlight})
+func (_handle *Context) SetMenuStyle(o PopoverMenuOptions) {
+	_ctx := _handle.build()
+	if _ctx == nil {
+		return
+	}
+	_ctx.SetMenuStyle(o)
 }
 
 // SetTheme makes the frame use t, for the window's root and the widgets
