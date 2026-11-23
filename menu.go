@@ -176,8 +176,8 @@ type MenuItem struct {
 	// color; empty for none.
 	Swatch string
 	// Palette shows Submenu as a row of its items' Swatch colors in place
-	// of the item, where the system's menus have one (macOS 14 and later);
-	// elsewhere it is a submenu as any other.
+	// of the item, where the menus draw one (macOS); elsewhere it is a
+	// submenu as any other.
 	Palette bool
 	Submenu []*MenuItem
 	// Click is called on the main thread when the item is chosen. On Linux

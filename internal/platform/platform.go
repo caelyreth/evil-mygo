@@ -1172,8 +1172,8 @@ type Menu struct {
 	Items []*MenuItem
 	// Palette shows the menu, a submenu, as a row of its items' Swatch
 	// colors in place of the item it is the submenu of, where the backend
-	// has such a row (macOS 14 and later): elsewhere it is a submenu as
-	// any other, its items showing their swatches as their icons.
+	// draws such a row (macOS): elsewhere it is a submenu as any other,
+	// its items showing their swatches as their icons.
 	Palette bool
 	// RightToLeft lays a context menu out right to left, as that of an
 	// interface laid out so: its items from the right, opening to the

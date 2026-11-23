@@ -74,6 +74,7 @@ func dropOwner(owner int) {
 			if n.owner == owner {
 				if view := send(n.item, "view"); view != 0 {
 					delete(keepOpenBadges, view)
+					dropSwatchRow(view)
 				}
 				delete(menuBadges, n.item)
 				release(n.item)
@@ -180,6 +181,10 @@ func registerMenuTarget() {
 func highlightKeepOpenViews(menu, item id) {
 	for _, x := range arrayItems(send(menu, "itemArray")) {
 		if view := send(x, "view"); view != 0 {
+			if swatchRows[view] != nil {
+				keySwatchRow(view, x == item)
+				continue
+			}
 			setMenuViewHighlighted(view, x == item)
 		}
 	}
@@ -319,6 +324,14 @@ func (b *Backend) buildMenu(m *platform.Menu, title string, owner int) id {
 			track(owner, it.ID, item)
 			continue
 		}
+		if it.Submenu != nil && it.Submenu.Palette {
+			send(menu, "addItem:", uintptr(b.buildSwatchRow(it, owner, sel("mygoMenuItemClicked:"))))
+			// The row rings a swatch as the keys come onto it.
+			if menuHighlightDelegate != 0 && send(menu, "delegate") == 0 {
+				send(menu, "setDelegate:", uintptr(menuHighlightDelegate))
+			}
+			continue
+		}
 		item := b.buildItem(it, owner, metrics)
 		send(menu, "addItem:", uintptr(item))
 		if it.Role == "zoomIn" {
@@ -369,12 +382,7 @@ func (b *Backend) buildItem(it *platform.MenuItem, owner int, metrics menuMetric
 		setItemTitleStyled(item, itemTitle(it), itemBadge(it), tab, it.BadgeAlign, st)
 	}
 	if it.Submenu != nil {
-		var sub id
-		if it.Submenu.Palette && hasPalettes() {
-			sub = b.buildPalette(it.Submenu, owner, sel("mygoMenuItemClicked:"))
-		} else {
-			sub = b.buildMenu(it.Submenu, it.Label, owner)
-		}
+		sub := b.buildMenu(it.Submenu, it.Label, owner)
 		send(item, "setSubmenu:", uintptr(sub))
 		switch it.Role {
 		case "services":
@@ -393,9 +401,7 @@ func applyItemState(item id, it *platform.MenuItem) {
 	if it.Type != platform.MenuItemSeparator {
 		applyItemSubtitle(item, it)
 	}
-	// A swatch of a palette is the system's, drawn in its color: the icon
-	// that stands for it in a submenu is not shown over it.
-	if it.Type != platform.MenuItemSeparator && menuImage != nil && (it.Swatch == nil || !inPalette(item)) {
+	if it.Type != platform.MenuItemSeparator && menuImage != nil {
 		var img id
 		if it.Icon != nil {
 			img = menuImage(it.Icon)
@@ -424,58 +430,6 @@ func applyItemState(item id, it *platform.MenuItem) {
 	if it.ToolTip != "" {
 		send(item, "setToolTip:", uintptr(nsString(it.ToolTip)))
 	}
-}
-
-// buildPalette creates the autoreleased NSMenu of a Palette submenu, from
-// macOS 14: the system's palette, a row of its items' swatches shown in
-// place of the item it is the submenu of, each checked as its item is and
-// named by its label as the pointer rests on it. Choosing a swatch acts
-// as choosing any item: the menu's target is sent action with it, which
-// reads its tag. Radio items make it choose one at a time, checkboxes any
-// number.
-func (b *Backend) buildPalette(m *platform.Menu, owner int, action objc.SEL) id {
-	var items []*platform.MenuItem
-	var colors, titles []id
-	radio := false
-	for _, it := range m.Items {
-		if it.Type == platform.MenuItemSeparator || !it.Visible {
-			continue
-		}
-		c := platform.Color{R: 142, G: 142, B: 147, A: 255}
-		if it.Swatch != nil {
-			c = *it.Swatch
-		}
-		items = append(items, it)
-		colors = append(colors, nsColor(c))
-		titles = append(titles, nsString(it.Label))
-		radio = radio || it.Type == platform.MenuItemRadio
-	}
-	menu := send(class("NSMenu"), "paletteMenuWithColors:titles:selectionHandler:",
-		uintptr(nsArray(colors...)), uintptr(nsArray(titles...)), 0)
-	send(menu, "setAutoenablesItems:", 0)
-	if radio {
-		send(menu, "setSelectionMode:", 1) // NSMenuSelectionModeSelectOne
-	}
-	for i, it := range items {
-		item := send(menu, "itemAtIndex:", uintptr(i))
-		send(item, "setTarget:", uintptr(b.menuTarget))
-		send(item, "setAction:", uintptr(action))
-		send(item, "setTag:", uintptr(it.ID))
-		applyItemState(item, it)
-		track(owner, it.ID, item)
-	}
-	return menu
-}
-
-// hasPalettes reports whether the system has palette menus (macOS 14).
-func hasPalettes() bool {
-	return respondsTo(class("NSMenu"), "paletteMenuWithColors:titles:selectionHandler:")
-}
-
-// inPalette reports whether item is a swatch of a palette menu.
-func inPalette(item id) bool {
-	menu := send(item, "menu")
-	return menu != 0 && respondsTo(menu, "presentationStyle") && sendInt(menu, "presentationStyle") == 1
 }
 
 // applyItemSubtitle gives the item its subtitle, which NSMenuItem shows from

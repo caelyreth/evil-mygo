@@ -279,11 +279,14 @@ func (m *Menu) Submenu(label string, build func(m *Menu)) *MenuItem {
 
 // Palette adds an item showing label whose submenu, which build fills as
 // Submenu's function does, shows its items as a row of colored swatches
-// in place of the item, each item's Swatch, as Finder's tag colors: the
-// system's palette menu, from macOS 14. A swatch shows a check while its
-// item is checked (Checked, Radio), and its label as the pointer rests
-// on it; choosing one chooses its item (Chosen). Elsewhere, on earlier
-// macOS, Windows and Linux, and in the menus MyGo draws, it is a submenu
+// in place of the item, each item's Swatch, as Finder's tag colors, on
+// macOS: discs at the size of the menu's icons, from where its icons
+// start. A swatch shows a check while its item is checked (Checked,
+// Radio), a ring under the pointer or the keys (Left and Right move along
+// the row), and its label as the pointer rests on it; choosing one
+// chooses its item (Chosen) and closes the menu. VoiceOver reads each as
+// a button of its label. Elsewhere, on Windows and Linux, and in the
+// menus MyGo draws, it is a submenu
 // as Submenu's, each item showing its label with a disc of its swatch for
 // its icon, where the menus show icons: once the app has made an icon of
 // its own (mygo.NewMenuIcon).
