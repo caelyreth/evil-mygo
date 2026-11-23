@@ -88,7 +88,9 @@ Icon Composer `.icon`, the layered icon of macOS 26, which `mygo build`
 compiles with `actool` from Xcode 26 or later, with the `.icns` that
 `actool` renders from it in place of the PNG's. Building elsewhere, or when
 the compilation fails, skips the `.icon` with a message, and the app keeps
-the PNG's `.icns`. `mygo dev` shows the `.icns`.
+the PNG's `.icns`. The development app that `mygo dev` builds shows the
+asset catalog too, compiling the `.icon` again as it changes, unless it
+has an `icon-dev.png` of its own.
 
 `macos.icon` can also be an `.icns` of your own, which the app gets in place
 of the one rendered from the PNG: for an icon drawn per size, such as a

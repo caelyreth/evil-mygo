@@ -7,7 +7,9 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"io"
+	"io/fs"
 	"maps"
 	"os"
 	"os/exec"
@@ -265,6 +267,8 @@ type devSession struct {
 	i18nWarnings string // the warnings of the catalogs last shown
 	iconKey      string
 	icns         []byte
+	catalogKey   string
+	car          *assetCatalog
 	mainFor      string // the Main that mainDir is the package directory of
 	mainDir      string
 	// What the phone has installed, which a change of the Go code keeps: the
@@ -670,16 +674,30 @@ func (s *devSession) buildAndLaunch(ctx context.Context, t *task, running [32]by
 		return nil, sum, err
 	}
 	var icns []byte
+	var car *assetCatalog
 	if runtime.GOOS == "darwin" {
-		if icns, err = s.icon(dc); err != nil {
+		if dc.Icon == c.Icon {
+			// Without a -dev icon to tell it apart, the development app
+			// shows the app's own: its asset catalog, as mygo build ships.
+			if car, err = s.catalog(dc); err != nil {
+				return nil, sum, err
+			}
+		}
+		if car != nil && car.icns != nil {
+			icns = car.icns
+		} else if icns, err = s.icon(dc); err != nil {
 			return nil, sum, err
 		}
-		iconFile := ""
+		iconFile, iconName := "", ""
 		if icns != nil {
 			iconFile = bundleIcon
 		}
+		if car != nil {
+			iconName = bundleIconName
+			h.Write(car.data)
+		}
 		h.Write(icns)
-		h.Write(infoPlist(dc, name, iconFile, ""))
+		h.Write(infoPlist(dc, name, iconFile, iconName))
 		if err := hashEntitlements(h, dc); err != nil {
 			return nil, sum, err
 		}
@@ -707,7 +725,7 @@ func (s *devSession) buildAndLaunch(ctx context.Context, t *task, running [32]by
 	exe := filepath.Join(dir, name)
 	if runtime.GOOS == "darwin" {
 		t.set("signing")
-		app, err := writeBundle(dc, stage, bin, icns, nil, res)
+		app, err := writeBundle(dc, stage, bin, icns, car, res)
 		if err != nil {
 			return nil, sum, err
 		}
@@ -830,6 +848,39 @@ func (s *devSession) icon(c *Config) ([]byte, error) {
 		s.iconKey, s.icns = key, icns
 	}
 	return s.icns, nil
+}
+
+// catalog returns the asset catalog of macos.icon, compiling it only when
+// the document changed.
+func (s *devSession) catalog(c *Config) (*assetCatalog, error) {
+	src := c.MacOS.Icon
+	if src == "" {
+		return nil, nil
+	}
+	h := fnv.New64a()
+	err := filepath.WalkDir(c.path(src), func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		fmt.Fprintln(h, path, info.Size(), info.ModTime().UnixNano())
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("macos.icon %s: %w", src, err)
+	}
+	key := fmt.Sprint(src, h.Sum64())
+	if key != s.catalogKey {
+		car, err := appCatalog(c)
+		if err != nil {
+			return nil, err
+		}
+		s.catalogKey, s.car = key, car
+	}
+	return s.car, nil
 }
 
 // installDesktopEntry gives the dev build on Linux a desktop entry in the
