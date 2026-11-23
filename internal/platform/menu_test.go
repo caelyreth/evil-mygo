@@ -1,6 +1,11 @@
 package platform
 
-import "testing"
+import (
+	"bytes"
+	"image/color"
+	"image/png"
+	"testing"
+)
 
 func TestFitIcon(t *testing.T) {
 	for _, c := range []struct{ w, h, box, ww, wh int }{
@@ -67,5 +72,28 @@ func TestLabelWithSubtitleAndBadge(t *testing.T) {
 	}
 	if got := (&MenuItem{Label: "Node", Subtitle: "Hong Kong", Badge: "120 ms"}).LabelWithSubtitleAndBadge(); got != "Node — Hong Kong  120 ms" {
 		t.Errorf("label with subtitle and badge = %q", got)
+	}
+}
+
+// TestSwatchIcon makes a disc of the color, clear at the corners, once
+// for each color.
+func TestSwatchIcon(t *testing.T) {
+	c := Color{R: 200, G: 80, B: 40, A: 255}
+	ic := SwatchIcon(c)
+	img, err := png.Decode(bytes.NewReader(ic.PNG))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b := img.Bounds(); b.Dx() != 2*MenuIconSize || b.Dy() != 2*MenuIconSize {
+		t.Fatalf("the icon is %v, want %d pixels square", b, 2*MenuIconSize)
+	}
+	if got := color.NRGBAModel.Convert(img.At(MenuIconSize, MenuIconSize)).(color.NRGBA); got != (color.NRGBA{200, 80, 40, 255}) {
+		t.Errorf("the centre is %v, want the color", got)
+	}
+	if _, _, _, a := img.At(0, 0).RGBA(); a != 0 {
+		t.Errorf("a corner has alpha %d, want none", a)
+	}
+	if SwatchIcon(c) != ic {
+		t.Error("the same color made a second icon")
 	}
 }

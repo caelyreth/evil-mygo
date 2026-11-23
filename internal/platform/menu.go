@@ -1,5 +1,14 @@
 package platform
 
+import (
+	"bytes"
+	"image"
+	"image/color"
+	"image/png"
+	"math"
+	"sync"
+)
+
 // MenuIconSize is the box, in points (DIPs), that a menu item's icon is
 // drawn to fit, keeping its aspect: the size of the icons of the
 // system's own menus on macOS, Windows and Linux.
@@ -87,4 +96,37 @@ func (m *Menu) Apply(it *MenuItem) {
 		}
 		x.Submenu.Apply(it)
 	}
+}
+
+// swatchIcons are the icons SwatchIcon made, by their color.
+var swatchIcons sync.Map // Color → *MenuIcon
+
+// SwatchIcon returns the icon of a Palette menu's item where the backend
+// shows the palette as a submenu: a disc of c, its edge smoothed, in a
+// box of MenuIconSize at twice its pixels, inset as the system's own
+// color dots are. It is made once for each color.
+func SwatchIcon(c Color) *MenuIcon {
+	if ic, ok := swatchIcons.Load(c); ok {
+		return ic.(*MenuIcon)
+	}
+	const px = 2 * MenuIconSize
+	const r = px/2 - 3
+	img := image.NewNRGBA(image.Rect(0, 0, px, px))
+	for y := range px {
+		for x := range px {
+			// How much of the pixel the disc covers, from the distance of
+			// its centre to the disc's edge.
+			d := math.Hypot(float64(x)+0.5-px/2, float64(y)+0.5-px/2)
+			cover := min(1, max(0, r+0.5-d))
+			if cover > 0 {
+				img.SetNRGBA(x, y, color.NRGBA{c.R, c.G, c.B, uint8(math.Round(float64(c.A) * cover))})
+			}
+		}
+	}
+	var b bytes.Buffer
+	if err := png.Encode(&b, img); err != nil {
+		return nil
+	}
+	ic, _ := swatchIcons.LoadOrStore(c, &MenuIcon{PNG: b.Bytes()})
+	return ic.(*MenuIcon)
 }

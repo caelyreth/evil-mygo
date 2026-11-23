@@ -660,3 +660,45 @@ func TestMenuAllocs(t *testing.T) {
 		}
 	}
 }
+
+// TestContextMenuPalette marks a Palette's submenu as a palette, gives its
+// items their swatches and, standing for them in a submenu, discs of
+// them, and chooses the item of the swatch chosen.
+func TestContextMenuPalette(t *testing.T) {
+	red := RGB(220, 40, 40)
+	var chosen string
+	view := func(c *context) {
+		coreColumn(c).Fill().Children(func() {
+			coreText(c, "Row").ContextMenu(func(m *Menu) {
+				m.Palette("Color", func(m *Menu) {
+					if m.Item("Red").Swatch(red).Radio(true).Chosen() {
+						chosen = "Red"
+					}
+					m.Item("Gray").Swatch(RGB(128, 128, 128)).Radio(false)
+				})
+			})
+		})
+	}
+	tt := coreNewTester(view, 200, 200)
+	if err := tt.RightClick("Row"); err != nil {
+		t.Fatal(err)
+	}
+	sub := tt.h.menu.Items[0].Submenu
+	if sub == nil || !sub.Palette {
+		t.Fatal("the Color item's submenu is not a palette")
+	}
+	it := sub.Items[0]
+	if it.Swatch == nil || *it.Swatch != (platform.Color{R: 220, G: 40, B: 40, A: 255}) {
+		t.Errorf("Red's swatch is %v", it.Swatch)
+	}
+	if it.Icon != platform.SwatchIcon(*it.Swatch) {
+		t.Error("Red's icon is not the disc of its swatch")
+	}
+	if err := tt.ChooseMenuItem("Color", "Red"); err != nil {
+		t.Fatal(err)
+	}
+	tt.Frame()
+	if chosen != "Red" {
+		t.Errorf("chosen = %q, want Red", chosen)
+	}
+}

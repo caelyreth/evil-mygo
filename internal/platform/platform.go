@@ -1170,6 +1170,11 @@ const (
 // Menu is a snapshot of a menu tree.
 type Menu struct {
 	Items []*MenuItem
+	// Palette shows the menu, a submenu, as a row of its items' Swatch
+	// colors in place of the item it is the submenu of, where the backend
+	// has such a row (macOS 14 and later): elsewhere it is a submenu as
+	// any other, its items showing their swatches as their icons.
+	Palette bool
 	// RightToLeft lays a context menu out right to left, as that of an
 	// interface laid out so: its items from the right, opening to the
 	// left of where it shows, which is its top right corner.
@@ -1219,7 +1224,10 @@ type MenuItem struct {
 	// IconColor, when set, is the color of a template Icon in the menus
 	// package ui draws, in place of the text's; backends ignore it.
 	IconColor *Color
-	Submenu   *Menu
+	// Swatch is the color the item stands for in a Palette menu, nil for
+	// none.
+	Swatch  *Color
+	Submenu *Menu
 	// Native is set on the web view's own items of a page's context menu
 	// (WindowHandler.ContextMenu): the backend's number for the item,
 	// from 1, which it shows where the core puts it, doing what the web

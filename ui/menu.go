@@ -277,6 +277,47 @@ func (m *Menu) Submenu(label string, build func(m *Menu)) *MenuItem {
 	return it
 }
 
+// Palette adds an item showing label whose submenu, which build fills as
+// Submenu's function does, shows its items as a row of colored swatches
+// in place of the item, each item's Swatch, as Finder's tag colors: the
+// system's palette menu, from macOS 14. A swatch shows a check while its
+// item is checked (Checked, Radio), and its label as the pointer rests
+// on it; choosing one chooses its item (Chosen). Elsewhere, on earlier
+// macOS, Windows and Linux, and in the menus MyGo draws, it is a submenu
+// as Submenu's, each item showing its label with a disc of its swatch for
+// its icon, where the menus show icons: once the app has made an icon of
+// its own (mygo.NewMenuIcon).
+//
+//	m.Palette("Color", func(m *ui.Menu) {
+//		for _, tag := range tags {
+//			if m.Item(tag.Name).Swatch(tag.Color).Radio(tag == note.Tag).Chosen() {
+//				note.Tag = tag
+//			}
+//		}
+//	})
+func (m *Menu) Palette(label string, build func(m *Menu)) *MenuItem {
+	it := m.Submenu(label, build)
+	if it.p != nil {
+		it.p.Submenu.Palette = true
+	}
+	return it
+}
+
+// Swatch is the color the item stands for in a Palette's row of swatches;
+// where the palette is a submenu, a disc of it is the item's icon, unless
+// it has an Icon of its own.
+func (it *MenuItem) Swatch(c Color) *MenuItem {
+	if it.p != nil {
+		s := c.SRGB()
+		pc := platform.Color{R: s.R, G: s.G, B: s.B, A: s.A}
+		it.p.Swatch = &pc
+		if it.p.Icon == nil {
+			it.p.Icon = platform.SwatchIcon(pc)
+		}
+	}
+	return it
+}
+
 // MaxWidth keeps the menu, as PopoverMenu and PopoverMenuButton draw it,
 // at most w DIPs wide: labels, subtitles and Trailing texts too long for
 // it end with an ellipsis, while shortcuts, icons and marks keep their
