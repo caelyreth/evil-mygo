@@ -84,9 +84,10 @@ type PopoverMenuOptions struct {
 	// Highlight is how the row the pointer or the keys are on stands out,
 	// as PopoverMenuButtonOptions.Highlight.
 	Highlight MenuHighlight
-	// Radius rounds the corners of the panels, as
-	// PopoverMenuButtonOptions.Radius.
-	Radius float32
+	// Radius rounds the corners of the panels, and Separator colors the
+	// lines between groups of items, as PopoverMenuButtonOptions'.
+	Radius    float32
+	Separator Color
 }
 
 // MenuHighlight is how a drawn menu shows the row the pointer or the keys
@@ -174,7 +175,7 @@ func (e *node) PopoverMenuButton(build func(m *Menu), options ...PopoverMenuButt
 		if o.At != 0 || o.Self != 0 {
 			d.menu.attach = attachment(1 + min(o.At, AnchorBottomEnd)*15 + min(o.Self, AnchorBottomEnd))
 		}
-		d.style = PopoverMenuOptions{Panel: o.Panel, Item: o.Item, Highlight: o.Highlight, Radius: o.Radius}
+		d.style = PopoverMenuOptions{Panel: o.Panel, Item: o.Item, Highlight: o.Highlight, Radius: o.Radius, Separator: o.Separator}
 	}
 	rt.drawMenu(e, build)
 	if synced != nil {
@@ -242,6 +243,9 @@ type PopoverMenuButtonOptions struct {
 	// of a menu in a flyout (FlyoutMenus) cut the material behind it to
 	// them.
 	Radius float32
+	// Separator colors the lines between groups of items, the theme's
+	// Border when zero.
+	Separator Color
 }
 
 type menuOpenKey struct{}
@@ -1269,8 +1273,8 @@ func (b *drawnRows) style(panel *node, width float32, shadow bool) {
 
 // menuMaterialShows is how much of a drawn menu's background stands over
 // the system's material: enough to keep its look and its text legible,
-// letting what is behind show through, blurred.
-const menuMaterialShows = 0.7
+// letting what is behind show through, blurred, as the system's menus do.
+const menuMaterialShows = 0.55
 
 // radius returns the corner radius of the menu's panels: its own, else
 // the theme's.
@@ -1296,7 +1300,11 @@ func (b *drawnRows) items(menu *platform.Menu, width float32) {
 			continue
 		}
 		if it.Type == platform.MenuItemSeparator {
-			coreBox(c).Height(1).Margin(t.Space(1), t.Space(2)).Background(t.Border).Shrink(0)
+			line := t.Border
+			if b.d.style.Separator.A > 0 {
+				line = b.d.style.Separator
+			}
+			coreBox(c).Height(1).Margin(t.Space(1), t.Space(2)).Background(line).Shrink(0)
 			continue
 		}
 		sub := it.Submenu
