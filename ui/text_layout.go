@@ -20,6 +20,8 @@ type TextLayout struct {
 	units      []int // rune offset -> UTF-16 offset
 	boundaries []int // grapheme boundaries in runes
 	spans      []Span
+	spStyles   []text.Span
+	spPaints   bool
 	// params is what it was shaped from, and w and h its extent, kept
 	// while Release has let its shaping go.
 	params text.Params
@@ -216,7 +218,8 @@ func shapeTextAligned(s string, font Font, shape TextShape, spans []Span) *TextL
 	case shape.Align == End:
 		params.Align = text.End
 	}
-	t := &TextLayout{spans: spans}
+	spStyles, spPaints := spanPaintStyles(spans)
+	t := &TextLayout{spans: spans, spStyles: spStyles, spPaints: spPaints}
 	t.shape(params)
 	return t
 }
@@ -385,11 +388,24 @@ func platformTextRange(r TextInputRange) TextInputRange {
 // TextLayout paints a retained layout at (x,y) in DIPs, with color as the
 // default foreground. Span colors and decorations paint as RichText does.
 func (p *Painter) TextLayout(layout *TextLayout, x, y float32, color Color) {
+	p.TextLayoutColors(layout, x, y, color, nil)
+}
+
+// TextLayoutColors paints a retained layout at (x, y) in DIPs with color as
+// the default foreground and spanColors overriding per-span foreground colors
+// by span index. A zero Color in spanColors falls back to the span's own
+// Color (or color); a non-zero transparent Color hides that span's glyphs.
+func (p *Painter) TextLayoutColors(layout *TextLayout, x, y float32, color Color, spanColors []Color) {
 	if layout == nil {
 		return
 	}
 	layout.mu.Lock()
 	defer layout.mu.Unlock()
 	layout.shaped()
-	p.textLayout(layout.l, x, y, color, textStyle{size: layout.l.Params.Style.FontSize()}, newSpanPaint(layout.spans))
+	var sp *spanPaint
+	if len(layout.spStyles) > 0 && (layout.spPaints || len(spanColors) > 0) {
+		local := spanPaint{spans: layout.spans, styles: layout.spStyles, colors: spanColors}
+		sp = &local
+	}
+	p.textLayout(layout.l, x, y, color, textStyle{size: layout.l.Params.Style.FontSize()}, sp)
 }

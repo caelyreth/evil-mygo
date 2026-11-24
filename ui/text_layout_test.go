@@ -110,3 +110,70 @@ func TestReleasedTextLayout(t *testing.T) {
 		t.Errorf("shaped again, its caret %v and boundary %d, want %v and %d", l.Caret(5), l.NextBoundary(0), caret, next)
 	}
 }
+
+func TestTextLayoutColors(t *testing.T) {
+	lay := ShapeRichTextWith([]Span{
+		{Text: "AAA ", Strikethrough: true},
+		{Text: "BBB "},
+		{Text: "CCC"},
+	}, Font{Size: 18}, TextShape{})
+
+	red := RGB(255, 0, 0)
+	green := RGB(0, 255, 0)
+	hidden := Color{R: 1} // non-zero transparent hides glyphs while keeping layout room
+	fallback := RGB(0, 0, 255)
+	colors := []Color{red, {}, hidden}
+
+	tt := NewTester(func(c *Context) {
+		Box(c).Fill().Background(RGB(0, 0, 0)).Draw(func(p *Painter, _ Rect) {
+			p.TextLayoutColors(lay, 10, 10, fallback, colors)
+		})
+	}, 260, 60)
+	tt.Frame()
+	img := tt.Image()
+	var hasRed, hasBlue, hasGreen int
+	for y := 0; y < img.Bounds().Dy(); y++ {
+		for x := 0; x < img.Bounds().Dx(); x++ {
+			px := img.RGBAAt(x, y)
+			if px.R > 200 && px.G < 30 && px.B < 30 {
+				hasRed++
+			}
+			if px.B > 200 && px.R < 30 && px.G < 30 {
+				hasBlue++
+			}
+			if px.G > 200 && px.R < 30 && px.B < 30 {
+				hasGreen++
+			}
+		}
+	}
+	if hasRed == 0 || hasBlue == 0 {
+		t.Fatalf("expected overridden red (%d px) and fallback blue (%d px)", hasRed, hasBlue)
+	}
+	if hasGreen != 0 {
+		t.Fatalf("expected zero green before override, got %d", hasGreen)
+	}
+
+	// Verify re-painting the same layout after Release switches cleanly without reshaping mismatch.
+	lay.Release()
+	colors = []Color{green, hidden, green}
+	tt.Frame()
+	img = tt.Image()
+	hasRed, hasBlue, hasGreen = 0, 0, 0
+	for y := 0; y < img.Bounds().Dy(); y++ {
+		for x := 0; x < img.Bounds().Dx(); x++ {
+			px := img.RGBAAt(x, y)
+			if px.R > 200 && px.G < 30 && px.B < 30 {
+				hasRed++
+			}
+			if px.B > 200 && px.R < 30 && px.G < 30 {
+				hasBlue++
+			}
+			if px.G > 200 && px.R < 30 && px.B < 30 {
+				hasGreen++
+			}
+		}
+	}
+	if hasGreen == 0 || hasRed != 0 || hasBlue != 0 {
+		t.Fatalf("after override & Release: red=%d green=%d blue=%d", hasRed, hasGreen, hasBlue)
+	}
+}

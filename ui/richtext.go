@@ -242,6 +242,11 @@ func (sc *spanCache) join(spans []Span) string {
 	return sc.text
 }
 
+// spanHasPaint reports whether s sets any paint-time attribute beyond text layout.
+func spanHasPaint(s Span) bool {
+	return s.Color.A > 0 || s.colorSet || s.Underline || s.WavyUnderline || s.DottedUnderline || s.Strikethrough || s.Background.A > 0 || s.strokeSet || s.shadowSet || s.Shadow.color.A > 0
+}
+
 // update makes the styles of the cache those of spans, unless they are
 // already.
 func (sc *spanCache) update(spans []Span) {
@@ -250,7 +255,7 @@ func (sc *spanCache) update(spans []Span) {
 	paints := false
 	for i, s := range spans {
 		end += utf8.RuneCountInString(s.Text)
-		paints = paints || s.Color.A > 0 || s.colorSet || s.Underline || s.WavyUnderline || s.DottedUnderline || s.Strikethrough || s.Background.A > 0 || s.strokeSet || s.shadowSet || s.Shadow.color.A > 0
+		paints = paints || spanHasPaint(s)
 		same = same && sc.styles[i] == spanStyle(s, end)
 	}
 	sc.paints = paints
@@ -264,6 +269,22 @@ func (sc *spanCache) update(spans []Span) {
 		sc.styles = append(sc.styles, spanStyle(s, end))
 	}
 	sc.key = text.EncodeSpans(sc.styles)
+}
+
+// spanPaintStyles builds the rune-end table and paint flag for retained TextLayout painting.
+func spanPaintStyles(spans []Span) ([]text.Span, bool) {
+	if len(spans) == 0 {
+		return nil, false
+	}
+	styles := make([]text.Span, len(spans))
+	end := 0
+	paints := false
+	for i, s := range spans {
+		end += utf8.RuneCountInString(s.Text)
+		paints = paints || spanHasPaint(s)
+		styles[i] = spanStyle(s, end)
+	}
+	return styles, paints
 }
 
 // spanStyle returns the style of a span ending at rune end, for its
@@ -408,15 +429,15 @@ func (c *context) MeasureText(width float32, spans ...Span) (w, h float32) {
 type spanPaint struct {
 	spans  []Span
 	styles []text.Span
+	colors []Color
 }
 
 func newSpanPaint(spans []Span) *spanPaint {
-	sc := &spanCache{}
-	sc.update(spans)
-	if !sc.paints {
+	styles, paints := spanPaintStyles(spans)
+	if !paints {
 		return nil
 	}
-	return &spanPaint{spans: spans, styles: sc.styles}
+	return &spanPaint{spans: spans, styles: styles}
 }
 
 // paintSpans returns how to paint the spans of the element's text, which
@@ -458,6 +479,11 @@ func (sp *spanPaint) at(r int) int {
 // color returns the color of span i, or c.
 func (sp *spanPaint) color(i int, c Color) Color {
 	if i >= 0 {
+		if i < len(sp.colors) {
+			if sc := sp.colors[i]; sc.A > 0 || sc != (Color{}) {
+				return sc
+			}
+		}
 		if sc, ok := sp.spans[i].color(); ok {
 			return sc
 		}
