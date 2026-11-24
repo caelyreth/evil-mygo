@@ -1247,12 +1247,12 @@ func (rt *engine) chosenRowMenu() (menu, row *state) {
 		// steps from it.
 		var top *state
 		d := 0
-		for st := rt.hits[i].st; st != nil && st.parent != 0; st = rt.states[st.parent] {
+		for st := rt.hits[i].st; st != nil && st.parent != 0; st = st.parentState(rt) {
 			if st.flags&flagContextMenu != 0 && st.flags&flagDisabled == 0 {
 				top, d = st, 0
 			}
 			d++
-			if p := rt.states[st.parent]; p != nil && p.list != nil && top != nil && rt.isChosenRow(p.list, st) {
+			if p := st.parentState(rt); p != nil && p.list != nil && top != nil && rt.isChosenRow(p.list, st) {
 				if menu == nil || d < depth {
 					menu, row, depth = top, st, d
 				}
@@ -2210,16 +2210,103 @@ func (hs *listHeights) resize(n int) {
 	hs.dirty = true
 }
 
+// clipTailBlock masks off bits in the tail block at or past hs.n, dropping
+// the block if empty and optionally updating its sum.
+func (hs *listHeights) clipTailBlock(nb int, updateTotal bool) {
+	rem := hs.n % listBlock
+	if rem == 0 || len(hs.ids) == 0 {
+		return
+	}
+	last := len(hs.ids) - 1
+	if hs.ids[last] != nb-1 {
+		return
+	}
+	blk := hs.blocks[last]
+	mask := (uint64(1) << rem) - 1
+	if blk.known&^mask == 0 {
+		return
+	}
+	blk.known &= mask
+	if blk.known == 0 {
+		hs.blocks[last] = nil
+		hs.ids, hs.blocks = hs.ids[:last], hs.blocks[:last]
+		return
+	}
+	if updateTotal {
+		blk.total()
+	}
+}
+
 // shift moves the heights known by d rows, as rows came or went before.
 func (hs *listHeights) shift(d int) {
-	ids, blocks := hs.ids, hs.blocks
-	hs.ids, hs.blocks = nil, nil
-	for k, blk := range blocks {
-		for at := range listBlock {
-			if blk.known&(1<<at) != 0 {
-				hs.set(ids[k]*listBlock+at+d, blk.h[at])
+	if hs.n <= 0 {
+		hs.clear()
+		return
+	}
+	if d == 0 || len(hs.blocks) == 0 {
+		return
+	}
+	nb := (hs.n + listBlock - 1) / listBlock
+	if d%listBlock == 0 {
+		shift := d / listBlock
+		dst := 0
+		for k, id := range hs.ids {
+			newID := id + shift
+			if newID < 0 || newID >= nb {
+				continue
+			}
+			hs.ids[dst], hs.blocks[dst] = newID, hs.blocks[k]
+			dst++
+		}
+		clear(hs.blocks[dst:])
+		hs.ids, hs.blocks = hs.ids[:dst], hs.blocks[:dst]
+		hs.clipTailBlock(nb, true)
+		hs.dirty = true
+		return
+	}
+	bShift, off := d/listBlock, d%listBlock
+	if off < 0 {
+		off += listBlock
+		bShift--
+	}
+	split := listBlock - off
+	lowKeep := (uint64(1) << split) - 1
+	capOut := min(nb, 2*len(hs.ids))
+	newIDs := make([]int, 0, capOut)
+	newBlocks := make([]*heightBlock, 0, capOut)
+	backing := make([]heightBlock, 0, capOut)
+	getBlock := func(bid int) *heightBlock {
+		if n := len(newIDs); n > 0 && newIDs[n-1] == bid {
+			return newBlocks[n-1]
+		}
+		backing = append(backing, heightBlock{})
+		dst := &backing[len(backing)-1]
+		newIDs = append(newIDs, bid)
+		newBlocks = append(newBlocks, dst)
+		return dst
+	}
+	for k, id := range hs.ids {
+		blk := hs.blocks[k]
+		if lowMask := blk.known & lowKeep; lowMask != 0 {
+			if bid := id + bShift; bid >= 0 && bid < nb {
+				dst := getBlock(bid)
+				copy(dst.h[off:], blk.h[:split])
+				dst.known |= lowMask << off
 			}
 		}
+		if highMask := blk.known >> split; highMask != 0 {
+			if bid := id + bShift + 1; bid >= 0 && bid < nb {
+				dst := getBlock(bid)
+				copy(dst.h[:off], blk.h[split:])
+				dst.known |= highMask
+			}
+		}
+	}
+	clear(hs.blocks)
+	hs.ids, hs.blocks = newIDs, newBlocks
+	hs.clipTailBlock(nb, false)
+	for _, blk := range hs.blocks {
+		blk.total()
 	}
 	hs.dirty = true
 }

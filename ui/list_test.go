@@ -1681,3 +1681,81 @@ func TestListRowPressedWithoutChoosing(t *testing.T) {
 		t.Errorf("released: row %d reports the press", pressed)
 	}
 }
+
+func BenchmarkListHeightsShift(b *testing.B) {
+	makeHeights := func() listHeights {
+		var hs listHeights
+		hs.def = 32
+		hs.resize(10000)
+		for i := range 10000 {
+			hs.set(i, float32(20+i%17))
+		}
+		return hs
+	}
+	b.Run("unaligned", func(b *testing.B) {
+		hs := makeHeights()
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := range b.N {
+			if i&1 == 0 {
+				hs.shift(1)
+			} else {
+				hs.shift(-1)
+			}
+		}
+	})
+	b.Run("aligned", func(b *testing.B) {
+		hs := makeHeights()
+		b.ReportAllocs()
+		b.ResetTimer()
+		for i := range b.N {
+			if i&1 == 0 {
+				hs.shift(64)
+			} else {
+				hs.shift(-64)
+			}
+		}
+	})
+}
+
+func TestListHeightsShiftMatchesReference(t *testing.T) {
+	shifts := []int{-500, -200, -128, -65, -64, -1, 0, 1, 37, 64, 128, 500}
+	for _, n := range []int{0, 64, 200} {
+		for _, d := range shifts {
+			var got, ref listHeights
+			got.def, ref.def = 32, 32
+			got.resize(n)
+			ref.resize(n)
+			rows := make([]float32, n)
+			known := make([]bool, n)
+			for i := 0; i < n; i += 3 {
+				h := float32(15 + i%29)
+				got.set(i, h)
+				rows[i], known[i] = h, true
+			}
+			got.shift(d)
+			for i, ok := range known {
+				if !ok {
+					continue
+				}
+				ref.set(i+d, rows[i])
+			}
+			if got.n != ref.n {
+				t.Fatalf("n=%d d=%d: hs.n=%d, want %d", n, d, got.n, ref.n)
+			}
+			if !slices.Equal(got.ids, ref.ids) {
+				t.Fatalf("n=%d d=%d: ids=%v, want %v", n, d, got.ids, ref.ids)
+			}
+			for i := range n {
+				if gh, rh := got.height(i), ref.height(i); math.Abs(gh-rh) > 1e-6 {
+					t.Fatalf("n=%d d=%d row %d: height=%v, want %v", n, d, i, gh, rh)
+				}
+			}
+			for i := 0; i <= n; i += 17 {
+				if gt, rt := got.top(i, 4), ref.top(i, 4); math.Abs(gt-rt) > 1e-4 {
+					t.Fatalf("n=%d d=%d top(%d): got=%v, want=%v", n, d, i, gt, rt)
+				}
+			}
+		}
+	}
+}
