@@ -42,18 +42,27 @@ func (f Font) style() text.Style {
 }
 
 // FontMetrics are the vertical metrics of a font, in DIPs: how far its
-// glyphs reach above and below the baseline, and the gap it leaves
-// between lines.
+// glyphs reach above and below the baseline, the gap it leaves between
+// lines, and how far a capital's flat top stands above the baseline,
+// which centers a word on what stands beside it.
 type FontMetrics struct {
 	Ascent, Descent, LineGap float32
+	// CapHeight is the font's own where the platform gives it (macOS and
+	// Windows), else 0.7 of its em, as most Latin faces are.
+	CapHeight float32
 }
 
 // Metrics returns the font's metrics.
 func (f Font) Metrics() FontMetrics {
 	style := f.style()
 	style.LineHeight = 0
-	a, d, h := text.Shared().Metrics(style)
-	return FontMetrics{Ascent: a, Descent: d, LineGap: max(h-a-d, 0)}
+	sys := text.Shared()
+	a, d, h := sys.Metrics(style)
+	ch := sys.CapHeight(style)
+	if ch <= 0 {
+		ch = 0.7 * style.FontSize()
+	}
+	return FontMetrics{Ascent: a, Descent: d, LineGap: max(h-a-d, 0), CapHeight: ch}
 }
 
 // Glyph is a glyph of text that Shape placed, which Painter.Glyphs draws.

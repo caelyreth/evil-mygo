@@ -1301,6 +1301,15 @@ func (s *System) Metrics(style Style) (ascent, descent, lineHeight float32) {
 	return m.ascent, m.descent, m.lineHeight
 }
 
+// CapHeight returns the cap height of a style's font, 0 where its engine
+// gives none.
+func (s *System) CapHeight(style Style) float32 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.takeAppFonts()
+	return s.font(style).CapHeight
+}
+
 // font returns the font of a style.
 func (s *System) font(style Style) *Font {
 	key := Style{Family: style.Family, Size: style.FontSize(), Weight: style.weight(), Italic: style.Italic}
