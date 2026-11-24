@@ -203,7 +203,8 @@ func (r *Renderer) SetPost(post func(func())) {
 // layerChanges reports whether drawing s at scale changes the layer, its
 // drawables' size or format.
 func (r *Renderer) layerChanges(s *scene.Scene, scale float64) bool {
-	return r.layerWide != r.wide || s.Width != r.w || s.Height != r.h || scale != r.scale || r.trimmed ||
+	return r.layerWide != r.wide || r.layerBackdrop != r.wantLayerBackdrop(s) ||
+		s.Width != r.w || s.Height != r.h || scale != r.scale || r.trimmed ||
 		msgRect(r.superlayer, sel("bounds")) != r.bounds
 }
 

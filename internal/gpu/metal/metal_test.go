@@ -1512,3 +1512,71 @@ func TestGPUSourceFallsBackToPixels(t *testing.T) {
 		t.Fatalf("the pixels draw red %d blue %d, not red", r, b)
 	}
 }
+
+func TestLayerBackdropHysteresis(t *testing.T) {
+	if err := load(); err != nil {
+		t.Skip("no Metal:", err)
+	}
+	var layer id
+	pool(func() { layer = send(class("CALayer"), "new") })
+	if layer == 0 {
+		t.Skip("no Core Animation")
+	}
+	defer pool(func() { release(&layer) })
+	r, err := New(uintptr(layer))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Release()
+
+	plain := &scene.Scene{Width: 100, Height: 80}
+	nonBackdropFx := &scene.Scene{
+		Width: 100, Height: 80,
+		Effects: []scene.EffectOp{{Effect: &scene.Effect{Name: "plain"}}},
+	}
+	backdropFx := &scene.Scene{
+		Width: 100, Height: 80,
+		Effects: []scene.EffectOp{{Effect: &scene.Effect{Name: "backdrop", Backdrop: true}}},
+	}
+
+	if hasBackdrop(plain) || hasBackdrop(nonBackdropFx) {
+		t.Fatal("hasBackdrop reported true for scene without backdrop effects")
+	}
+	if !hasBackdrop(backdropFx) {
+		t.Fatal("hasBackdrop missed Effect{Backdrop: true}")
+	}
+
+	pool(func() {
+		r.fit(100, 80, 1)
+		if byte(send(r.layer, "framebufferOnly")) == 0 {
+			t.Fatal("initial layer should have framebufferOnly=YES")
+		}
+		if r.layerChanges(plain, 1) || r.layerChanges(nonBackdropFx, 1) {
+			t.Fatal("non-backdrop scene triggered layerChanges")
+		}
+		if !r.layerChanges(backdropFx, 1) {
+			t.Fatal("backdrop scene did not trigger layerChanges")
+		}
+		if !r.setLayerBackdrop(true) || byte(send(r.layer, "framebufferOnly")) != 0 {
+			t.Fatal("setLayerBackdrop(true) did not set framebufferOnly=NO")
+		}
+		// Stay non-framebufferOnly across 59 consecutive backdrop-free frames.
+		for i := range backdropReleaseFrames - 1 {
+			if r.layerChanges(plain, 1) {
+				t.Fatalf("frame %d triggered early layerChanges back to framebufferOnly=YES", i)
+			}
+			r.noBackdropFrames++
+		}
+		if !r.layerChanges(plain, 1) {
+			t.Fatalf("frame %d did not trigger hysteresis release back to framebufferOnly=YES", backdropReleaseFrames)
+		}
+		if !r.setLayerBackdrop(false) || byte(send(r.layer, "framebufferOnly")) == 0 {
+			t.Fatal("setLayerBackdrop(false) did not restore framebufferOnly=YES")
+		}
+		r.setLayerBackdrop(true)
+		r.trim()
+		if byte(send(r.layer, "framebufferOnly")) == 0 || r.layerBackdrop {
+			t.Fatal("trim did not restore framebufferOnly=YES")
+		}
+	})
+}

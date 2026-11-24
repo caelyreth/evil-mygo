@@ -448,9 +448,12 @@ type Renderer struct {
 	cur     *formatState
 	// wide tells that frames show the colors of scenes outside the sRGB
 	// gamut, and layerWide that the layer's drawables hold them; wideErr
-	// is why they cannot.
-	wide, layerWide bool
-	wideErr         error
+	// is why they cannot. layerBackdrop tells that drawables allow sampling
+	// (framebufferOnly = NO) for backdrop effects, kept with hysteresis.
+	wide, layerWide  bool
+	layerBackdrop    bool
+	noBackdropFrames int
+	wideErr          error
 	// layer is the CAMetalLayer in superlayer, the view's.
 	layer, superlayer id
 	w, h              int
@@ -556,9 +559,9 @@ func New(layer uintptr) (r *Renderer, err error) {
 		}
 		send(ml, "setDevice:", r.device)
 		send(ml, "setPixelFormat:", pixelFormatBGRA8Unorm)
-		// Effects read their backdrops from the drawable, which their
-		// passes sample then.
-		send(ml, "setFramebufferOnly:", 0)
+		// Keep drawables framebufferOnly by default for TBDR / lossless compression;
+		// enabled dynamically when a scene draws backdrop effects (readBackdrop).
+		send(ml, "setFramebufferOnly:", 1)
 		// Two drawables are too few: on a ProMotion display, frames
 		// waited for one most of each refresh. Three, as Core
 		// Animation makes while a window animates, also let both instance
@@ -767,6 +770,50 @@ func (r *Renderer) setLayerWide(on bool) (changed bool) {
 	send(r.layer, "setColorspace:", space)
 	send(tx, "commit")
 	r.layerWide = on
+	return true
+}
+
+const backdropReleaseFrames = 60
+
+// hasBackdrop reports whether any effect in s reads its backdrop from the target.
+func hasBackdrop(s *scene.Scene) bool {
+	for i := range s.Effects {
+		if fx := s.Effects[i].Effect; fx != nil && fx.Backdrop {
+			return true
+		}
+	}
+	return false
+}
+
+func (r *Renderer) wantLayerBackdrop(s *scene.Scene) bool {
+	if hasBackdrop(s) {
+		return true
+	}
+	if r.layerBackdrop {
+		return r.noBackdropFrames+1 < backdropReleaseFrames
+	}
+	return false
+}
+
+// setLayerBackdrop toggles CAMetalLayer framebufferOnly to allow sampling the
+// drawable when backdrop effects are active, or restore compression when not.
+func (r *Renderer) setLayerBackdrop(on bool) (changed bool) {
+	if r.layerBackdrop == on || r.layer == 0 {
+		return false
+	}
+	fbOnly := uintptr(1)
+	if on {
+		fbOnly = 0
+	}
+	tx := class("CATransaction")
+	send(tx, "begin")
+	send(tx, "setDisableActions:", 1)
+	send(r.layer, "setFramebufferOnly:", fbOnly)
+	send(tx, "commit")
+	r.layerBackdrop = on
+	if !on {
+		r.noBackdropFrames = 0
+	}
 	return true
 }
 
@@ -1942,6 +1989,14 @@ func (r *Renderer) render(s *scene.Scene) error {
 		r.cur = &r.formats[1]
 	}
 	changed := r.setLayerWide(r.wide)
+	needBackdrop := hasBackdrop(s)
+	if needBackdrop {
+		r.noBackdropFrames = 0
+	} else if r.layerBackdrop {
+		r.noBackdropFrames++
+	}
+	wantBackdrop := needBackdrop || (r.layerBackdrop && r.noBackdropFrames < backdropReleaseFrames)
+	changed = r.setLayerBackdrop(wantBackdrop) || changed
 	changed = r.fit(s.Width, s.Height, scale) || changed
 	// A frame changing the layer, or showing web views, which move with
 	// the window's other changes, presents with the Core Animation
@@ -2313,6 +2368,11 @@ func (r *Renderer) trim() {
 		tx := class("CATransaction")
 		send(tx, "begin")
 		send(tx, "setDisableActions:", 1)
+		if r.layerBackdrop {
+			send(r.layer, "setFramebufferOnly:", 1)
+			r.layerBackdrop = false
+			r.noBackdropFrames = 0
+		}
 		msgSetSize(r.layer, sel("setDrawableSize:"), cgSize{1, 1})
 		send(tx, "commit")
 	})
