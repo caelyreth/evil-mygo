@@ -131,41 +131,69 @@ func (p *Painter) Glyphs(glyphs []Glyph, x, y float32, c Color) {
 	if sys.JoinsGlyphs() {
 		run = &glyphRun{scale: s}
 	}
-	for _, g := range glyphs {
-		if g.font == nil {
-			continue
+	if run == nil {
+		sys.Lock()
+		for _, g := range glyphs {
+			if g.font == nil {
+				continue
+			}
+			pen := (x+g.X)*s + gs.dx
+			if !p.transform.Set && (pen > right || pen+(g.Advance+g.font.Size)*s < left) {
+				continue
+			}
+			ix := float32(math.Floor(float64(pen)))
+			shade := shade
+			if g.thick {
+				shade = text.Thick
+			} else if g.flat {
+				shade = text.Flat
+			}
+			gi := sys.GlyphLocked(g.font, g.id, s, pen, shade, p.opaque)
+			if !gi.OK {
+				continue
+			}
+			gb := baseline
+			if g.y != 0 {
+				gb = sys.BaselineLocked((y+g.y)*s + gs.dy)
+			}
+			p.s.Glyphs = append(p.s.Glyphs, scene.Glyph{
+				X: ix + gi.Left, Y: gb + gi.Top, W: float32(gi.W), H: float32(gi.H),
+				U: gi.X, V: gi.Y, UW: gi.W, VH: gi.H,
+				Color: color, Wide: p.glyphWide(c), Colored: gi.Colored, Subpixel: gi.Subpixel, Thin: gi.Thin,
+			})
 		}
-		pen := (x+g.X)*s + gs.dx
-		if !p.transform.Set && (pen > right || pen+(g.Advance+g.font.Size)*s < left) {
-			continue
-		}
-		ix := float32(math.Floor(float64(pen)))
-		shade := shade
-		if g.thick {
-			shade = text.Thick
-		} else if g.flat {
-			shade = text.Flat
-		}
-		gi := sys.Glyph(g.font, g.id, s, pen, shade, p.opaque)
-		if !gi.OK {
-			continue
-		}
-		gb := baseline
-		if g.y != 0 {
-			gb = sys.Baseline((y+g.y)*s + gs.dy)
-		}
-		sg := scene.Glyph{
-			X: ix + gi.Left, Y: gb + gi.Top, W: float32(gi.W), H: float32(gi.H),
-			U: gi.X, V: gi.Y, UW: gi.W, VH: gi.H,
-			Color: color, Wide: p.glyphWide(c), Colored: gi.Colored, Subpixel: gi.Subpixel, Thin: gi.Thin,
-		}
-		if run != nil {
+		sys.Unlock()
+	} else {
+		for _, g := range glyphs {
+			if g.font == nil {
+				continue
+			}
+			pen := (x+g.X)*s + gs.dx
+			if !p.transform.Set && (pen > right || pen+(g.Advance+g.font.Size)*s < left) {
+				continue
+			}
+			ix := float32(math.Floor(float64(pen)))
+			shade := shade
+			if g.thick {
+				shade = text.Thick
+			} else if g.flat {
+				shade = text.Flat
+			}
+			gi := sys.Glyph(g.font, g.id, s, pen, shade, p.opaque)
+			if !gi.OK {
+				continue
+			}
+			gb := baseline
+			if g.y != 0 {
+				gb = sys.Baseline((y+g.y)*s + gs.dy)
+			}
+			sg := scene.Glyph{
+				X: ix + gi.Left, Y: gb + gi.Top, W: float32(gi.W), H: float32(gi.H),
+				U: gi.X, V: gi.Y, UW: gi.W, VH: gi.H,
+				Color: color, Wide: p.glyphWide(c), Colored: gi.Colored, Subpixel: gi.Subpixel, Thin: gi.Thin,
+			}
 			run.add(p, text.Glyph{Font: g.font, ID: g.id}, gi, pen, sg, shade, gb)
-			continue
 		}
-		p.s.Glyphs = append(p.s.Glyphs, sg)
-	}
-	if run != nil {
 		run.flush(p)
 	}
 	if end := int32(len(p.s.Glyphs)); end > start {
@@ -198,33 +226,55 @@ func (p *Painter) TextLine(l *text.Layout, x, y float32, color func(cluster int)
 		run.scale = s
 	}
 	line := &l.Lines[0]
-	for _, g := range line.Glyphs {
-		pen := (x+g.X)*s + gs.dx
-		// An inline object's box draws no glyph (text.Span.ObjectWidth).
-		if g.Object || !p.transform.Set && (pen > right || pen+(g.Advance+g.Size)*s < left) {
-			continue
+	if run == nil {
+		sys.Lock()
+		for _, g := range line.Glyphs {
+			pen := (x+g.X)*s + gs.dx
+			// An inline object's box draws no glyph (text.Span.ObjectWidth).
+			if g.Object || !p.transform.Set && (pen > right || pen+(g.Advance+g.Size)*s < left) {
+				continue
+			}
+			c := color(g.Cluster)
+			shade := text.ShadeOf(c.R, c.G, c.B)
+			gi := sys.GlyphLocked(g.Font, g.ID, s, pen, shade, p.opaque)
+			if !gi.OK {
+				continue
+			}
+			c = c.Alpha(p.opacity)
+			gb := baseline
+			if g.Y != line.Baseline {
+				gb = sys.BaselineLocked((y+g.Y-line.Baseline)*s + gs.dy)
+			}
+			p.s.Glyphs = append(p.s.Glyphs, scene.Glyph{
+				X: float32(math.Floor(float64(pen))) + gi.Left, Y: gb + gi.Top, W: float32(gi.W), H: float32(gi.H),
+				U: gi.X, V: gi.Y, UW: gi.W, VH: gi.H,
+				Color: c.scene(), Wide: p.glyphWide(c), Colored: gi.Colored, Subpixel: gi.Subpixel, Thin: gi.Thin,
+			})
 		}
-		c := color(g.Cluster)
-		shade := text.ShadeOf(c.R, c.G, c.B)
-		gi := sys.Glyph(g.Font, g.ID, s, pen, shade, p.opaque)
-		if !gi.OK {
-			continue
-		}
-		c = c.Alpha(p.opacity)
-		// y is the line's baseline: the layout's lies Baseline below it.
-		gb := glyphBaseline(sys, &g, line, y-line.Baseline, baseline, gs)
-		sg := scene.Glyph{
-			X: float32(math.Floor(float64(pen))) + gi.Left, Y: gb + gi.Top, W: float32(gi.W), H: float32(gi.H),
-			U: gi.X, V: gi.Y, UW: gi.W, VH: gi.H,
-			Color: c.scene(), Wide: p.glyphWide(c), Colored: gi.Colored, Subpixel: gi.Subpixel, Thin: gi.Thin,
-		}
-		if run != nil {
+		sys.Unlock()
+	} else {
+		for _, g := range line.Glyphs {
+			pen := (x+g.X)*s + gs.dx
+			// An inline object's box draws no glyph (text.Span.ObjectWidth).
+			if g.Object || !p.transform.Set && (pen > right || pen+(g.Advance+g.Size)*s < left) {
+				continue
+			}
+			c := color(g.Cluster)
+			shade := text.ShadeOf(c.R, c.G, c.B)
+			gi := sys.Glyph(g.Font, g.ID, s, pen, shade, p.opaque)
+			if !gi.OK {
+				continue
+			}
+			c = c.Alpha(p.opacity)
+			// y is the line's baseline: the layout's lies Baseline below it.
+			gb := glyphBaseline(sys, &g, line, y-line.Baseline, baseline, gs)
+			sg := scene.Glyph{
+				X: float32(math.Floor(float64(pen))) + gi.Left, Y: gb + gi.Top, W: float32(gi.W), H: float32(gi.H),
+				U: gi.X, V: gi.Y, UW: gi.W, VH: gi.H,
+				Color: c.scene(), Wide: p.glyphWide(c), Colored: gi.Colored, Subpixel: gi.Subpixel, Thin: gi.Thin,
+			}
 			run.add(p, text.Glyph{Font: g.Font, ID: g.ID}, gi, pen, sg, shade, gb)
-			continue
 		}
-		p.s.Glyphs = append(p.s.Glyphs, sg)
-	}
-	if run != nil {
 		run.flush(p)
 	}
 	if end := int32(len(p.s.Glyphs)); end > start {

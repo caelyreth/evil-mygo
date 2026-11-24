@@ -294,9 +294,25 @@ func (s *System) ShadowGlyph(f *Font, id uint32, scale, x float32, shade Shade, 
 // stroke/16 pixels wide along it, or with shadow the mask of it blurred
 // by (shadow-1)/16 pixels, which derive rasterizes (StrokeGlyph,
 // ShadowGlyph): apps that stroke and shadow no text do not link it.
+// Lock acquires the system's lock for a batch of GlyphLocked or BaselineLocked
+// calls from the UI paint loop.
+func (s *System) Lock() { s.mu.Lock() }
+
+// Unlock releases the lock acquired with Lock.
+func (s *System) Unlock() { s.mu.Unlock() }
+
+// GlyphLocked is Glyph with s.mu already held by Lock.
+func (s *System) GlyphLocked(f *Font, id uint32, scale, x float32, shade Shade, opaque bool) GlyphImage {
+	return s.glyphLocked(f, id, scale, x, shade, opaque, 0, 0, nil)
+}
+
 func (s *System) glyph(f *Font, id uint32, scale, x float32, shade Shade, opaque bool, stroke, shadow uint16, derive func(s *System, f *Font, id uint32, scale, dx float32, shade Shade, amount float32) GlyphImage) GlyphImage {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.glyphLocked(f, id, scale, x, shade, opaque, stroke, shadow, derive)
+}
+
+func (s *System) glyphLocked(f *Font, id uint32, scale, x float32, shade Shade, opaque bool, stroke, shadow uint16, derive func(s *System, f *Font, id uint32, scale, dx float32, shade Shade, amount float32) GlyphImage) GlyphImage {
 	if f == nil {
 		return GlyphImage{}
 	}
@@ -353,11 +369,18 @@ func (s *System) Origin(f *Font, scale, x float32, opaque bool) float32 {
 // the pixel x is in.
 func (s *System) place(f *Font, scale float32, subpixel bool, x float32) (q, n int, carry float32) {
 	pk := placeKey{f, uint32(scale*256 + 0.5), subpixel}
-	pl, ok := s.places[pk]
-	if !ok {
-		pl.n, pl.round = s.engine().positions(f, scale, subpixel)
-		pl.n = max(pl.n, 1)
-		s.places[pk] = pl
+	var pl placement
+	if s.lastPlaceOK && s.lastPlaceKey == pk {
+		pl = s.lastPlace
+	} else {
+		var ok bool
+		pl, ok = s.places[pk]
+		if !ok {
+			pl.n, pl.round = s.engine().positions(f, scale, subpixel)
+			pl.n = max(pl.n, 1)
+			s.places[pk] = pl
+		}
+		s.lastPlaceKey, s.lastPlace, s.lastPlaceOK = pk, pl, true
 	}
 	frac := float64(x) - math.Floor(float64(x))
 	if pl.round {
@@ -374,6 +397,11 @@ func (s *System) place(f *Font, scale float32, subpixel bool, x float32) (q, n i
 func (s *System) Baseline(y float32) float32 {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.engine().baseline(y)
+}
+
+// BaselineLocked is Baseline with s.mu already held by Lock.
+func (s *System) BaselineLocked(y float32) float32 {
 	return s.engine().baseline(y)
 }
 

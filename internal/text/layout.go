@@ -467,8 +467,11 @@ type System struct {
 	// system forgot its layouts (Generation).
 	made, gen uint64
 
-	glyphs map[glyphKey]*atlasEntry
-	places map[placeKey]placement
+	glyphs       map[glyphKey]*atlasEntry
+	places       map[placeKey]placement
+	lastPlaceKey placeKey
+	lastPlace    placement
+	lastPlaceOK  bool
 	// runs holds joined glyphs (GlyphRun).
 	runs  map[runKey]*atlasEntry
 	masks map[uint64]*atlasEntry
@@ -757,6 +760,7 @@ func (s *System) SetFontRendering(antialias, hinting, subpixels string) {
 		clear(s.marks)
 		clear(s.glyphs)
 		clear(s.places)
+		s.lastPlaceOK = false
 		clear(s.runs)
 	}
 }
@@ -952,6 +956,7 @@ func (s *System) forgetAll(f fontForgetter) {
 	clear(s.fonts)
 	clear(s.glyphs)
 	clear(s.places)
+	s.lastPlaceOK = false
 	clear(s.runs)
 	f.forgetFonts()
 }

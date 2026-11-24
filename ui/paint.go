@@ -1114,41 +1114,69 @@ func (p *Painter) textForeground(l *text.Layout, x, y float32, color Color, ts t
 		if clips && (y+line.Y > p.clip.Y+p.clip.H || y+line.Y+line.Height < p.clip.Y) {
 			continue
 		}
-		baseline := sys.Baseline((y+line.Baseline)*s + gs.dy)
-		for _, g := range line.Glyphs {
-			pen := (x+g.X)*s + gs.dx
-			if g.Object || clips && (pen > (p.clip.X+p.clip.W)*s || pen+(g.Advance+g.Size)*s < p.clip.X*s) {
-				continue
-			}
-			ix := float32(math.Floor(float64(pen)))
-			glyphColor, glyphShade := color, shade
-			if sp != nil {
-				if glyphColor = sp.color(sp.at(g.Cluster), color); glyphColor != color {
-					if glyphColor.A == 0 {
-						continue // faded out, or hidden: its advance stays
-					}
-					glyphShade = text.ShadeOf(glyphColor.R, glyphColor.G, glyphColor.B)
+		if run == nil {
+			sys.Lock()
+			baseline := sys.BaselineLocked((y+line.Baseline)*s + gs.dy)
+			for _, g := range line.Glyphs {
+				pen := (x+g.X)*s + gs.dx
+				if g.Object || clips && (pen > (p.clip.X+p.clip.W)*s || pen+(g.Advance+g.Size)*s < p.clip.X*s) {
+					continue
 				}
+				ix := float32(math.Floor(float64(pen)))
+				glyphColor, glyphShade := color, shade
+				if sp != nil {
+					if glyphColor = sp.color(sp.at(g.Cluster), color); glyphColor != color {
+						if glyphColor.A == 0 {
+							continue // faded out, or hidden: its advance stays
+						}
+						glyphShade = text.ShadeOf(glyphColor.R, glyphColor.G, glyphColor.B)
+					}
+				}
+				gi := sys.GlyphLocked(g.Font, g.ID, s, pen, glyphShade, p.opaque && !moves)
+				if !gi.OK {
+					continue
+				}
+				glyphColor = glyphColor.Alpha(p.opacity)
+				gb := glyphBaselineLocked(sys, &g, line, y, baseline, gs)
+				p.s.Glyphs = append(p.s.Glyphs, scene.Glyph{
+					X: ix + gi.Left, Y: gb + gi.Top, W: float32(gi.W), H: float32(gi.H),
+					U: gi.X, V: gi.Y, UW: gi.W, VH: gi.H,
+					Transform: gs.inlineTransform(p, g.Cluster, moves),
+					Color:     glyphColor.scene(), Wide: p.glyphWide(glyphColor), Colored: gi.Colored, Subpixel: gi.Subpixel, Thin: gi.Thin,
+				})
 			}
-			gi := sys.Glyph(g.Font, g.ID, s, pen, glyphShade, p.opaque && !moves)
-			if !gi.OK {
-				continue
-			}
-			glyphColor = glyphColor.Alpha(p.opacity)
-			gb := glyphBaseline(sys, &g, line, y, baseline, gs)
-			sg := scene.Glyph{
-				X: ix + gi.Left, Y: gb + gi.Top, W: float32(gi.W), H: float32(gi.H),
-				U: gi.X, V: gi.Y, UW: gi.W, VH: gi.H,
-				Transform: gs.inlineTransform(p, g.Cluster, moves),
-				Color:     glyphColor.scene(), Wide: p.glyphWide(glyphColor), Colored: gi.Colored, Subpixel: gi.Subpixel, Thin: gi.Thin,
-			}
-			if run != nil {
+			sys.Unlock()
+		} else {
+			baseline := sys.Baseline((y+line.Baseline)*s + gs.dy)
+			for _, g := range line.Glyphs {
+				pen := (x+g.X)*s + gs.dx
+				if g.Object || clips && (pen > (p.clip.X+p.clip.W)*s || pen+(g.Advance+g.Size)*s < p.clip.X*s) {
+					continue
+				}
+				ix := float32(math.Floor(float64(pen)))
+				glyphColor, glyphShade := color, shade
+				if sp != nil {
+					if glyphColor = sp.color(sp.at(g.Cluster), color); glyphColor != color {
+						if glyphColor.A == 0 {
+							continue // faded out, or hidden: its advance stays
+						}
+						glyphShade = text.ShadeOf(glyphColor.R, glyphColor.G, glyphColor.B)
+					}
+				}
+				gi := sys.Glyph(g.Font, g.ID, s, pen, glyphShade, p.opaque && !moves)
+				if !gi.OK {
+					continue
+				}
+				glyphColor = glyphColor.Alpha(p.opacity)
+				gb := glyphBaseline(sys, &g, line, y, baseline, gs)
+				sg := scene.Glyph{
+					X: ix + gi.Left, Y: gb + gi.Top, W: float32(gi.W), H: float32(gi.H),
+					U: gi.X, V: gi.Y, UW: gi.W, VH: gi.H,
+					Transform: gs.inlineTransform(p, g.Cluster, moves),
+					Color:     glyphColor.scene(), Wide: p.glyphWide(glyphColor), Colored: gi.Colored, Subpixel: gi.Subpixel, Thin: gi.Thin,
+				}
 				run.add(p, g, gi, pen, sg, glyphShade, gb)
-				continue
 			}
-			p.s.Glyphs = append(p.s.Glyphs, sg)
-		}
-		if run != nil {
 			run.flush(p)
 		}
 		if sp != nil {
@@ -1321,6 +1349,13 @@ func glyphBaseline(sys *text.System, g *text.Glyph, line *text.Line, y, baseline
 		return baseline
 	}
 	return sys.Baseline((y+g.Y)*gs.scale + gs.dy)
+}
+
+func glyphBaselineLocked(sys *text.System, g *text.Glyph, line *text.Line, y, baseline float32, gs glyphSpace) float32 {
+	if g.Y == line.Baseline {
+		return baseline
+	}
+	return sys.BaselineLocked((y+g.Y)*gs.scale + gs.dy)
 }
 
 // glyphRun gathers glyphs of a line in one font and color whose

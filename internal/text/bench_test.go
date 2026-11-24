@@ -127,3 +127,49 @@ func BenchmarkLayoutNumbers(b *testing.B) {
 		s.EndFrame()
 	}
 }
+
+func BenchmarkGlyphCache(b *testing.B) {
+	s := newSystem()
+	l := s.Layout(Params{
+		Text:  "The quick brown fox jumps over the lazy dog 0123456789 窗口布局渲染滚动更新阴影光标内存信号",
+		Style: Style{Size: 14},
+		Width: 2000,
+	})
+	var glyphs []Glyph
+	for _, ln := range l.Lines {
+		glyphs = append(glyphs, ln.Glyphs...)
+	}
+	for _, g := range glyphs {
+		s.Glyph(g.Font, g.ID, 2, g.X*2, 0, false)
+	}
+
+	b.Run("hit", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			for _, g := range glyphs {
+				s.Glyph(g.Font, g.ID, 2, g.X*2, 0, false)
+			}
+		}
+	})
+
+	b.Run("hit_locked", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			s.Lock()
+			for _, g := range glyphs {
+				s.GlyphLocked(g.Font, g.ID, 2, g.X*2, 0, false)
+			}
+			s.Unlock()
+		}
+	})
+
+	b.Run("miss", func(b *testing.B) {
+		eng := s.engine()
+		b.ReportAllocs()
+		for b.Loop() {
+			for i, g := range glyphs {
+				eng.glyph(g.Font, g.ID, 2, float32(i%4)/4, 0, false)
+			}
+		}
+	})
+}
