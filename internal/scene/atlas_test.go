@@ -122,3 +122,29 @@ func TestAtlasRepackAndGrow(t *testing.T) {
 		t.Error("no room after growing")
 	}
 }
+
+func BenchmarkAtlasRepack(b *testing.B) {
+	a := NewAtlas(1, 2048, 2048)
+	var rects []image.Rectangle
+	pix := make([]byte, 24*24)
+	for i := range 2000 {
+		w, h := 10+(i%12), 12+(i%10)
+		x, y, ok := a.Alloc(w, h)
+		if !ok {
+			break
+		}
+		a.Put(x, y, w, h, pix[:w*h], w)
+		rects = append(rects, image.Rect(x, y, x+w, y+h))
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for range b.N {
+		pos, ok := a.Repack(rects)
+		if !ok {
+			b.Fatal("repack failed")
+		}
+		for i := range pos {
+			rects[i] = image.Rect(pos[i].X, pos[i].Y, pos[i].X+rects[i].Dx(), pos[i].Y+rects[i].Dy())
+		}
+	}
+}

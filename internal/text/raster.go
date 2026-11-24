@@ -1,8 +1,10 @@
 package text
 
 import (
+	"cmp"
 	"image"
 	"math"
+	"slices"
 
 	"github.com/egoist/mygo/internal/scene"
 )
@@ -205,38 +207,85 @@ func (s *System) makeRoom(color bool, want int, size image.Point, grow bool) {
 			keep = append(keep, e)
 		}
 	}
+	type lruCand struct {
+		entry  *atlasEntry
+		glyphK glyphKey
+		runK   runKey
+		isRun  bool
+		kept   bool
+		area   int
+	}
+	var cands []lruCand
 	for k, e := range s.glyphs {
 		if !e.OK || e.inColor() != color {
 			continue // blank glyphs take no room
 		}
-		if e.used != s.frame {
-			delete(s.glyphs, k)
-			continue
+		if e.used == s.frame {
+			keep = append(keep, e)
+		} else {
+			cands = append(cands, lruCand{entry: e, glyphK: k, area: (int(e.W) + 1) * (int(e.H) + 1)})
 		}
-		keep = append(keep, e)
 	}
 	for k, e := range s.runs {
 		if e.inColor() != color {
 			continue
 		}
-		if e.used != s.frame {
-			delete(s.runs, k)
-			continue
+		if e.used == s.frame {
+			keep = append(keep, e)
+		} else {
+			cands = append(cands, lruCand{entry: e, runK: k, isRun: true, area: (int(e.W) + 1) * (int(e.H) + 1)})
 		}
-		keep = append(keep, e)
 	}
-	rects := make([]image.Rectangle, len(keep))
-	for i, e := range keep {
-		rects[i] = image.Rect(int(e.X), int(e.Y), int(e.X)+int(e.W), int(e.Y)+int(e.H))
+	for _, e := range keep {
 		need += (int(e.W) + 1) * (int(e.H) + 1)
 	}
-	// Shelves waste room: keep the atlas at most half full.
+	// Shelves waste room: keep the atlas at most half full for current uses.
 	if grow {
 		a.Grow()
 	}
 	for (need*2 > a.W*a.H || size.X > a.W || size.Y > a.H) && a.Grow() {
 	}
+	curKeep := len(keep)
+	budget := a.W * a.H / 2
+	if len(cands) > 0 {
+		slices.SortFunc(cands, func(x, y lruCand) int {
+			return cmp.Compare(y.entry.used, x.entry.used)
+		})
+		for i := range cands {
+			c := &cands[i]
+			if need+c.area <= budget {
+				c.kept = true
+				need += c.area
+				keep = append(keep, c.entry)
+				continue
+			}
+			if c.isRun {
+				delete(s.runs, c.runK)
+			} else {
+				delete(s.glyphs, c.glyphK)
+			}
+		}
+	}
+	rects := make([]image.Rectangle, len(keep))
+	for i, e := range keep {
+		rects[i] = image.Rect(int(e.X), int(e.Y), int(e.X)+int(e.W), int(e.Y)+int(e.H))
+	}
 	pos, ok := a.Repack(rects)
+	if !ok && len(keep) > curKeep {
+		for i := range cands {
+			if !cands[i].kept {
+				continue
+			}
+			if cands[i].isRun {
+				delete(s.runs, cands[i].runK)
+			} else {
+				delete(s.glyphs, cands[i].glyphK)
+			}
+		}
+		keep = keep[:curKeep]
+		rects = rects[:curKeep]
+		pos, ok = a.Repack(rects)
+	}
 	if !ok {
 		a.Reset()
 		for k, e := range s.glyphs {
@@ -605,7 +654,7 @@ func (s *System) Unkeep(keys []uint64) {
 	defer s.mu.Unlock()
 	for _, k := range keys {
 		if e, ok := s.masks[k]; ok && e.used == s.frame {
-			e.used = s.frame - 1
+			e.used = 0
 			// If a recovery paint needs it again, it is still a repeated
 			// request and may share the room left in lasting shelves.
 			s.recent[k] = s.frame - 1

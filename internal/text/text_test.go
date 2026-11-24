@@ -457,6 +457,40 @@ func TestMakeRoom(t *testing.T) {
 	s.EndFrame()
 }
 
+func TestMakeRoomRetainsRecentGlyphs(t *testing.T) {
+	s := newSystem()
+	l := s.Layout(Params{Text: "AB", Style: Style{Size: 18}})
+	var glyphs []Glyph
+	for _, line := range l.Lines {
+		glyphs = append(glyphs, line.Glyphs...)
+	}
+	if len(glyphs) < 2 {
+		t.Fatal("need two glyphs")
+	}
+	// Warm glyph A in frame 1 and glyph B in frame 3 so B is more recent.
+	s.BeginFrame()
+	if !s.Glyph(glyphs[0].Font, glyphs[0].ID, 1, 0, 0, false).OK {
+		t.Skip("glyph A takes no atlas pixels")
+	}
+	s.EndFrame()
+	s.BeginFrame()
+	s.EndFrame()
+	s.BeginFrame()
+	if !s.Glyph(glyphs[1].Font, glyphs[1].ID, 1, 0, 0, false).OK {
+		t.Skip("glyph B takes no atlas pixels")
+	}
+	s.EndFrame()
+	// Force MakeRoom via a mask overflow in frame 4; A and B from recent frames
+	// fit well within half the atlas and should remain cached afterward.
+	s.BeginFrame()
+	s.leftOut(false, 128, 128)
+	s.MakeRoom()
+	s.EndFrame()
+	if len(s.glyphs) != 2 {
+		t.Fatalf("retained %d recent glyphs, want 2", len(s.glyphs))
+	}
+}
+
 // Masks a frame drew and let go of (Unkeep) are not kept as it makes room,
 // unless it draws them again before.
 func TestUnkeep(t *testing.T) {

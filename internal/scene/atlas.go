@@ -199,20 +199,27 @@ func (a *Atlas) Repack(rects []image.Rectangle) ([]image.Point, bool) {
 		}
 		pos[i] = image.Pt(x, y)
 	}
-	saved := make([][]byte, len(rects))
+	total := 0
+	for _, r := range rects {
+		total += r.Dx() * a.BPP * r.Dy()
+	}
+	saved := make([]byte, total)
+	offs := make([]int, len(rects))
+	off := 0
 	for i, r := range rects {
+		offs[i] = off
 		row := r.Dx() * a.BPP
-		b := make([]byte, row*r.Dy())
 		for j := 0; j < r.Dy(); j++ {
-			copy(b[j*row:][:row], a.Pix[((r.Min.Y+j)*a.W+r.Min.X)*a.BPP:][:row])
+			copy(saved[off:], a.Pix[((r.Min.Y+j)*a.W+r.Min.X)*a.BPP:][:row])
+			off += row
 		}
-		saved[i] = b
 	}
 	clear(a.Pix)
 	for i, r := range rects {
 		row := r.Dx() * a.BPP
+		src := saved[offs[i]:]
 		for j := 0; j < r.Dy(); j++ {
-			copy(a.Pix[((pos[i].Y+j)*a.W+pos[i].X)*a.BPP:][:row], saved[i][j*row:][:row])
+			copy(a.Pix[((pos[i].Y+j)*a.W+pos[i].X)*a.BPP:][:row], src[j*row:][:row])
 		}
 	}
 	a.shelves, a.bottom = plan.shelves, plan.bottom
