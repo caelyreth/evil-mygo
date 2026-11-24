@@ -18,9 +18,12 @@ import (
 func ClipMask(dst *scene.Image, clips []scene.ClipShape, area image.Rectangle) *scene.Image {
 	w, h := area.Dx(), area.Dy()
 	if dst == nil {
-		dst = scene.NewImageRGBA(w, h, make([]byte, 4*w*h))
-	} else if dst.W != w || dst.H != h {
-		dst.Resize(w, h)
+		dst = scene.NewImageAlpha(w, h, make([]byte, w*h))
+	} else {
+		dst.Alpha = true
+		if dst.W != w || dst.H != h || len(dst.Pix) != w*h {
+			dst.Resize(w, h)
+		}
 	}
 	m := &clipMasker{dst: dst, area: area, clips: make([]maskClip, len(clips))}
 	for i := range clips {
@@ -77,10 +80,10 @@ type maskClip struct {
 	x0, x1, y0, y1 int
 }
 
-// row writes row y of the mask, from area.Min.Y.
+// row writes row y of the 1-byte alpha mask, from area.Min.Y.
 func (m *clipMasker) row(_, y int) {
 	w := m.area.Dx()
-	pix := m.dst.Pix[4*y*w:][:4*w]
+	pix := m.dst.Pix[y*w:][:w]
 	fy := y + m.area.Min.Y
 	// [lo, hi) are the frame pixels any clip covers, [slo, shi) those
 	// every clip without a transform covers entirely.
@@ -103,15 +106,14 @@ func (m *clipMasker) row(_, y int) {
 		clear(pix)
 		return
 	}
-	clear(pix[:4*(lo-m.area.Min.X)])
-	clear(pix[4*(hi-m.area.Min.X):])
+	clear(pix[:lo-m.area.Min.X])
+	clear(pix[hi-m.area.Min.X:])
 	wy := float32(fy) + 0.5
 	for x := lo; x < hi; x++ {
-		at := 4 * (x - m.area.Min.X)
+		at := x - m.area.Min.X
 		if x >= slo && x < shi && !m.transformed {
 			// Every clip covers the rest of the run entirely.
-			n := 4 * (shi - x)
-			fillAlpha(pix[at:at+n], 255)
+			fillByte(pix[at:shi-m.area.Min.X], 255)
 			x = shi - 1
 			continue
 		}
@@ -130,17 +132,17 @@ func (m *clipMasker) row(_, y int) {
 				break
 			}
 		}
-		pix[at], pix[at+1], pix[at+2], pix[at+3] = 0, 0, 0, to8(cov)
+		pix[at] = to8(cov)
 	}
 }
 
-// fillAlpha sets RGBA pixels to transparent black with alpha a.
-func fillAlpha(pix []byte, a byte) {
+// fillByte sets every byte in pix to a.
+func fillByte(pix []byte, a byte) {
 	if len(pix) == 0 {
 		return
 	}
-	pix[0], pix[1], pix[2], pix[3] = 0, 0, 0, a
-	for n := 4; n < len(pix); n *= 2 {
+	pix[0] = a
+	for n := 1; n < len(pix); n *= 2 {
 		copy(pix[n:], pix[:n])
 	}
 }

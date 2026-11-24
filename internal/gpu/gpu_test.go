@@ -121,8 +121,8 @@ func TestGrowingClipKeepsItsMask(t *testing.T) {
 			t.Fatalf("frame %d: scissor %v outside the mask's %v at %v", i, area, [2]int{mask.W, mask.H}, at)
 		}
 		for y := range area.Dy() {
-			got := mask.Pix[4*((oy+y)*mask.W+ox):][:4*area.Dx()]
-			if !bytes.Equal(got, want.Pix[4*y*area.Dx():][:4*area.Dx()]) {
+			got := mask.Pix[(oy+y)*mask.W+ox:][:area.Dx()]
+			if !bytes.Equal(got, want.Pix[y*area.Dx():][:area.Dx()]) {
 				t.Fatalf("frame %d: row %d of the mask differs from the clip's coverage", i, y)
 			}
 		}
@@ -169,11 +169,11 @@ func TestTransformComingAndGoingKeepsMasks(t *testing.T) {
 }
 
 func TestIdleMasksStayWithinBudget(t *testing.T) {
-	// Two masks of 24 MiB each in a frame, then none: one idle mask fits
-	// the budget, two don't.
+	// Two 1-byte alpha masks of ~24 MiB each in a frame, then none: one idle
+	// mask fits the 32 MiB budget, two don't.
 	clip := func(x float32) []scene.Op {
 		return []scene.Op{
-			{Kind: scene.OpPushClip, Rect: scene.Rect{X: x, W: 3000, H: 2100}, Transform: scene.Rotation(0.01)},
+			{Kind: scene.OpPushClip, Rect: scene.Rect{X: x, W: 6000, H: 4000}, Transform: scene.Rotation(0.01)},
 			{Kind: scene.OpFill, Rect: scene.Rect{X: x, W: 10, H: 10}, Color: scene.Color{A: 255}},
 			{Kind: scene.OpPopClip},
 		}
@@ -181,7 +181,7 @@ func TestIdleMasksStayWithinBudget(t *testing.T) {
 	var b Builder
 	defer b.Release()
 	build := func(s *scene.Scene) { b.Build(s, func(*scene.Image) uintptr { return 1 }) }
-	build(&scene.Scene{Width: 6200, Height: 2100, Ops: append(clip(0), clip(3100)...)})
+	build(&scene.Scene{Width: 12200, Height: 4000, Ops: append(clip(0), clip(6100)...)})
 	if len(b.maskSlots) != 2 {
 		t.Fatalf("kept %d masks, want 2", len(b.maskSlots))
 	}
@@ -391,7 +391,7 @@ func TestClipReachingRoundedCornersIsMasked(t *testing.T) {
 		t.Fatal("the column's fill has no clip mask")
 	}
 	m := masks[batch.ClipMask-1]
-	alpha := func(x, y int) byte { return m.Pix[4*((y-22)*m.W+x-12)+3] }
+	alpha := func(x, y int) byte { return m.Pix[(y-22)*m.W+x-12] }
 	if m.W != 296 || m.H != 236 || alpha(12, 257) != 0 || alpha(307, 257) != 0 || alpha(160, 250) != 255 {
 		t.Errorf("the card's mask (%dx%d) leaves its corners: %d %d, middle %d", m.W, m.H, alpha(12, 257), alpha(307, 257), alpha(160, 250))
 	}
@@ -495,7 +495,7 @@ func TestSidebarInContinuousFrameIsCutInTheShader(t *testing.T) {
 	// Without the curves in the shader, the frame's mask, shared.
 	other, bytes := build(false)
 	defer other.Release()
-	if want := 4 * int(frame.W*frame.H); bytes != want || len(other.maskSlots) != 1 {
+	if want := int(frame.W * frame.H); bytes != want || len(other.maskSlots) != 1 {
 		t.Errorf("without continuous clips in the shader: %d bytes of masks in %d, want the frame's %d", bytes, len(other.maskSlots), want)
 	}
 }

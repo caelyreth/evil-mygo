@@ -134,6 +134,7 @@ const (
 	formatR8G8B8A8Unorm     = 28
 	formatB8G8R8A8Unorm     = 87
 	formatR8Unorm           = 61
+	formatA8Unorm           = 65
 
 	usageDefault = 0
 	usageDynamic = 2
@@ -266,6 +267,7 @@ type texture struct {
 	// whose luma this is (see video.go), or nil.
 	chroma    *texture
 	w, h      int
+	alpha     bool
 	gen, ver  uint64
 	lastFrame uint64
 	// source belongs to uploads of RGBA images. Holding it weakly lets
@@ -937,6 +939,10 @@ func (r *Renderer) imageView(img *scene.Image) uintptr {
 	if s := img.Surface; s != nil && (s.Native != 0 || s.Format == scene.SurfaceNV12 && s.Planes[1].Pix != nil) {
 		return r.surfaceView(img, s)
 	}
+	format, bpp := uint32(formatR8G8B8A8Unorm), 4
+	if img.Alpha {
+		format, bpp = formatA8Unorm, 1
+	}
 	t := r.images[img.ID()]
 	if t != nil && t.chroma != nil {
 		// It showed a frame of video in planes, and no longer does.
@@ -949,24 +955,24 @@ func (r *Renderer) imageView(img *scene.Image) uintptr {
 		if pix == nil {
 			return 0
 		}
-		t = &texture{source: weak.Make(img)}
-		if err := r.newTexture(t, img.W, img.H, formatR8G8B8A8Unorm, pix, 4); err != nil {
+		t = &texture{alpha: img.Alpha, source: weak.Make(img)}
+		if err := r.newTexture(t, img.W, img.H, format, pix, bpp); err != nil {
 			return 0
 		}
 		t.ver = img.Version()
 		r.images[img.ID()] = t
 		img.Uploaded()
-	} else if t.w != img.W || t.h != img.H {
+	} else if t.w != img.W || t.h != img.H || t.alpha != img.Alpha {
 		if pix := img.Pixels(); pix != nil {
-			if err := r.newTexture(t, img.W, img.H, formatR8G8B8A8Unorm, pix, 4); err != nil {
+			if err := r.newTexture(t, img.W, img.H, format, pix, bpp); err != nil {
 				return 0
 			}
-			t.ver = img.Version()
+			t.alpha, t.ver = img.Alpha, img.Version()
 			img.Uploaded()
 		}
 	} else if t.ver != img.Version() {
 		if pix := img.Pixels(); pix != nil {
-			call(r.ctx, ctxUpdateSubresource, t.tex, 0, 0, uintptr(unsafe.Pointer(&pix[0])), uintptr(img.W*4), 0)
+			call(r.ctx, ctxUpdateSubresource, t.tex, 0, 0, uintptr(unsafe.Pointer(&pix[0])), uintptr(img.W*bpp), 0)
 			t.ver = img.Version()
 			img.Uploaded()
 		}

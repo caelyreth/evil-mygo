@@ -176,9 +176,9 @@ func TestClipMaskMatchesMaskedClips(t *testing.T) {
 		Render(dst, s)
 		shape := scene.ClipShapeOf(&op, stops)
 		mask := ClipMask(nil, []scene.ClipShape{shape}, image.Rect(0, 0, s.Width, s.Height))
-		for k := 3; k < len(mask.Pix); k += 4 {
-			if d := int(mask.Pix[k]) - int(dst.Pix[k]); d < -1 || d > 1 {
-				t.Fatalf("case %d, %+v: pixel (%d, %d) is %d in the mask, %d drawn", i, op, k/4%s.Width, k/4/s.Width, mask.Pix[k], dst.Pix[k])
+		for k, got := range mask.Pix {
+			if d := int(got) - int(dst.Pix[4*k+3]); d < -1 || d > 1 {
+				t.Fatalf("case %d, %+v: pixel (%d, %d) is %d in the mask, %d drawn", i, op, k%s.Width, k/s.Width, got, dst.Pix[4*k+3])
 			}
 		}
 	}

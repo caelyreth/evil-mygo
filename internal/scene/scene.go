@@ -457,9 +457,10 @@ type Image struct {
 	id      uint64
 	version uint64
 	// W and H are the size in pixels; Pix holds premultiplied RGBA rows of
-	// 4*W bytes.
-	W, H int
-	Pix  []byte
+	// 4*W bytes, or 1-byte alpha rows of W bytes when Alpha is set.
+	W, H  int
+	Pix   []byte
+	Alpha bool
 	// Scene, in a canvas (NewCanvas), is what the image shows: renderers
 	// draw it into the image's texture whenever the version changes,
 	// rather than upload Pix, which the CPU renderer draws it into, and
@@ -535,6 +536,19 @@ func NewImageRGBA(w, h int, pix []byte) *Image {
 	return &Image{id: lastImageID.Add(1), version: 1, W: w, H: h, Pix: pix}
 }
 
+// NewImageAlpha wraps 1-byte alpha coverage pixels of a w×h mask bitmap.
+func NewImageAlpha(w, h int, pix []byte) *Image {
+	return &Image{id: lastImageID.Add(1), version: 1, W: w, H: h, Pix: pix, Alpha: true}
+}
+
+// BPP returns bytes per pixel for Pix (1 for Alpha masks, 4 for RGBA).
+func (m *Image) BPP() int {
+	if m.Alpha {
+		return 1
+	}
+	return 4
+}
+
 // ID identifies the image for texture caches.
 func (m *Image) ID() uint64 { return m.id }
 
@@ -571,7 +585,7 @@ func (m *Image) Uploaded() {
 // largest size, as a clip mask that turned would (#1407).
 func (m *Image) Resize(w, h int) {
 	m.W, m.H = w, h
-	n := 4 * w * h
+	n := m.BPP() * w * h
 	switch {
 	case m.Scene != nil && m.Pix == nil:
 		// A canvas no renderer drew in memory: its pixels are made when

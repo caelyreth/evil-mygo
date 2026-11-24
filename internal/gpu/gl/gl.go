@@ -102,6 +102,7 @@ type texture struct {
 	// whose luma tex is (scene.SurfaceNV12), or 0.
 	chroma    uint32
 	w, h      int
+	alpha     bool
 	gen, ver  uint64
 	lastFrame uint64
 }
@@ -555,6 +556,10 @@ func (r *Renderer) imageTexture(img *scene.Image) uintptr {
 	} else if s != nil && s.Native != 0 {
 		return r.elementTexture(img, s)
 	}
+	internal, format, bpp := int32(glRGBA8), uint32(glRGBA), 4
+	if img.Alpha {
+		internal, format, bpp = glR8, glRed, 1
+	}
 	t := r.images[img.ID()]
 	if t != nil && t.chroma != 0 {
 		// It showed a frame of video in planes, and no longer does.
@@ -568,21 +573,21 @@ func (r *Renderer) imageTexture(img *scene.Image) uintptr {
 		if pix == nil {
 			return 0
 		}
-		t = &texture{tex: newTexture(glRGBA8, glRGBA, img.W, img.H, pix, img.W*4), w: img.W, h: img.H, ver: img.Version()}
+		t = &texture{tex: newTexture(internal, format, img.W, img.H, pix, img.W*bpp), w: img.W, h: img.H, alpha: img.Alpha, ver: img.Version()}
 		r.images[img.ID()] = t
 		img.Uploaded()
-	} else if t.w != img.W || t.h != img.H {
+	} else if t.w != img.W || t.h != img.H || t.alpha != img.Alpha {
 		if pix := img.Pixels(); pix != nil {
 			glDeleteTextures(1, &t.tex)
-			t.tex = newTexture(glRGBA8, glRGBA, img.W, img.H, pix, img.W*4)
-			t.w, t.h, t.ver = img.W, img.H, img.Version()
+			t.tex = newTexture(internal, format, img.W, img.H, pix, img.W*bpp)
+			t.w, t.h, t.alpha, t.ver = img.W, img.H, img.Alpha, img.Version()
 			img.Uploaded()
 		}
 	} else if t.ver != img.Version() {
 		if pix := img.Pixels(); pix != nil {
 			glBindTexture(glTexture2D, t.tex)
-			unpack(img.W*4, glRGBA8)
-			glTexSubImage2D(glTexture2D, 0, 0, 0, int32(img.W), int32(img.H), glRGBA, glUnsignedByte, unsafe.Pointer(&pix[0]))
+			unpack(img.W*bpp, internal)
+			glTexSubImage2D(glTexture2D, 0, 0, 0, int32(img.W), int32(img.H), format, glUnsignedByte, unsafe.Pointer(&pix[0]))
 			unpackReset()
 			t.ver = img.Version()
 			img.Uploaded()

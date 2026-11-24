@@ -13,7 +13,7 @@ import (
 // which ClipMask must match exactly.
 func referenceClipMask(clips []scene.ClipShape, area image.Rectangle) []byte {
 	w, h := area.Dx(), area.Dy()
-	pix := make([]byte, 4*w*h)
+	pix := make([]byte, w*h)
 	for y := range h {
 		for x := range w {
 			wx, wy := float32(x+area.Min.X)+0.5, float32(y+area.Min.Y)+0.5
@@ -30,7 +30,7 @@ func referenceClipMask(clips []scene.ClipShape, area image.Rectangle) []byte {
 					break
 				}
 			}
-			pix[4*(y*w+x)+3] = to8(cov)
+			pix[y*w+x] = to8(cov)
 		}
 	}
 	return pix
@@ -71,9 +71,8 @@ func TestClipMaskMatchesPerPixelCoverage(t *testing.T) {
 		if !bytes.Equal(got.Pix, want) {
 			for k := range want {
 				if got.Pix[k] != want[k] {
-					px := k / 4
 					t.Fatalf("case %d, %+v: pixel (%d, %d) is %d, want %d", i, clips,
-						px%area.Dx()+area.Min.X, px/area.Dx()+area.Min.Y, got.Pix[k], want[k])
+						k%area.Dx()+area.Min.X, k/area.Dx()+area.Min.Y, got.Pix[k], want[k])
 				}
 			}
 		}

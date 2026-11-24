@@ -228,8 +228,8 @@ float clipCoverage() {
 		return rectCoverage(world, vClip, vClipRadii);
 	if (vTransform1.w > 1.5)
 		return localCoverage(vPoint.xy, vClip, vec4(0.0), vTransform0.w, fr) *
-			   texture(uClipMask, (world - vClipRadii.xy) / vClipRadii.zw).a;
-	return texture(uClipMask, (world - vClip.xy) / vClip.zw).a;
+			   texture(uClipMask, (world - vClipRadii.xy) / vClipRadii.zw).r;
+	return texture(uClipMask, (world - vClip.xy) / vClip.zw).r;
 }
 vec4 sampleLocal(sampler2D t, vec2 uv, vec4 src, float affine) {
 	if (affine > 0.5) {

@@ -79,6 +79,7 @@ type (
 )
 
 const (
+	pixelFormatA8Unorm    = 1
 	pixelFormatR8Unorm    = 10
 	pixelFormatRGBA8Unorm = 70
 	pixelFormatBGRA8Unorm = 80
@@ -361,6 +362,7 @@ type texture struct {
 	chroma    id
 	cv        [2]uintptr
 	w, h      int
+	alpha     bool
 	gen, ver  uint64
 	lastFrame uint64
 	// gpu marks an image's texture that its GPUSource gave, which shows
@@ -1225,6 +1227,10 @@ func (r *Renderer) imageTexture(img *scene.Image) uintptr {
 	if s := img.Surface; s != nil && (s.Native != 0 || s.Format == scene.SurfaceNV12 && s.Planes[1].Pix != nil) {
 		return r.surfaceTexture(img, s)
 	}
+	format, bpp := uint(pixelFormatRGBA8Unorm), 4
+	if img.Alpha {
+		format, bpp = pixelFormatA8Unorm, 1
+	}
 	t := r.images[img.ID()]
 	if t != nil && (t.gpu || t.chroma != 0 || t.cv != [2]uintptr{}) {
 		// The texture its GPUSource gave before, or a frame of video it
@@ -1238,28 +1244,28 @@ func (r *Renderer) imageTexture(img *scene.Image) uintptr {
 		if pix == nil {
 			return 0
 		}
-		tex := r.newTexture(img.W, img.H, pixelFormatRGBA8Unorm, usageShaderRead, pix, img.W*4)
+		tex := r.newTexture(img.W, img.H, format, usageShaderRead, pix, img.W*bpp)
 		if tex == 0 {
 			return 0
 		}
-		t = &texture{tex: tex, w: img.W, h: img.H, ver: img.Version()}
+		t = &texture{tex: tex, w: img.W, h: img.H, alpha: img.Alpha, ver: img.Version()}
 		r.images[img.ID()] = t
 		img.Uploaded()
-	} else if t.w != img.W || t.h != img.H {
+	} else if t.w != img.W || t.h != img.H || t.alpha != img.Alpha {
 		if pix := img.Pixels(); pix != nil {
-			tex := r.newTexture(img.W, img.H, pixelFormatRGBA8Unorm, usageShaderRead, pix, img.W*4)
+			tex := r.newTexture(img.W, img.H, format, usageShaderRead, pix, img.W*bpp)
 			if tex == 0 {
 				return 0
 			}
 			release(&t.tex)
-			t.tex, t.w, t.h, t.ver = tex, img.W, img.H, img.Version()
+			t.tex, t.w, t.h, t.alpha, t.ver = tex, img.W, img.H, img.Alpha, img.Version()
 			img.Uploaded()
 		}
 	} else if t.ver != img.Version() {
 		if pix := img.Pixels(); len(pix) > 0 {
-			if !r.blitTexture(t.tex, []image.Rectangle{image.Rect(0, 0, img.W, img.H)}, pix, img.W*4, 4) {
+			if !r.blitTexture(t.tex, []image.Rectangle{image.Rect(0, 0, img.W, img.H)}, pix, img.W*bpp, bpp) {
 				r.waitLast() // fallback when blit staging is unavailable
-				msgReplaceRegion(t.tex, sel("replaceRegion:mipmapLevel:withBytes:bytesPerRow:"), mtlRegion{W: uint(img.W), H: uint(img.H), D: 1}, 0, unsafe.Pointer(&pix[0]), uint(img.W*4))
+				msgReplaceRegion(t.tex, sel("replaceRegion:mipmapLevel:withBytes:bytesPerRow:"), mtlRegion{W: uint(img.W), H: uint(img.H), D: 1}, 0, unsafe.Pointer(&pix[0]), uint(img.W*bpp))
 			}
 			t.ver = img.Version()
 			img.Uploaded()
@@ -1289,7 +1295,7 @@ func (r *Renderer) gpuTexture(img *scene.Image) uintptr {
 		// The previous frame's, or a texture of its pixels.
 		release(&t.tex)
 	}
-	t.tex, t.w, t.h, t.ver, t.lastFrame, t.gpu = tex, img.W, img.H, img.Version(), r.frame, true
+	t.tex, t.w, t.h, t.alpha, t.ver, t.lastFrame, t.gpu = tex, img.W, img.H, false, img.Version(), r.frame, true
 	return t.tex
 }
 
