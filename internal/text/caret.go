@@ -25,16 +25,27 @@ type caretStop struct {
 	arrival int
 }
 
-func (l *Layout) visualStops(li int) []caretStop {
-	line := &l.Lines[li]
-	if line.stops != nil {
-		return line.stops
-	}
+func (l *Layout) graphemeBoundaries() []int {
 	if l.boundaries == nil {
 		var b Boundaries
 		b.Reset(l.Runes)
 		l.boundaries = b.GraphemeOffsets()
 	}
+	return l.boundaries
+}
+
+// NextGrapheme returns the end of the grapheme starting at or containing rune
+// index i, reusing cached grapheme boundaries on the layout.
+func (l *Layout) NextGrapheme(i int) int {
+	return nextGraphemeOffset(l.graphemeBoundaries(), i, len(l.Runes))
+}
+
+func (l *Layout) visualStops(li int) []caretStop {
+	line := &l.Lines[li]
+	if line.stops != nil {
+		return line.stops
+	}
+	l.graphemeBoundaries()
 	var stops []caretStop
 	// Offsets the glyph scan appended, so the boundary sweep below skips
 	// them without rescanning the stops. Stops outside the line's range

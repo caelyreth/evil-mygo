@@ -380,3 +380,52 @@ func visualStopsFullScan(l *Layout, li int) []caretStop {
 	})
 	return stops
 }
+
+func TestNextAndPrevGraphemeBoundaries(t *testing.T) {
+	zwjFamily := "\U0001F469\u200D\U0001F469\u200D\U0001F467"
+	samples := []string{
+		"",
+		"abcdef\nghi",
+		"a\r\nb\nc",
+		"e\u0301x\u0301",
+		"a" + zwjFamily + "b",
+	}
+	for _, s := range samples {
+		runes := []rune(s)
+		var b Boundaries
+		b.Reset(runes)
+		l := graphemeLayout(s)
+		for i := -1; i <= len(runes)+2; i++ {
+			gotLayout := l.NextGrapheme(i)
+			gotBound := b.NextGrapheme(i)
+			if gotLayout != gotBound {
+				t.Fatalf("%q i=%d: Layout.NextGrapheme=%d, Boundaries.NextGrapheme=%d", s, i, gotLayout, gotBound)
+			}
+			// Compare PrevGrapheme against direct scan of GraphemeOffsets.
+			offsets := b.GraphemeOffsets()
+			wantPrev := 0
+			for _, g := range offsets {
+				if g >= i {
+					break
+				}
+				wantPrev = g
+			}
+			if gotPrev := b.PrevGrapheme(i); gotPrev != wantPrev {
+				t.Fatalf("%q i=%d: PrevGrapheme=%d, want %d", s, i, gotPrev, wantPrev)
+			}
+		}
+	}
+	// Verify ASCII fast path matches LF and does not fold CRLF.
+	var lf, crlf Boundaries
+	lf.Reset([]rune("ab\ncd"))
+	crlf.Reset([]rune("ab\r\ncd"))
+	if !slices.Equal(lf.GraphemeOffsets(), []int{0, 1, 2, 3, 4, 5}) {
+		t.Fatalf("LF offsets = %v, want [0 1 2 3 4 5]", lf.GraphemeOffsets())
+	}
+	if !slices.Equal(crlf.GraphemeOffsets(), []int{0, 1, 2, 4, 5, 6}) {
+		t.Fatalf("CRLF offsets = %v, want [0 1 2 4 5 6]", crlf.GraphemeOffsets())
+	}
+	if got := (&Layout{Runes: []rune("a\r\nb")}).NextGrapheme(1); got != 3 {
+		t.Fatalf("CRLF NextGrapheme(1) = %d, want 3", got)
+	}
+}

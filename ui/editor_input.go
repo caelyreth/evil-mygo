@@ -341,9 +341,7 @@ func (w *widgetTextInput) BoundsForRange(r TextInputRange) (Rect, TextInputRange
 	b := Rect{X: ed.originX + x - ed.scrollX, Y: ed.originY + y + ly, W: 1, H: h}
 	actual := TextInputRange{Start: w.virtualUnits(i), End: w.virtualUnits(i)}
 	if r.End > r.Start && local < len(l.Runes) {
-		var boundaries text.Boundaries
-		boundaries.Reset(l.Runes)
-		end := min(boundaries.NextGrapheme(local), local+w.virtualRune(r.End)-i)
+		end := min(l.NextGrapheme(local), local+w.virtualRune(r.End)-i)
 		if rects := l.SelectionVisual(local, end, false); len(rects) > 0 {
 			q := rects[0]
 			b = Rect{X: ed.originX + q.X - ed.scrollX, Y: ed.originY + y + q.Y, W: q.W, H: q.H}

@@ -221,6 +221,25 @@ type Boundaries struct {
 // Reset prepares b for runes.
 func (b *Boundaries) Reset(runes []rune) {
 	b.runes = runes
+	ascii := true
+	for _, r := range runes {
+		if uint32(r) >= 0x80 || r == '\r' {
+			ascii = false
+			break
+		}
+	}
+	if ascii {
+		n := len(runes) + 1
+		if cap(b.graphemes) < n {
+			b.graphemes = make([]int, n)
+		} else {
+			b.graphemes = b.graphemes[:n]
+		}
+		for i := range b.graphemes {
+			b.graphemes[i] = i
+		}
+		return
+	}
 	b.graphemes = b.graphemes[:0]
 	b.seg.Init(runes)
 	it := b.seg.GraphemeIterator()
@@ -236,24 +255,27 @@ func (b *Boundaries) GraphemeOffsets() []int { return slices.Clone(b.graphemes) 
 
 // NextGrapheme returns the end of the grapheme starting at or containing i.
 func (b *Boundaries) NextGrapheme(i int) int {
-	for _, g := range b.graphemes {
-		if g > i {
-			return g
-		}
+	return nextGraphemeOffset(b.graphemes, i, len(b.runes))
+}
+
+func nextGraphemeOffset(bounds []int, i, fallback int) int {
+	idx, found := slices.BinarySearch(bounds, i)
+	if found {
+		idx++
 	}
-	return len(b.runes)
+	if idx < len(bounds) {
+		return bounds[idx]
+	}
+	return fallback
 }
 
 // PrevGrapheme returns the start of the grapheme before i.
 func (b *Boundaries) PrevGrapheme(i int) int {
-	prev := 0
-	for _, g := range b.graphemes {
-		if g >= i {
-			return prev
-		}
-		prev = g
+	idx, _ := slices.BinarySearch(b.graphemes, i)
+	if idx == 0 {
+		return 0
 	}
-	return prev
+	return b.graphemes[idx-1]
 }
 
 // NextWord returns the end of the word after i, skipping what is between.

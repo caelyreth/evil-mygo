@@ -54,14 +54,37 @@ func (a *area) wrappedHeight(e *node, ed *editor, cw float32) float32 {
 	if ed.buf.indexed {
 		params.KeepSpaces, params.MaxLines = true, 0
 		if params != a.wrappedParams || a.wrappedVersion != ed.buf.version || a.wrappedCompose != ed.compose {
-			empty := params
-			empty.Text = ""
-			limit := float32(ed.lines[1]) * ed.sys.Layout(empty).Lines[0].Height
+			synced := params == a.params && a.version == ed.buf.version && len(a.hs.measured) == len(ed.buf.paras)+1 && a.line.Height > 0
+			lineH := a.line.Height
+			if !synced {
+				empty := params
+				empty.Text = ""
+				lineH = ed.sys.Layout(empty).Lines[0].Height
+			}
+			limit := float32(ed.lines[1]) * lineH
+			composePara := -1
+			if ed.compose != "" {
+				composePara = ed.buf.para(ed.caret)
+			}
 			var height float32
 			for p := 0; p < len(ed.buf.paras) && height < limit; p++ {
+				if synced {
+					compose := ""
+					if p == composePara {
+						compose = ed.compose
+					}
+					spans := ed.rangeKey(ed.buf.start(p), ed.buf.end(p))
+					pr := &ed.buf.paras[p]
+					if pr.h > 0 && pr.compose == compose && pr.spans == spans {
+						height += pr.h
+					} else {
+						height += a.paraLayout(ed, p).Height
+					}
+					continue
+				}
 				part := params
 				part.Text = ed.buf.text(p)
-				if ed.compose != "" && p == ed.buf.para(ed.caret) {
+				if p == composePara {
 					at := runeOffset(part.Text, ed.caret-ed.buf.start(p))
 					part.Text = part.Text[:at] + ed.compose + part.Text[at:]
 				}
