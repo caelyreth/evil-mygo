@@ -545,6 +545,10 @@ func laidOutVisualBox(e *node) Rect {
 func (p *Painter) add(op scene.Op) {
 	// Every op goes through here, and most are painted outside any
 	// Transform: an unset one leaves op.Transform as it is.
+	if p.rec != nil {
+		p.recordOp(op)
+		return
+	}
 	if p.transform.Set {
 		op.Transform = p.transform.Pixels(p.scale).Mul(op.Transform)
 	}

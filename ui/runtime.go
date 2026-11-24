@@ -111,6 +111,8 @@ type host interface {
 // the view function, lays them out, paints them and routes input to the
 // elements of the last frame. Main thread only, except where noted.
 type engine struct {
+	// record, set by Record, is what the frame paints, as vectors.
+	record *Drawing
 	// corners returns the radius, in DIPs, the window's frames are cut to
 	// where the system does not round its corners
 	// (surface.Conn.ContentCorners), 0 while they are square. nil for

@@ -1010,6 +1010,10 @@ func fillMask(z *vec.Rasterizer, f *flatPath, dst []byte, stride int) {
 
 // FillPath fills a path, by its FillRule.
 func (p *Painter) FillPath(path *Path, c Color) {
+	if p.rec != nil {
+		p.recordPath(path, 0, 0, 0, c)
+		return
+	}
 	f := &p.rt.paths.flat
 	path.flatten(f, p.scale)
 	p.drawPath(f, 0, c, nil)
@@ -1195,6 +1199,10 @@ func (p *Painter) FillBakedPath(b *BakedPath, x, y float32, c Color) {
 	if b == nil || len(b.cmds) == 0 {
 		return
 	}
+	if p.rec != nil {
+		p.recordPath(&Path{cmds: b.cmds, rule: b.rule}, x, y, 0, c)
+		return
+	}
 	dx, dy := x*p.scale, y*p.scale
 	minX, minY, qx, qy, x0, y0, ph, valid := b.lookupPhase(p.scale, dx, dy, &p.rt.paths.flat)
 	if !valid {
@@ -1270,6 +1278,10 @@ func (p *Painter) FillPathGradient(path *Path, g LinearGradient) {
 // still draw, on the CPU, more slowly, which is logged once. Opaque lines
 // of StrokePolyline draw without masks on a GPU.
 func (p *Painter) StrokePath(path *Path, width float32, c Color) {
+	if p.rec != nil {
+		p.recordPath(path, 0, 0, width, c)
+		return
+	}
 	f := &p.rt.paths.flat
 	path.flatten(f, p.scale)
 	p.drawPath(f, width*p.scale, c.Alpha(f.capFade(width*p.scale)), nil)

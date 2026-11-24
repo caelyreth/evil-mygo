@@ -55,6 +55,9 @@ type Painter struct {
 	// stays where the element is, so the copy's hole tells nothing of how
 	// opaque the page shows.
 	copying bool
+	// rec, set while Record paints, keeps what paints as vectors in place
+	// of the scene's ops (record.go).
+	rec *Drawing
 }
 
 // opaqueBox is the box of a background an element painted, and how many
@@ -113,7 +116,10 @@ func (rt *engine) paint(root *node, w, h, scale float32) {
 	}
 	// The painter is the engine's, which draw callbacks get, so that
 	// painting allocates none.
-	rt.painter = Painter{rt: rt, s: s, scale: scale, opacity: 1, clip: Rect{0, 0, w, h}, opaque: opaque, under: under, holes: rt.holes[:0]}
+	rt.painter = Painter{rt: rt, s: s, scale: scale, opacity: 1, clip: Rect{0, 0, w, h}, opaque: opaque, under: under, holes: rt.holes[:0], rec: rt.record}
+	if rt.record != nil {
+		rt.record.Items = rt.record.Items[:0]
+	}
 	p := &rt.painter
 	uses, opened := rt.text.TransientUses(), rt.paths.spill.opened
 	rt.partTransient, rt.paths.spill.inParts = 0, 0
@@ -1131,6 +1137,10 @@ func (p *Painter) textForeground(l *text.Layout, x, y float32, color Color, ts t
 	for li := range l.Lines {
 		line := &l.Lines[li]
 		if clips && (y+line.Y > p.clip.Y+p.clip.H || y+line.Y+line.Height < p.clip.Y) {
+			continue
+		}
+		if p.rec != nil {
+			p.recordLine(l, line, x, y, color, sp)
 			continue
 		}
 		if run == nil {
