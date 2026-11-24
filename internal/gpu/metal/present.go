@@ -218,7 +218,7 @@ func (r *Renderer) stash(s *scene.Scene, damage []image.Rectangle, known bool) e
 	}
 	damage = r.pipelineDamage(damage, known)
 	r.ages.Add(damage, !known)
-	r.pending = pendingFrame{cb: send(cb, "retain"), whole: len(s.Effects) > 0}
+	r.pending = pendingFrame{cb: send(cb, "retain"), whole: hasBackdrop(s)}
 	r.pending.size.Width, r.pending.size.Height, r.pending.size.Clear = s.Width, s.Height, s.Clear
 	r.diff.Remember(s)
 	r.pipelines.Remember()

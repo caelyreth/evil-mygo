@@ -150,3 +150,61 @@ func TestDamageOfInstances(t *testing.T) {
 		t.Errorf("other data: damage %v, %v", damage, ok)
 	}
 }
+
+func TestDamageOfEffectImages(t *testing.T) {
+	fx := &Effect{Name: "image-fx"}
+	imgA := NewImageRGBA(16, 16, make([]byte, 16*16*4))
+	imgB := NewImageRGBA(16, 16, make([]byte, 16*16*4))
+	build := func(img *Image) *Scene {
+		return &Scene{
+			Width:   120,
+			Height:  120,
+			Ops:     []Op{{Kind: OpEffect, Rect: Rect{X: 20, Y: 30, W: 40, H: 50}}},
+			Effects: []EffectOp{{Effect: fx, Images: [4]*Image{img}}},
+		}
+	}
+
+	d := Differ{Reach: 1}
+	d.Diff(build(imgA))
+	d.Remember(build(imgA))
+	if damage, ok := d.Diff(build(imgA)); !ok || len(damage) != 0 {
+		t.Fatalf("unchanged effect image caused damage %v, ok=%v", damage, ok)
+	}
+
+	d.Remember(build(imgA))
+	imgA.Changed()
+	if damage, ok := d.Diff(build(imgA)); !ok || len(damage) != 1 || !image.Rect(20, 30, 60, 80).In(damage[0]) {
+		t.Fatalf("mutated effect image damage %v, ok=%v", damage, ok)
+	}
+
+	d.Remember(build(imgA))
+	if damage, ok := d.Diff(build(imgB)); !ok || len(damage) != 1 || !image.Rect(20, 30, 60, 80).In(damage[0]) {
+		t.Fatalf("swapped effect image damage %v, ok=%v", damage, ok)
+	}
+}
+
+func BenchmarkDiffEffectWithImage(b *testing.B) {
+	img := NewImageRGBA(64, 64, make([]byte, 64*64*4))
+	fx := &Effect{Name: "tinted-image"}
+	ops := make([]Op, 0, 64)
+	for i := range 60 {
+		ops = append(ops, Op{Kind: OpFill, Rect: Rect{X: float32(i * 10), Y: 20, W: 8, H: 8}, Color: Color{R: 120, G: 140, B: 200, A: 255}})
+	}
+	ops = append(ops, Op{Kind: OpEffect, Rect: Rect{X: 100, Y: 100, W: 128, H: 128}, Start: 0, End: 1})
+	s := &Scene{
+		Width:   1280,
+		Height:  800,
+		Ops:     ops,
+		Effects: []EffectOp{{Effect: fx, Images: [4]*Image{img}}},
+	}
+	d := Differ{Reach: 1}
+	d.Diff(s)
+	d.Remember(s)
+	totalDamage := 0
+	for b.Loop() {
+		dmg, _ := d.Diff(s)
+		totalDamage += len(dmg)
+		d.Remember(s)
+	}
+	b.ReportMetric(float64(totalDamage)/float64(b.N), "damage-rects")
+}

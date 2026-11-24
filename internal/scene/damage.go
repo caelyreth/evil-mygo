@@ -49,6 +49,7 @@ type Differ struct {
 	pushes              []int
 	corners             ClipCorners
 	versions            []uint64
+	fxVers              [][4]uint64
 	mask, color         atlasMark
 	damage              []image.Rectangle
 	clips               []image.Rectangle
@@ -245,6 +246,11 @@ func (d *Differ) same(i int, s *Scene, j int, maskRects, colorRects []image.Rect
 	case OpEffect:
 		if int(sa) >= len(d.effects) || int(sb) >= len(s.Effects) || !d.effects[sa].Same(&s.Effects[sb]) {
 			return false
+		}
+		for k, img := range s.Effects[sb].Images {
+			if img != nil && img.Version() != d.fxVers[sa][k] {
+				return false
+			}
 		}
 	}
 	return true
@@ -486,6 +492,16 @@ func (d *Differ) Remember(s *Scene) {
 			v = img.Version()
 		}
 		d.versions = append(d.versions, v)
+	}
+	d.fxVers = d.fxVers[:0]
+	for i := range s.Effects {
+		var vs [4]uint64
+		for k, img := range s.Effects[i].Images {
+			if img != nil {
+				vs[k] = img.Version()
+			}
+		}
+		d.fxVers = append(d.fxVers, vs)
 	}
 	d.mask.set(s.MaskAtlas)
 	d.color.set(s.ColorAtlas)
