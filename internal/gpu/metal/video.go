@@ -3,6 +3,7 @@
 package metal
 
 import (
+	"image"
 	"sync"
 	"unsafe"
 
@@ -103,10 +104,15 @@ func (r *Renderer) surfaceTexture(img *scene.Image, s *scene.Surface) id {
 		t = &texture{tex: luma, chroma: chroma, w: img.W, h: img.H, ver: img.Version()}
 		r.images[img.ID()] = t
 	} else {
-		r.waitLast() // frames in flight read these textures
-		replace := sel("replaceRegion:mipmapLevel:withBytes:bytesPerRow:")
-		msgReplaceRegion(t.tex, replace, mtlRegion{W: uint(img.W), H: uint(img.H), D: 1}, 0, unsafe.Pointer(&s.Planes[0].Pix[0]), uint(s.Planes[0].Stride))
-		msgReplaceRegion(t.chroma, replace, mtlRegion{W: uint(cw), H: uint(ch), D: 1}, 0, unsafe.Pointer(&s.Planes[1].Pix[0]), uint(s.Planes[1].Stride))
+		lumaRect := []image.Rectangle{image.Rect(0, 0, img.W, img.H)}
+		chromaRect := []image.Rectangle{image.Rect(0, 0, cw, ch)}
+		if !r.blitTexture(t.tex, lumaRect, s.Planes[0].Pix, s.Planes[0].Stride, 1) ||
+			!r.blitTexture(t.chroma, chromaRect, s.Planes[1].Pix, s.Planes[1].Stride, 2) {
+			r.waitLast() // fallback when blit staging is unavailable
+			replace := sel("replaceRegion:mipmapLevel:withBytes:bytesPerRow:")
+			msgReplaceRegion(t.tex, replace, mtlRegion{W: uint(img.W), H: uint(img.H), D: 1}, 0, unsafe.Pointer(&s.Planes[0].Pix[0]), uint(s.Planes[0].Stride))
+			msgReplaceRegion(t.chroma, replace, mtlRegion{W: uint(cw), H: uint(ch), D: 1}, 0, unsafe.Pointer(&s.Planes[1].Pix[0]), uint(s.Planes[1].Stride))
+		}
 		t.ver = img.Version()
 	}
 	t.lastFrame = r.frame

@@ -129,3 +129,124 @@ func benchVideo(b *testing.B, s *scene.Scene, next func()) {
 	b.ReportMetric(gpu.Seconds()*1000/float64(b.N), "GPU-ms")
 	b.ReportMetric(encoded.Seconds()*1000/float64(b.N), "encode-ms")
 }
+
+// BenchmarkPipelinedUploads compares pipelined 2-slot frame encoding when an
+// atlas glyph rect, an RGBA image, or a rotated clip mask updates in place on
+// every frame. Without blit staging, updates serialize CPU encoding and GPU
+// execution via waitLast().
+func BenchmarkPipelinedUploads(b *testing.B) {
+	run := func(b *testing.B, setup func(*scene.Scene) func(frame int)) {
+		r, err := newRenderer()
+		if err != nil {
+			b.Skip("no Metal:", err)
+		}
+		defer r.Release()
+		s := gputest.BoxesScene(1280, 800, 600, false)
+		s.MaskAtlas = scene.NewAtlas(1, 128, 128)
+		step := setup(s)
+		var targets [ringSize]id
+		pool(func() {
+			for i := range targets {
+				targets[i] = r.newTexture(s.Width, s.Height, pixelFormatBGRA8Unorm, usageRenderTarget|usageShaderRead, nil, 0)
+			}
+			for i := range ringSize {
+				cb, err := r.encode(s, targets[i])
+				if err != nil {
+					b.Fatal(err)
+				}
+				send(cb, "commit")
+				r.track(cb)
+			}
+			r.waitLast()
+		})
+		defer pool(func() {
+			r.waitLast()
+			for i := range targets {
+				release(&targets[i])
+			}
+		})
+
+		frame := 0
+		var encoded time.Duration
+		for b.Loop() {
+			if step != nil {
+				step(frame)
+			}
+			t0 := time.Now()
+			pool(func() {
+				cb, err := r.encode(s, targets[r.slot])
+				if err != nil {
+					b.Fatal(err)
+				}
+				send(cb, "commit")
+				r.track(cb)
+			})
+			encoded += time.Since(t0)
+			frame++
+		}
+		pool(func() { r.waitLast() })
+		if r.err != nil {
+			b.Fatal(r.err)
+		}
+		b.ReportMetric(encoded.Seconds()*1000/float64(b.N), "frame-ms")
+	}
+
+	b.Run("control", func(b *testing.B) {
+		run(b, func(*scene.Scene) func(int) { return nil })
+	})
+
+	b.Run("atlas", func(b *testing.B) {
+		run(b, func(s *scene.Scene) func(int) {
+			ax, ay, ok := s.MaskAtlas.Alloc(32, 32)
+			if !ok {
+				b.Fatal("atlas alloc failed")
+			}
+			start := int32(len(s.Glyphs))
+			s.Glyphs = append(s.Glyphs, scene.Glyph{
+				X: 16, Y: 16, W: 32, H: 32,
+				U: uint16(ax), V: uint16(ay), UW: 32, VH: 32,
+				Color: scene.Color{R: 255, G: 255, B: 255, A: 255},
+			})
+			s.Ops = append(s.Ops, scene.Op{Kind: scene.OpGlyphs, Start: start, End: start + 1})
+			patch := make([]byte, 32*32)
+			for i := range patch {
+				patch[i] = 200
+			}
+			return func(frame int) {
+				patch[0] = byte(frame)
+				s.MaskAtlas.Put(ax, ay, 32, 32, patch, 32)
+			}
+		})
+	})
+
+	b.Run("image", func(b *testing.B) {
+		run(b, func(s *scene.Scene) func(int) {
+			img := scene.NewImageRGBA(256, 256, make([]byte, 256*256*4))
+			s.Ops = append(s.Ops, scene.Op{
+				Kind:  scene.OpImage,
+				Rect:  scene.Rect{X: 16, Y: 16, W: 256, H: 256},
+				Image: img,
+				Src:   scene.Rect{W: 256, H: 256},
+			})
+			return func(frame int) {
+				img.Pix[0] = byte(frame)
+				img.Changed()
+			}
+		})
+	})
+
+	b.Run("clipmask", func(b *testing.B) {
+		run(b, func(s *scene.Scene) func(int) {
+			idx := len(s.Ops)
+			xform := scene.Translation(32, 32).Mul(scene.Rotation(6))
+			s.Ops = append(s.Ops,
+				scene.Op{Kind: scene.OpPushClip, Rect: scene.Rect{W: 900, H: 480}, Radii: scene.Uniform(16), Transform: xform},
+				scene.Op{Kind: scene.OpFill, Rect: scene.Rect{W: 900, H: 480}, Color: scene.Color{R: 40, G: 120, B: 240, A: 180}, Transform: xform},
+				scene.Op{Kind: scene.OpPopClip},
+			)
+			return func(frame int) {
+				s.Ops[idx].Rect.H = 480 + float32(frame%2)*2
+			}
+		})
+	})
+}

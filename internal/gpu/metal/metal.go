@@ -69,6 +69,8 @@ type id = uintptr
 
 // Metal and Core Graphics structs passed by value.
 type (
+	mtlOrigin      struct{ X, Y, Z uint }
+	mtlSize        struct{ W, H, D uint }
 	mtlRegion      struct{ X, Y, Z, W, H, D uint }
 	mtlScissorRect struct{ X, Y, W, H uint }
 	mtlClearColor  struct{ R, G, B, A float64 }
@@ -120,19 +122,20 @@ var (
 	createDevice      func() id
 	srgb              uintptr
 	extendedSRGB      uintptr
-	msgReplaceRegion  func(obj id, sel objc.SEL, r mtlRegion, level uint, bytes unsafe.Pointer, bytesPerRow uint)
-	msgGetBytes       func(obj id, sel objc.SEL, bytes unsafe.Pointer, bytesPerRow uint, r mtlRegion, level uint)
-	msgSetClearColor  func(obj id, sel objc.SEL, c mtlClearColor)
-	msgSetSize        func(obj id, sel objc.SEL, s cgSize)
-	msgSetRect        func(obj id, sel objc.SEL, r cgRect)
-	msgRect           func(obj id, sel objc.SEL) cgRect
-	msgSetFloat       func(obj id, sel objc.SEL, v float64)
-	selMu             sync.Mutex
-	selectors         = map[string]objc.SEL{}
-	renderPass        id // MTLRenderPassDescriptor
+	msgReplaceRegion       func(obj id, sel objc.SEL, r mtlRegion, level uint, bytes unsafe.Pointer, bytesPerRow uint)
+	msgCopyBufferToTexture func(obj id, sel objc.SEL, srcBuf id, srcOff, srcBytesPerRow, srcBytesPerImage uint, srcSize mtlSize, dstTex id, dstSlice, dstLevel uint, dstOrigin mtlOrigin)
+	msgGetBytes            func(obj id, sel objc.SEL, bytes unsafe.Pointer, bytesPerRow uint, r mtlRegion, level uint)
+	msgSetClearColor       func(obj id, sel objc.SEL, c mtlClearColor)
+	msgSetSize             func(obj id, sel objc.SEL, s cgSize)
+	msgSetRect             func(obj id, sel objc.SEL, r cgRect)
+	msgRect                func(obj id, sel objc.SEL) cgRect
+	msgSetFloat            func(obj id, sel objc.SEL, v float64)
+	selMu                  sync.Mutex
+	selectors              = map[string]objc.SEL{}
+	renderPass             id // MTLRenderPassDescriptor
 
 	// The selectors sent for each batch, looked up once.
-	selSetPipeline, selSetFragmentTexture, selSetScissorRects, selDraw objc.SEL
+	selSetPipeline, selSetFragmentTexture, selSetScissorRects, selDraw, selCopyFromBuffer objc.SEL
 
 	dispatchDataCreate, dispatchRelease uintptr
 
@@ -223,6 +226,7 @@ func load() error {
 			}
 		})
 		purego.RegisterFunc(&msgReplaceRegion, msgSend)
+		purego.RegisterFunc(&msgCopyBufferToTexture, msgSend)
 		purego.RegisterFunc(&msgGetBytes, msgSend)
 		purego.RegisterFunc(&msgSetClearColor, msgSend)
 		purego.RegisterFunc(&msgSetSize, msgSend)
@@ -234,6 +238,7 @@ func load() error {
 		selSetFragmentTexture = sel("setFragmentTexture:atIndex:")
 		selSetScissorRects = sel("setScissorRects:count:")
 		selDraw = sel("drawPrimitives:vertexStart:vertexCount:instanceCount:baseInstance:")
+		selCopyFromBuffer = sel("copyFromBuffer:sourceOffset:sourceBytesPerRow:sourceBytesPerImage:sourceSize:toTexture:destinationSlice:destinationLevel:destinationOrigin:")
 		srgb, _, _ = purego.SyscallN(colorSpace, *(*uintptr)(ptr(name)))
 		extendedSRGB, _, _ = purego.SyscallN(colorSpace, *(*uintptr)(ptr(extendedName)))
 	})
@@ -487,9 +492,16 @@ type Renderer struct {
 	frame    uint64
 	swept    uint64 // the frame of the last sweep
 	// Command buffers retain every resource used by their frame slot.
-	inflight    [ringSize]id
-	slot, inUse int
-	err         error
+	inflight      [ringSize]id
+	slot, inUse   int
+	uploadCB      id // current prepare() command buffer for staged texture blits
+	stageBufs     [ringSize]id
+	stageCaps     [ringSize]int
+	stageOff      int
+	stageIdle     [ringSize]int
+	stageLastUsed [ringSize]int
+	stageHeld     [ringSize][]id
+	err           error
 	// timeout tells that err is a frame the GPU did not finish in time:
 	// the device is still there, but it cannot draw now.
 	timeout bool
@@ -1017,6 +1029,107 @@ func (r *Renderer) newTexture(w, h int, format, usage uint, pix []byte, stride i
 	return tex
 }
 
+type stagedRect struct {
+	buf       id
+	off       int
+	dstStride int
+	rc        image.Rectangle
+}
+
+// stageAlloc reserves need bytes (16-byte aligned) in the active slot's shared
+// staging buffer for GPU blit uploads.
+func (r *Renderer) stageAlloc(need int) (buf id, off int, dst []byte) {
+	if need <= 0 || r.device == 0 {
+		return 0, 0, nil
+	}
+	off = (r.stageOff + 15) &^ 15
+	slot := r.inUse
+	if r.stageBufs[slot] == 0 || off+need > r.stageCaps[slot] {
+		capBytes := max(need*3/2, 256<<10)
+		capBytes = (capBytes + 4095) &^ 4095
+		if old := r.stageBufs[slot]; old != 0 {
+			if r.stageOff == 0 {
+				release(&r.stageBufs[slot])
+			} else {
+				// Earlier blits in this frame's command buffer still reference old.
+				r.stageHeld[slot] = append(r.stageHeld[slot], old)
+				r.stageBufs[slot] = 0
+			}
+		}
+		b := send(r.device, "newBufferWithLength:options:", uintptr(capBytes), 0)
+		if b == 0 {
+			r.stageCaps[slot] = 0
+			return 0, 0, nil
+		}
+		r.stageBufs[slot], r.stageCaps[slot], off = b, capBytes, 0
+	}
+	r.stageOff = off + need
+	raw := unsafe.Slice((*byte)(ptr(send(r.stageBufs[slot], "contents"))), r.stageCaps[slot])
+	return r.stageBufs[slot], off, raw[off : off+need]
+}
+
+//go:uintptrescapes
+func copyBufferToTexture(blit id, srcBuf id, srcOff, srcBytesPerRow, srcBytesPerImage uint, srcSize *mtlSize, dstTex id, dstSlice, dstLevel uint, dstOrigin *mtlOrigin) {
+	if runtime.GOARCH == "arm64" {
+		// On Darwin arm64, composites >16B (MTLSize, MTLOrigin) pass by pointer per AAPCS64 B.4;
+		// purego.RegisterFunc's stack bundler inlines structs >16B instead of passing a pointer.
+		purego.SyscallN(msgSend, blit, uintptr(selCopyFromBuffer), srcBuf, uintptr(srcOff), uintptr(srcBytesPerRow), uintptr(srcBytesPerImage), uintptr(unsafe.Pointer(srcSize)), dstTex, uintptr(dstSlice), uintptr(dstLevel), uintptr(unsafe.Pointer(dstOrigin)))
+		return
+	}
+	msgCopyBufferToTexture(blit, selCopyFromBuffer, srcBuf, srcOff, srcBytesPerRow, srcBytesPerImage, *srcSize, dstTex, dstSlice, dstLevel, *dstOrigin)
+}
+
+// blitTexture stages rects of pix and encodes a blit copy into tex on the
+// current prepare() command buffer so in-place updates avoid waitLast().
+func (r *Renderer) blitTexture(tex id, rects []image.Rectangle, pix []byte, srcStride, bpp int) bool {
+	if tex == 0 || r.uploadCB == 0 || len(rects) == 0 || len(pix) == 0 || srcStride <= 0 || bpp <= 0 {
+		return false
+	}
+	var stack [8]stagedRect
+	staged := stack[:0]
+	for _, rc := range rects {
+		w, h := rc.Dx(), rc.Dy()
+		if w <= 0 || h <= 0 {
+			continue
+		}
+		rowBytes := w * bpp
+		dstStride := (rowBytes + 15) &^ 15
+		need := dstStride * h
+		lastRow := (rc.Min.Y+h-1)*srcStride + rc.Min.X*bpp + rowBytes
+		if rc.Min.Y < 0 || rc.Min.X < 0 || lastRow > len(pix) {
+			return false
+		}
+		buf, off, dst := r.stageAlloc(need)
+		if buf == 0 {
+			return false
+		}
+		if srcStride == dstStride && rc.Min.X == 0 && rowBytes == dstStride {
+			copy(dst, pix[rc.Min.Y*srcStride:rc.Max.Y*srcStride])
+		} else {
+			base := rc.Min.Y*srcStride + rc.Min.X*bpp
+			for y := range h {
+				srcOff := base + y*srcStride
+				copy(dst[y*dstStride:y*dstStride+rowBytes], pix[srcOff:srcOff+rowBytes])
+			}
+		}
+		staged = append(staged, stagedRect{buf: buf, off: off, dstStride: dstStride, rc: rc})
+	}
+	if len(staged) == 0 {
+		return true
+	}
+	blit := send(r.uploadCB, "blitCommandEncoder")
+	if blit == 0 {
+		return false
+	}
+	for _, sr := range staged {
+		sz := mtlSize{W: uint(sr.rc.Dx()), H: uint(sr.rc.Dy()), D: 1}
+		orig := mtlOrigin{X: uint(sr.rc.Min.X), Y: uint(sr.rc.Min.Y), Z: 0}
+		copyBufferToTexture(blit, sr.buf, uint(sr.off), uint(sr.dstStride), uint(sr.dstStride*sr.rc.Dy()), &sz, tex, 0, 0, &orig)
+	}
+	send(blit, "endEncoding")
+	return true
+}
+
 // syncAtlas uploads what changed in an atlas since the texture had it.
 func (r *Renderer) syncAtlas(t *texture, a *scene.Atlas, format uint) error {
 	if a == nil {
@@ -1034,13 +1147,13 @@ func (r *Renderer) syncAtlas(t *texture, a *scene.Atlas, format uint) error {
 	if full {
 		rects = []image.Rectangle{image.Rect(0, 0, a.W, a.H)}
 	}
-	if len(rects) > 0 {
-		r.waitLast() // frames in flight read this texture
-	}
-	for _, rc := range rects {
-		src := a.Pix[(rc.Min.Y*a.W+rc.Min.X)*a.BPP:]
-		region := mtlRegion{X: uint(rc.Min.X), Y: uint(rc.Min.Y), W: uint(rc.Dx()), H: uint(rc.Dy()), D: 1}
-		msgReplaceRegion(t.tex, sel("replaceRegion:mipmapLevel:withBytes:bytesPerRow:"), region, 0, unsafe.Pointer(&src[0]), uint(a.W*a.BPP))
+	if len(rects) > 0 && !r.blitTexture(t.tex, rects, a.Pix, a.W*a.BPP, a.BPP) {
+		r.waitLast() // fallback when blit staging is unavailable
+		for _, rc := range rects {
+			src := a.Pix[(rc.Min.Y*a.W+rc.Min.X)*a.BPP:]
+			region := mtlRegion{X: uint(rc.Min.X), Y: uint(rc.Min.Y), W: uint(rc.Dx()), H: uint(rc.Dy()), D: 1}
+			msgReplaceRegion(t.tex, sel("replaceRegion:mipmapLevel:withBytes:bytesPerRow:"), region, 0, unsafe.Pointer(&src[0]), uint(a.W*a.BPP))
+		}
 	}
 	t.ver = a.Version()
 	return nil
@@ -1096,9 +1209,11 @@ func (r *Renderer) imageTexture(img *scene.Image) uintptr {
 			img.Uploaded()
 		}
 	} else if t.ver != img.Version() {
-		if pix := img.Pixels(); pix != nil {
-			r.waitLast() // frames in flight read this texture
-			msgReplaceRegion(t.tex, sel("replaceRegion:mipmapLevel:withBytes:bytesPerRow:"), mtlRegion{W: uint(img.W), H: uint(img.H), D: 1}, 0, unsafe.Pointer(&pix[0]), uint(img.W*4))
+		if pix := img.Pixels(); len(pix) > 0 {
+			if !r.blitTexture(t.tex, []image.Rectangle{image.Rect(0, 0, img.W, img.H)}, pix, img.W*4, 4) {
+				r.waitLast() // fallback when blit staging is unavailable
+				msgReplaceRegion(t.tex, sel("replaceRegion:mipmapLevel:withBytes:bytesPerRow:"), mtlRegion{W: uint(img.W), H: uint(img.H), D: 1}, 0, unsafe.Pointer(&pix[0]), uint(img.W*4))
+			}
 			t.ver = img.Version()
 			img.Uploaded()
 		}
@@ -1140,22 +1255,24 @@ func (r *Renderer) gpuTexture(img *scene.Image) uintptr {
 const ringSize = 2
 
 // waitSlot waits for the GPU to finish the frame that last used the slot's
-// instance buffer.
+// instance and staging buffers.
 func (r *Renderer) waitSlot(slot int) {
-	cb := r.inflight[slot]
-	if cb == 0 {
-		return
+	if cb := r.inflight[slot]; cb != 0 {
+		send(cb, "waitUntilCompleted")
+		if int(send(cb, "status")) == statusError && r.err == nil {
+			e := send(cb, "error")
+			r.err = fmt.Errorf("metal: a frame failed: %s", describe(e))
+			// A frame the watchdog killed leaves the device wedged rather than
+			// gone: another one submitted now waits the same timeout through.
+			r.timeout = e != 0 && int(send(e, "code")) == commandBufferErrorTimeout
+		}
+		release(&r.inflight[slot])
 	}
-	send(cb, "waitUntilCompleted")
-	if int(send(cb, "status")) == statusError && r.err == nil {
-		e := send(cb, "error")
-		r.err = fmt.Errorf("metal: a frame failed: %s", describe(e))
-		// A frame the watchdog killed leaves the device wedged rather than
-		// gone: another one submitted now waits the same timeout through.
-		r.timeout = e != 0 && int(send(e, "code")) == commandBufferErrorTimeout
-	}
-	release(&r.inflight[slot])
 	r.releaseHeld(slot)
+	for i := range r.stageHeld[slot] {
+		release(&r.stageHeld[slot][i])
+	}
+	r.stageHeld[slot] = r.stageHeld[slot][:0]
 }
 
 // waitLast waits for the GPU to finish the frames in flight, so that this
@@ -1201,14 +1318,18 @@ func (r *Renderer) prepare(s *scene.Scene) (cb id, built *scene.Scene, err error
 	if r.err != nil {
 		return 0, nil, r.err
 	}
+	if r.stageCaps[r.inUse] > 4<<20 && r.stageLastUsed[r.inUse] <= 256<<10 {
+		r.stageIdle[r.inUse]++
+		if r.stageIdle[r.inUse] >= 120 {
+			release(&r.stageBufs[r.inUse])
+			r.stageCaps[r.inUse] = 0
+			r.stageIdle[r.inUse] = 0
+		}
+	} else {
+		r.stageIdle[r.inUse] = 0
+	}
+	r.stageOff = 0
 	r.frame++
-	if err := r.syncAtlas(&r.mask, s.MaskAtlas, pixelFormatR8Unorm); err != nil {
-		return 0, nil, err
-	}
-	if err := r.syncAtlas(&r.color, s.ColorAtlas, pixelFormatRGBA8Unorm); err != nil {
-		return 0, nil, err
-	}
-	r.atlases = [2]*scene.Atlas{s.MaskAtlas, s.ColorAtlas}
 	r.pipes.fallbacks = 0
 	r.used = 0
 	cb = send(r.queue, "commandBuffer")
@@ -1217,6 +1338,18 @@ func (r *Renderer) prepare(s *scene.Scene) (cb id, built *scene.Scene, err error
 			return 0, nil, err
 		}
 	}
+	r.uploadCB = cb
+	defer func() {
+		r.stageLastUsed[r.inUse] = r.stageOff
+		r.uploadCB = 0
+	}()
+	if err := r.syncAtlas(&r.mask, s.MaskAtlas, pixelFormatR8Unorm); err != nil {
+		return 0, nil, err
+	}
+	if err := r.syncAtlas(&r.color, s.ColorAtlas, pixelFormatRGBA8Unorm); err != nil {
+		return 0, nil, err
+	}
+	r.atlases = [2]*scene.Atlas{s.MaskAtlas, s.ColorAtlas}
 	// Canvases first, into textures of their own, which the frame samples.
 	s.EachCanvas(func(c *scene.Image) {
 		if err == nil {
@@ -2021,6 +2154,17 @@ func (r *Renderer) releaseTextures() {
 		delete(r.canvases, key)
 	}
 	r.drawState.release()
+	for i := range r.stageBufs {
+		release(&r.stageBufs[i])
+		r.stageCaps[i] = 0
+		r.stageIdle[i] = 0
+		r.stageLastUsed[i] = 0
+		for j := range r.stageHeld[i] {
+			release(&r.stageHeld[i][j])
+		}
+		r.stageHeld[i] = r.stageHeld[i][:0]
+	}
+	r.stageOff = 0
 	for i := range r.blurred {
 		release(&r.blurred[i].tex)
 	}
