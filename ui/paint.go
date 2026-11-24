@@ -323,13 +323,20 @@ func (p *Painter) element(e *node) {
 	}
 	styled := e.styleFn != nil || r != nil
 	var built builtStyle
+	var builtTextSet uint32
+	var tsChanged bool
 	if styled {
 		built = builtStyle{e.bg, e.borderC, e.ts.color, e.opacity, e.opacitySet, e.shadows}
+		builtTextSet = e.ts.set
 	}
 	defer func() {
 		p.transform, p.inline, p.theme, p.owner = savedTransform, savedInline, savedTheme, savedOwner
 		if styled {
 			e.bg, e.borderC, e.ts.color, e.opacity, e.opacitySet, e.shadows = built.bg, built.border, built.text, built.opacity, built.opacitySet, built.shadows
+			e.ts.set = builtTextSet
+			if tsChanged {
+				p.rt.tsDirty--
+			}
 		}
 	}()
 
@@ -344,6 +351,10 @@ func (p *Painter) element(e *node) {
 		if animateShadows != nil {
 			animateShadows(p.rt, e, r)
 		}
+	}
+	if styled && (e.ts.color != built.text || e.ts.set != builtTextSet) {
+		tsChanged = true
+		p.rt.tsDirty++
 	}
 	if e.flags&flagInvisible != 0 || e.backface && e.transform.facesAway() {
 		return

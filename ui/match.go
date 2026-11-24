@@ -1006,6 +1006,7 @@ func (m *matches) fly(f *flight, e *node, shown, box Rect, uses []transitionUse,
 	}
 	if look.text != f.lookTo.text && !f.morph {
 		e.ts.color, e.ts.set = look.text, e.ts.set|setColor
+		m.rt.tsGen++
 	}
 	e.opacity, e.opacitySet = shows.opacity*fade, true
 	e.radius = look.radius
@@ -1054,6 +1055,7 @@ func (m *matches) flyOn(f *flight, id uint64, uses []transitionUse, now time.Tim
 		e.transform, e.radius, e.opacity, e.opacitySet, e.lift = l.turn, l.radius, l.opacity, true, false
 		if e.ts.set&setColor != 0 {
 			e.ts.color = l.text
+			rt.tsGen++
 		}
 		if r.colorSet {
 			e.bg, e.borderC = r.colorTarget[0], r.colorTarget[1]

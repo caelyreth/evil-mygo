@@ -205,6 +205,9 @@ type engine struct {
 	layGen          uint64
 	layGenOK        bool
 	noLayoutCache   bool
+	resolvedTS      []resolvedTSEntry
+	tsGen           uint32
+	tsDirty         int
 	// noHitFilter has contains test every element's box, as tests
 	// compare with the filter by what showed of it.
 	noHitFilter bool

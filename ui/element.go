@@ -795,7 +795,8 @@ type measure struct {
 // measuring it again.
 type measured struct {
 	measures [4]measure
-	nmeasure int
+	nmeasure int32
+	tsCache  int32
 	leaf     [2]float32 // the max-content and min-content widths of text
 	leafOK   bool
 	// intr holds the max-content and min-content widths of the element

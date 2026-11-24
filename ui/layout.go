@@ -237,13 +237,61 @@ func (e *node) textParams(width float32) text.Params {
 	return p
 }
 
+type resolvedTSEntry struct {
+	elem  *node
+	epoch uint64
+	gen   uint32
+	ts    textStyle
+}
+
+func (rt *engine) cachedTS(e *node) *textStyle {
+	idx := int(e.tsCache - 1)
+	if idx < 0 || idx >= len(rt.resolvedTS) {
+		return nil
+	}
+	ent := &rt.resolvedTS[idx]
+	if ent.elem == e && ent.epoch == e.epoch && ent.gen == rt.tsGen {
+		return &ent.ts
+	}
+	return nil
+}
+
+func (rt *engine) cacheTS(e *node, ts textStyle) {
+	ent := resolvedTSEntry{elem: e, epoch: e.epoch, gen: rt.tsGen, ts: ts}
+	if idx := int(e.tsCache - 1); idx >= 0 && idx < len(rt.resolvedTS) && rt.resolvedTS[idx].elem == e && rt.resolvedTS[idx].epoch == e.epoch {
+		rt.resolvedTS[idx] = ent
+		return
+	}
+	rt.resolvedTS = append(rt.resolvedTS, ent)
+	e.tsCache = int32(len(rt.resolvedTS))
+}
+
 // resolvedText merges the text styles of the element and its ancestors.
 func (e *node) resolvedText() textStyle {
+	var rt *engine
+	if e.c != nil {
+		rt = e.c.rt
+	}
+	if rt != nil && rt.tsDirty == 0 && e.tsCache > 0 {
+		if c := rt.cachedTS(e); c != nil {
+			return *c
+		}
+	}
 	var out textStyle
 	for p := e; p != nil && out.set != setAll; p = p.parent {
 		t := &p.ts
+		stop := false
+		if rt != nil && rt.tsDirty == 0 && p != e && p.tsCache > 0 {
+			if c := rt.cachedTS(p); c != nil {
+				t = c
+				stop = true
+			}
+		}
 		take := t.set &^ out.set
 		if take == 0 {
+			if stop {
+				break
+			}
 			continue
 		}
 		if take&setFamily != 0 {
@@ -310,6 +358,12 @@ func (e *node) resolvedText() textStyle {
 			out.shadow = t.shadow
 		}
 		out.set |= take
+		if stop {
+			break
+		}
+	}
+	if rt != nil && rt.tsDirty == 0 {
+		rt.cacheTS(e, out)
 	}
 	return out
 }
@@ -527,13 +581,13 @@ func naturalHeight(e *node, w, cbH float32) float32 {
 	if e.kind == kindBox && e.first == nil && !e.special {
 		return e.padY()
 	}
-	for i := 0; i < e.nmeasure; i++ {
+	for i := int32(0); i < e.nmeasure; i++ {
 		if m := e.measures[i]; m.availW == w {
 			return m.h
 		}
 	}
 	h := contentHeight(e, w-e.padX()) + e.padY()
-	if e.nmeasure < len(e.measures) {
+	if int(e.nmeasure) < len(e.measures) {
 		e.measures[e.nmeasure] = measure{availW: w, h: h}
 		e.nmeasure++
 	}

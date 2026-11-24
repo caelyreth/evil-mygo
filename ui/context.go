@@ -124,6 +124,10 @@ func (c *context) reset(now time.Time, w, h float32) {
 	c.rt.building = 0
 	clear(c.rt.built)
 	c.rt.built, c.rt.nbuilt = c.rt.built[:0], 0
+	clear(c.rt.resolvedTS)
+	c.rt.resolvedTS = c.rt.resolvedTS[:0]
+	c.rt.tsGen++
+	c.rt.tsDirty = 0
 	clear(c.rt.actions)
 	c.rt.actions = c.rt.actions[:0]
 	c.dirty = max(c.dirty, c.used)

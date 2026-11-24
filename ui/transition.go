@@ -1127,7 +1127,7 @@ func ghostOf(e *node) *node {
 		g.themed = &t
 	}
 	g.poseSet = false // it keeps the pose it had
-	g.tl, g.nmeasure, g.leafOK, g.intrOK, g.lay = nil, 0, false, 0, 0
+	g.tl, g.nmeasure, g.tsCache, g.leafOK, g.intrOK, g.lay = nil, 0, 0, false, 0, 0
 	g.flags = g.flags&^(flagModal|flagPage|flagFocusTarget) | flagInert
 	for c := e.first; c != nil; c = c.next {
 		if c.leaving == 0 {

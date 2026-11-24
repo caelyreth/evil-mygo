@@ -660,10 +660,14 @@ func gridLayout(e *node, cw, ch float32, commit bool) (usedW, usedH float32) {
 		}
 		w, off := gridPlaceIn(c, area, c.width, c.marginX(), ms, me, gridJustify(e, c), func(avail float32) float32 { return fitWidth(c, avail, area) }, c.clampW)
 		widths[i], offs[i] = w, off
+		baseline := it.rowSpan == 1 && byBaseline(c, align, e)
+		if !baseline && !contributes(e.rows, it.row, it.rowSpan, ch, false) {
+			continue
+		}
 		// Percentage heights count as automatic ones until the rows are
 		// sized.
 		h := heightAt(c, w, inf)
-		if it.rowSpan == 1 && byBaseline(c, align, e) {
+		if baseline {
 			layoutBox(c, w, h)
 			it.laidOut = true
 			b, ok := boxBaseline(c)

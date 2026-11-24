@@ -164,7 +164,7 @@ func buildBench(boxes []*benchBox, w, h float32) (*Tester, *node) {
 // reuse what it laid out before (layoutcache.go), as the elements of a
 // frame that changed them all start.
 func forgetLayout(e *node) {
-	e.nmeasure, e.leafOK, e.intrOK, e.lay = 0, false, 0, 0
+	e.nmeasure, e.tsCache, e.leafOK, e.intrOK, e.lay = 0, 0, false, 0, 0
 	for c := e.first; c != nil; c = c.next {
 		forgetLayout(c)
 	}
