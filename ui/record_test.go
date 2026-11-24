@@ -32,7 +32,7 @@ func TestRecordKeepsFillsAndGlyphs(t *testing.T) {
 		t.Fatalf("fills %d, glyphs %d spelling %q", fills, glyphs, text)
 	}
 	if runtime.GOOS == "darwin" {
-		if p := glyph.Font.Outline(glyph.ID); p == nil || glyph.Font.Size() <= 0 {
+		if p := d.Outline(glyph.Font, glyph.ID); p == nil || glyph.Font.Size() <= 0 {
 			t.Fatal("a glyph has no outline")
 		}
 	}

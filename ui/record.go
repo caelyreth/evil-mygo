@@ -17,7 +17,20 @@ import (
 type Drawing struct {
 	Width, Height float32
 	Items         []DrawItem
+	// outlines are the glyphs' outlines, read while the fonts were the
+	// recording's to read.
+	outlines map[glyphKey]*Path
 }
+
+type glyphKey struct {
+	f  *text.Font
+	id uint32
+}
+
+// Outline returns the outline of glyph id of f, as the drawing drew it,
+// in DIPs from its origin on the baseline, y down; nil where the
+// platform's text system gives none, or the glyph is blank.
+func (d *Drawing) Outline(f GlyphFont, id uint32) *Path { return d.outlines[glyphKey{f.f, id}] }
 
 // DrawKind is the kind of a DrawItem.
 type DrawKind uint8
@@ -94,10 +107,8 @@ type GlyphFont struct{ f *text.Font }
 // Size is the font's em size in DIPs.
 func (f GlyphFont) Size() float32 { return f.f.Size }
 
-// Outline returns the outline of the glyph id at the font's size, in
-// DIPs from its origin on the baseline, y down; nil where the platform's
-// text system gives none, or the glyph is blank.
-func (f GlyphFont) Outline(id uint32) *Path {
+// outline reads the outline of the glyph id at the font's size.
+func (f GlyphFont) outline(id uint32) *Path {
 	segs := text.GlyphPath(f.f, id)
 	if len(segs) == 0 {
 		return nil
@@ -158,6 +169,17 @@ func Record(view func(c *Context), width, height int) *Drawing {
 	t := coreNewTesterWith(func(c *context) { view(makeContext(c)) }, width, height, TesterOptions{Preferences: Preferences{ReduceMotion: true}})
 	t.rt.record = d
 	t.Frame()
+	// The fonts are the Tester's text system's, which goes back to be
+	// used again as it ends: their outlines are read now.
+	d.outlines = map[glyphKey]*Path{}
+	for _, it := range d.Items {
+		for _, g := range it.Glyphs {
+			k := glyphKey{g.Font.f, g.ID}
+			if _, ok := d.outlines[k]; !ok {
+				d.outlines[k] = g.Font.outline(g.ID)
+			}
+		}
+	}
 	t.end()
 	return d
 }
