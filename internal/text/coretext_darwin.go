@@ -162,6 +162,8 @@ var ct struct {
 	colorSpaceDeviceRGB     func() uintptr
 	bitmapContextCreate     func(data unsafe.Pointer, w, h, bitsPerComponent, bytesPerRow int, space uintptr, info uint32) uintptr
 	contextRelease          func(ctx uintptr)
+	contextSaveGState       func(ctx uintptr)
+	contextRestoreGState    func(ctx uintptr)
 	contextAntialias        func(ctx uintptr, on bool)
 	contextSmoothFonts      func(ctx uintptr, on bool)
 	contextAllowSubpixelPos func(ctx uintptr, on bool)
@@ -268,9 +270,21 @@ func loadCoreText() error {
 	bind(text, &ct.suggestLineBreak, "CTTypesetterSuggestLineBreak")
 	bind(cg, &ct.colorSpaceDeviceRGB, "CGColorSpaceCreateDeviceRGB")
 	bind(cg, &ct.bitmapContextCreate, "CGBitmapContextCreate")
-	bind(cg, &ct.contextRelease, "CGContextRelease")
+	contextRelease := addr(cg, "CGContextRelease")
+	ct.contextRelease = func(ctx uintptr) { purego.SyscallN(contextRelease, ctx) }
+	contextSave := addr(cg, "CGContextSaveGState")
+	ct.contextSaveGState = func(ctx uintptr) { purego.SyscallN(contextSave, ctx) }
+	contextRestore := addr(cg, "CGContextRestoreGState")
+	ct.contextRestoreGState = func(ctx uintptr) { purego.SyscallN(contextRestore, ctx) }
 	bind(cg, &ct.contextAntialias, "CGContextSetShouldAntialias")
-	bind(cg, &ct.contextSmoothFonts, "CGContextSetShouldSmoothFonts")
+	contextSmooth := addr(cg, "CGContextSetShouldSmoothFonts")
+	ct.contextSmoothFonts = func(ctx uintptr, on bool) {
+		var v uintptr
+		if on {
+			v = 1
+		}
+		purego.SyscallN(contextSmooth, ctx, v)
+	}
 	bind(cg, &ct.contextAllowSubpixelPos, "CGContextSetAllowsFontSubpixelPositioning")
 	bind(cg, &ct.contextSubpixelPos, "CGContextSetShouldSubpixelPositionFonts")
 	bind(cg, &ct.contextAllowQuantize, "CGContextSetAllowsFontSubpixelQuantization")
@@ -431,6 +445,11 @@ type coreText struct {
 	typesetters map[typesetterKey]*keptTypesetter
 	// textSeed seeds the hashes of their keys.
 	textSeed maphash.Seed
+
+	// Reusable scratch contexts for glyph rasterization (up to scratchGlyphSize²).
+	maskBuf, colorBuf []byte
+	maskCtx, colorCtx uintptr
+	glyphOut          []byte
 	// numbers holds what fonts shape numbers into (shapeNumber).
 	numbers map[numberKey]*numberFont
 	// wrapFonts holds what wrapping keeps for fonts (wrapKept).
@@ -1357,6 +1376,8 @@ func (e *coreText) baseline(y float32) float32 { return float32(math.Ceil(float6
 // space, as renderers do, without subpixels since macOS 10.14.
 func (e *coreText) textParams() (scene.TextParams, bool) { return scene.TextParams{}, false }
 
+const scratchGlyphSize = 128
+
 func (e *coreText) glyph(f *Font, id uint32, scale, dx float32, shade Shade, _ bool) bitmap {
 	font := f.native
 	g := uint16(id)
@@ -1383,6 +1404,64 @@ func (e *coreText) glyph(f *Font, id uint32, scale, dx float32, shade Shade, _ b
 		return bitmap{}
 	}
 	color := f.color
+	bpp := 1
+	if color {
+		bpp = 4
+	}
+	fill := 0.0
+	if shade == Thick {
+		fill = 1
+	} else if smooth {
+		fill = shadeGray(shade)
+	}
+	if w <= scratchGlyphSize && h <= scratchGlyphSize {
+		stride := scratchGlyphSize * bpp
+		var buf []byte
+		var ctx uintptr
+		if color {
+			if e.colorCtx == 0 {
+				e.colorBuf = make([]byte, scratchGlyphSize*stride)
+				e.colorCtx = ct.bitmapContextCreate(unsafe.Pointer(&e.colorBuf[0]), scratchGlyphSize, scratchGlyphSize, 8, stride, e.srgb, cgImageAlphaPremultipliedLst|cgBitmapByteOrder32Big)
+				if e.colorCtx != 0 {
+					initGlyphContext(e.colorCtx)
+				}
+			}
+			buf, ctx = e.colorBuf, e.colorCtx
+		} else {
+			if e.maskCtx == 0 {
+				e.maskBuf = make([]byte, scratchGlyphSize*stride)
+				e.maskCtx = ct.bitmapContextCreate(unsafe.Pointer(&e.maskBuf[0]), scratchGlyphSize, scratchGlyphSize, 8, stride, 0, cgImageAlphaOnly)
+				if e.maskCtx != 0 {
+					initGlyphContext(e.maskCtx)
+				}
+			}
+			buf, ctx = e.maskBuf, e.maskCtx
+		}
+		if ctx == 0 {
+			return bitmap{}
+		}
+		clearRows := min(h+1, scratchGlyphSize)
+		clear(buf[:clearRows*stride])
+		ct.contextSaveGState(ctx)
+		ct.contextSmoothFonts(ctx, smooth)
+		ct.contextSetFill(ctx, fill, fill, fill, 1)
+		ct.contextScaleCTM(ctx, s, s)
+		pos := cgPoint{(x - float64(left)) / s, float64(scratchGlyphSize-h+bottom) / s}
+		ct.fontDrawGlyphs(font, &g, &pos, 1, ctx)
+		ct.contextRestoreGState(ctx)
+		runtime.KeepAlive(buf)
+		rowBytes := w * bpp
+		need := rowBytes * h
+		if cap(e.glyphOut) < need {
+			e.glyphOut = make([]byte, need)
+		} else {
+			e.glyphOut = e.glyphOut[:need]
+		}
+		for y := range h {
+			copy(e.glyphOut[y*rowBytes:(y+1)*rowBytes], buf[y*stride:y*stride+rowBytes])
+		}
+		return bitmap{left: left, top: top, w: w, h: h, pix: e.glyphOut, color: color}
+	}
 	var pix []byte
 	var ctx uintptr
 	if color {
@@ -1395,31 +1474,23 @@ func (e *coreText) glyph(f *Font, id uint32, scale, dx float32, shade Shade, _ b
 	if ctx == 0 {
 		return bitmap{}
 	}
-	ct.contextAntialias(ctx, true)
-	// Font smoothing emboldens glyphs more the lighter the fill color is,
-	// even in a context of alpha alone: the gray of the shade sets how
-	// much. Fonts are shaded while the user leaves it on; thick text is
-	// smoothed with white, the most.
+	initGlyphContext(ctx)
 	ct.contextSmoothFonts(ctx, smooth)
-	ct.contextAllowSubpixelPos(ctx, true)
-	ct.contextSubpixelPos(ctx, true)
-	ct.contextAllowQuantize(ctx, false)
-	ct.contextQuantize(ctx, false)
-	fill := 0.0
-	if shade == Thick {
-		fill = 1
-	} else if smooth {
-		fill = shadeGray(shade)
-	}
 	ct.contextSetFill(ctx, fill, fill, fill, 1)
 	ct.contextScaleCTM(ctx, s, s)
-	// The bitmap's rows go from its top; the context's origin is at its
-	// bottom left, the baseline bottom pixels above it.
 	pos := cgPoint{(x - float64(left)) / s, float64(bottom) / s}
 	ct.fontDrawGlyphs(font, &g, &pos, 1, ctx)
 	ct.contextRelease(ctx)
 	runtime.KeepAlive(pix)
 	return bitmap{left: left, top: top, w: w, h: h, pix: pix, color: color}
+}
+
+func initGlyphContext(ctx uintptr) {
+	ct.contextAntialias(ctx, true)
+	ct.contextAllowSubpixelPos(ctx, true)
+	ct.contextSubpixelPos(ctx, true)
+	ct.contextAllowQuantize(ctx, false)
+	ct.contextQuantize(ctx, false)
 }
 
 // decorate places underlines and strikethroughs as Core Text draws them
@@ -1823,6 +1894,17 @@ func (e *coreText) forgetFonts() {
 	clear(e.numbers)
 	clear(e.wrapFonts)
 	e.dropScratch()
+	if e.maskCtx != 0 {
+		ct.contextRelease(e.maskCtx)
+		e.maskCtx = 0
+		e.maskBuf = nil
+	}
+	if e.colorCtx != 0 {
+		ct.contextRelease(e.colorCtx)
+		e.colorCtx = 0
+		e.colorBuf = nil
+	}
+	e.glyphOut = nil
 }
 
 // releaseFonts releases the CTFonts of the Fonts nothing refers to.

@@ -178,7 +178,7 @@ type Font struct {
 	// glyphs of fonts that thicken thicker for Thick. color ones draw
 	// their glyphs in color (emoji), for the engines that ask (Core Text
 	// and DirectWrite).
-	shaded, thin, thickens, color bool
+	shaded, thin, thickens, color, colorKnown bool
 	// The tops of the font's underline and strikethrough, in DIPs above
 	// the baseline, and their thickness, for engines that decorate with
 	// them (DirectWrite and Pango).

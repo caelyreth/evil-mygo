@@ -1217,7 +1217,13 @@ func (e *pangoEngine) glyph(f *Font, id uint32, scale, dx float32, _ Shade, subp
 	if id == pangoGlyphEmpty || id&pangoGlyphUnknow != 0 {
 		return bitmap{}
 	}
+	if subpixel && e.antialias == cairoAntialiasSubpixel && f.colorKnown && !f.color {
+		return e.draw(f, id, scale, dx, true)
+	}
 	b := e.draw(f, id, scale, dx, false)
+	if b.pix != nil {
+		f.color, f.colorKnown = b.color, true
+	}
 	if b.color || b.pix == nil || !subpixel || e.antialias != cairoAntialiasSubpixel {
 		return b
 	}
