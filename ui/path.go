@@ -1206,7 +1206,7 @@ func (p *Painter) FillBakedPath(b *BakedPath, x, y float32, c Color) {
 	}
 	ps := &p.rt.paths
 	large := ph.w > pathTile || ph.h > pathTile
-	if p.transform.Set || p.spillOnTop() != nil || spillEveryPath ||
+	if p.spillOnTop() != nil || spillEveryPath ||
 		ph.w > pathMaskMax || ph.h > pathMaskMax || (large && ps.crowded >= p.rt.paints) {
 		b.fillTranslated(&ps.flat, dx, dy)
 		p.drawPath(&ps.flat, 0, c, nil)

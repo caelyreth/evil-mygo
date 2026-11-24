@@ -728,3 +728,73 @@ func TestResetRemovesTheStrokesStyle(t *testing.T) {
 		}
 	}
 }
+
+func TestBakedPathUnderTransform(t *testing.T) {
+	baked := BakePath(testComplexGlyphPath(0, 0))
+	ink := RGB(230, 240, 250)
+	bg := RGB(0, 0, 0)
+	cases := []struct {
+		scale, dx, dy float32
+		wholePx       bool
+	}{
+		{1, 0, 0, true},
+		{1, 3, 2, true},
+		{1, 3.25, 2.5, false},
+		{2, 0.5, 0, true},
+		{2, 1.75, 2.25, false},
+	}
+	for _, tc := range cases {
+		ttBaked := NewTester(func(c *Context) {
+			Box(c).Fill().Background(bg).Draw(func(p *Painter, _ Rect) {
+				p.Transform(Translation(tc.dx, tc.dy), 0, 0, func() {
+					p.FillBakedPath(baked, 12, 14, ink)
+				})
+			})
+		}, 64, 64)
+		ttBaked.SetScale(tc.scale)
+		ttBaked.Frame()
+
+		// Under any Transform, FillBakedPath must match FillPath under the same Transform.
+		ttFill := NewTester(func(c *Context) {
+			Box(c).Fill().Background(bg).Draw(func(p *Painter, _ Rect) {
+				p.Transform(Translation(tc.dx, tc.dy), 0, 0, func() {
+					p.FillPath(testComplexGlyphPath(12, 14), ink)
+				})
+			})
+		}, 64, 64)
+		ttFill.SetScale(tc.scale)
+		ttFill.Frame()
+
+		imgBaked, imgFill := ttBaked.Image(), ttFill.Image()
+		if len(ttBaked.rt.scene.Glyphs) == 0 {
+			t.Fatalf("scale=%v dx=%v dy=%v: expected glyph ops under Transform", tc.scale, tc.dx, tc.dy)
+		}
+		for y := 0; y < imgBaked.Bounds().Dy(); y++ {
+			for x := 0; x < imgBaked.Bounds().Dx(); x++ {
+				if a, b := imgBaked.RGBAAt(x, y), imgFill.RGBAAt(x, y); a != b {
+					t.Fatalf("scale=%v dx=%v dy=%v pixel (%d,%d) bakedTransform=%v fillTransform=%v", tc.scale, tc.dx, tc.dy, x, y, a, b)
+				}
+			}
+		}
+
+		// For whole-device-pixel translations (including 0.5 DIP at 2x), FillBakedPath
+		// under Transform must also match FillBakedPath at the translated coordinates.
+		if tc.wholePx {
+			ttDirect := NewTester(func(c *Context) {
+				Box(c).Fill().Background(bg).Draw(func(p *Painter, _ Rect) {
+					p.FillBakedPath(baked, 12+tc.dx, 14+tc.dy, ink)
+				})
+			}, 64, 64)
+			ttDirect.SetScale(tc.scale)
+			ttDirect.Frame()
+			imgDirect := ttDirect.Image()
+			for y := 0; y < imgBaked.Bounds().Dy(); y++ {
+				for x := 0; x < imgBaked.Bounds().Dx(); x++ {
+					if a, b := imgBaked.RGBAAt(x, y), imgDirect.RGBAAt(x, y); a != b {
+						t.Fatalf("scale=%v dx=%v dy=%v pixel (%d,%d) bakedTransform=%v direct=%v", tc.scale, tc.dx, tc.dy, x, y, a, b)
+					}
+				}
+			}
+		}
+	}
+}
