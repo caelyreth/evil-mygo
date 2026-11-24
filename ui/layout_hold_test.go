@@ -169,3 +169,125 @@ func boxString(b [4]float32) string {
 	}
 	return "{" + strings.Join(s, " ") + "}"
 }
+
+func TestHoldNonScrollingColumn(t *testing.T) {
+	// Include plain, shrinking, percent-height, and growing non-scrolling columns
+	// inside rows/boxes so measure-then-commit exercises both hold hits and
+	// fallback invalidation, matching noHold pixel-for-pixel.
+	buildCases := []struct {
+		name     string
+		wantHold bool
+		build    func() (*Tester, *node)
+	}{
+		{
+			name:     "plain-column-in-row",
+			wantHold: true,
+			build: func() (*Tester, *node) {
+				var root *node
+				tt := coreNewTester(func(c *context) {
+					root = coreRow(c).Size(300, 200).Children(func() {
+						coreColumn(c).Width(140).Children(func() {
+							coreBox(c).Size(100, 25).Shrink(0)
+							coreBox(c).Size(120, 35).Shrink(0)
+						})
+						coreBox(c).Size(100, 90).Shrink(0)
+					})
+				}, 300, 200)
+				return tt, root
+			},
+		},
+		{
+			name:     "shrinking-column-falls-back",
+			wantHold: false,
+			build: func() (*Tester, *node) {
+				var root *node
+				tt := coreNewTester(func(c *context) {
+					root = coreColumn(c).Size(140, 50).Children(func() {
+						coreColumn(c).Width(120).MinHeight(0).Children(func() {
+							coreBox(c).Size(100, 40)
+							coreBox(c).Size(100, 40)
+						})
+					})
+				}, 140, 50)
+				return tt, root
+			},
+		},
+		{
+			name:     "percent-and-grow-children",
+			wantHold: false,
+			build: func() (*Tester, *node) {
+				var root *node
+				tt := coreNewTester(func(c *context) {
+					root = coreRow(c).Size(300, 120).Children(func() {
+						coreColumn(c).Size(140, 100).Children(func() {
+							coreBox(c).Width(100).HeightPercent(50).Shrink(0)
+							coreBox(c).Width(100).Height(20).Grow(1)
+						})
+					})
+				}, 300, 120)
+				return tt, root
+			},
+		},
+	}
+	for _, tc := range buildCases {
+		t.Run(tc.name, func(t *testing.T) {
+			noHold = true
+			_, rootNo := tc.build()
+			forgetLayout(rootNo)
+			layoutBox(rootNo, rootNo.w, rootNo.h)
+			without := boxesOf(rootNo)
+
+			noHold = false
+			tt, rootWith := tc.build()
+			before := tt.rt.flex.holdUsed
+			forgetLayout(rootWith)
+			layoutBox(rootWith, rootWith.w, rootWith.h)
+			used := tt.rt.flex.holdUsed - before
+			with := boxesOf(rootWith)
+
+			if len(with) != len(without) {
+				t.Fatalf("box count %d vs noHold %d", len(with), len(without))
+			}
+			for i := range with {
+				if with[i] != without[i] {
+					t.Fatalf("box %d = %v, want %v", i, boxString(with[i]), boxString(without[i]))
+				}
+			}
+			if tc.wantHold && used == 0 {
+				t.Fatalf("expected non-scrolling Column to reuse flex hold, got holdUsed=0")
+			}
+			if !tc.wantHold && used != 0 {
+				t.Fatalf("expected constrained Column not to reuse non-matching hold, got holdUsed=%d", used)
+			}
+		})
+	}
+}
+
+func TestMeasureCacheEviction(t *testing.T) {
+	var box *node
+	_ = coreNewTester(func(c *context) {
+		box = coreColumn(c).Children(func() {
+			coreText(c, "word one two three four five six seven eight nine ten eleven twelve")
+		})
+	}, 300, 200)
+	if box == nil {
+		t.Fatal("missing test box")
+	}
+	widths := []float32{60, 100, 140, 180, 220, 260}
+	for _, w := range widths {
+		_ = naturalHeight(box, w, inf)
+	}
+	if int(box.nmeasure) != len(box.measures) {
+		t.Fatalf("nmeasure = %d, want %d", box.nmeasure, len(box.measures))
+	}
+	// The last 4 widths must reside in FIFO slots 0..3 with newest at index 3.
+	wantWidths := widths[2:]
+	for i, w := range wantWidths {
+		if box.measures[i].availW != w {
+			t.Fatalf("measures[%d].availW = %v, want %v", i, box.measures[i].availW, w)
+		}
+		if got, want := naturalHeight(box, w, inf), box.measures[i].h; got != want {
+			t.Fatalf("width %v returned %v, want cached %v", w, got, want)
+		}
+	}
+}

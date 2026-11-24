@@ -752,7 +752,7 @@ func (tf *tableFit) apply() {
 	}
 	for _, cell := range tf.cells {
 		cell.width, cell.grow, cell.shrink = px(w), 0, 0
-		cell.parent.forgetIntrinsic()
+		cell.forgetIntrinsic()
 	}
 	if old, ok := tf.layout.Widths[tf.id]; ok && old == w {
 		return

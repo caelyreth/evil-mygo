@@ -438,16 +438,16 @@ func contentWidth(e *node, maxContent bool) float32 {
 }
 
 // forgetIntrinsic forgets the widths intrinsic measured of the element and
-// of those around it, whose content it is, as what layout changes in it
-// changes them: the rows a List builds, the labels a Form aligns.
+// of those around it, whose content it is, and drops their cached flex holds,
+// as what layout changes in it changes them: the rows a List builds, the
+// labels a Form aligns.
 func (e *node) forgetIntrinsic() {
-	// What of its children changed, so what a measuring pass kept for the
-	// commit pass is not what that pass would build now. The change is
-	// counted, and every hold kept before it is stale.
-	e.c.rt.flex.changes++
-	for p := e; p != nil && p.intrOK != 0; p = p.parent {
-		p.intrOK = 0
-		p.keepMeasured()
+	for p := e; p != nil; p = p.parent {
+		p.hold = 0
+		if p.intrOK != 0 {
+			p.intrOK = 0
+			p.keepMeasured()
+		}
 	}
 }
 
@@ -590,6 +590,11 @@ func naturalHeight(e *node, w, cbH float32) float32 {
 	if int(e.nmeasure) < len(e.measures) {
 		e.measures[e.nmeasure] = measure{availW: w, h: h}
 		e.nmeasure++
+	} else {
+		// Evict the oldest slot (FIFO) so a 5th+ distinct measure width
+		// stays warm instead of falling through uncached.
+		e.measures[0], e.measures[1], e.measures[2] = e.measures[1], e.measures[2], e.measures[3]
+		e.measures[3] = measure{availW: w, h: h}
 	}
 	return h
 }
@@ -827,9 +832,6 @@ type flexScratch struct {
 	holdSaved     int
 	holdUsed      int
 	holdRefreshed int
-	// changes counts what changed in the tree: a hold keeps the count of
-	// when it was measured, and is stale once the count is past it.
-	changes uint64
 }
 
 // flexHold is what one measuring pass of one element resolved: its items
@@ -840,10 +842,10 @@ type flexHold struct {
 	e              *node
 	items, lines   int32 // where they start in holdItems, holdLines
 	nitems, nlines int32
-	cw, ch         float32
+	cw, ch, minCh  float32
 	row            bool
 	baselines      bool
-	changes        uint64 // what changed in the tree when it was measured
+	anyCh          bool
 }
 
 // dropHolds forgets the holds of the last layout: their elements are gone,
@@ -859,7 +861,7 @@ func (f *flexScratch) dropHolds() {
 // kept from the last frame. It replaces what an earlier measuring pass of
 // the same element kept, so that a frame measures its elements as many
 // times as it did before without growing the pools.
-func (e *node) saveHold(cw, ch float32, row, baselines bool, items []flexItem, lines []flexLine) {
+func (e *node) saveHold(cw, ch, minCh float32, row, baselines, anyCh bool, items []flexItem, lines []flexLine) {
 	f := &e.c.rt.flex
 	i := int(e.hold) - 1
 	if i < 0 || i >= len(f.holds) || f.holds[i].e != e {
@@ -867,8 +869,7 @@ func (e *node) saveHold(cw, ch float32, row, baselines bool, items []flexItem, l
 		i, e.hold = len(f.holds)-1, int32(len(f.holds))
 	}
 	h := &f.holds[i]
-	h.cw, h.ch, h.row, h.baselines = cw, ch, row, baselines
-	h.changes = f.changes
+	h.cw, h.ch, h.minCh, h.row, h.baselines, h.anyCh = cw, ch, minCh, row, baselines, anyCh
 	h.items, h.nitems = keepHold(&f.holdItems, items, h.items, h.nitems)
 	h.lines, h.nlines = keepHold(&f.holdLines, lines, h.lines, h.nlines)
 	f.holdSaved++
@@ -895,7 +896,8 @@ func keepHold[T any](pool *[]T, v []T, start, n int32) (int32, int32) {
 // gone. A row's items and lines depend on the width alone, so a row
 // committed at another height takes what its measuring pass kept at the
 // width and crosses it again; a column's main axis is its height, which
-// must be the height measured.
+// must match unless none of its items wrap, grow, clamp, or use percentage
+// main sizes and the commit height is at least minCh.
 func (e *node) takeHold(cw, ch float32, row bool) (items []flexItem, lines []flexLine, baselines, sameCh, ok bool) {
 	f := &e.c.rt.flex
 	i := int(e.hold) - 1
@@ -903,7 +905,10 @@ func (e *node) takeHold(cw, ch float32, row bool) (items []flexItem, lines []fle
 		return nil, nil, false, false, false
 	}
 	h := &f.holds[i]
-	if h.e != e || h.row != row || h.cw != cw || !row && h.ch != ch || h.changes != f.changes {
+	if h.e != e || h.row != row || h.cw != cw {
+		return nil, nil, false, false, false
+	}
+	if !row && h.ch != ch && (!h.anyCh || (finite(ch) && ch < h.minCh)) {
 		return nil, nil, false, false, false
 	}
 	it, ln := h.items, h.lines
@@ -963,6 +968,7 @@ func flexLayout(e *node, cw, ch float32, commit bool) (usedW, usedH float32) {
 	ms, me := mainMargins[r][0], mainMargins[r][1]
 	cs, ce := crossMargins[r][0], crossMargins[r][1]
 	taken, sameCh := false, false
+	pctMain, hasGrow, hasClamped := false, false, false
 	if commit && e.hold != 0 && !noHold { // nothing to take for most: one compare
 		var bl bool
 		if items, lines, bl, sameCh, taken = e.takeHold(cw, ch, row); taken {
@@ -1113,6 +1119,17 @@ func flexLayout(e *node, cw, ch float32, commit bool) (usedW, usedH float32) {
 			// padding and border (CSS flexbox §9.7): the passes that
 			// resolve the flexible lengths read it in the item.
 			it.shrink = c.shrink * max(it.base-pad, 0)
+			if !row {
+				if c.height.u == unitPercent || c.basis.u == unitPercent || c.minH.set&boundPct != 0 || c.maxH.set&boundPct != 0 {
+					pctMain = true
+				}
+				if it.grow > 0 {
+					hasGrow = true
+				}
+				if it.base != it.hyp {
+					hasClamped = true
+				}
+			}
 			baselines = baselines || c.self == Baseline
 			// After the child's measures, which lay out containers in it.
 			scratch.items = append(scratch.items, it)
@@ -1192,15 +1209,16 @@ func flexLayout(e *node, cw, ch float32, commit bool) (usedW, usedH float32) {
 			}
 		}
 	}
-	if !commit && !noHold {
-		// What is worth keeping: a row's children depend on the width
-		// alone, so its commit pass takes them at another height; a
-		// column's depend on the height, which the commit pass has and
-		// the measuring pass did not, unless it scrolls in Y, which
-		// leaves its height unknown. A container that scrolls in X has
-		// no width to take them at.
-		if e.flags&flagScrollX == 0 && (row || e.flags&flagScrollY != 0) {
-			e.saveHold(cw, ch, row, baselines, items, lines)
+	if !commit && !noHold && e.flags&flagScrollX == 0 {
+		switch {
+		case row || e.flags&flagScrollY != 0:
+			e.saveHold(cw, ch, 0, row, baselines, false, items, lines)
+		case !e.wrap && !pctMain && !hasGrow && !hasClamped && len(lines) <= 1:
+			var minCh float32
+			if len(lines) == 1 {
+				minCh = lines[0].main
+			}
+			e.saveHold(cw, ch, minCh, false, baselines, true, items, lines)
 		}
 	}
 	// Cross sizes: natural ones first, then stretched ones fill the line.

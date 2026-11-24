@@ -156,14 +156,16 @@ func sameLayout(e *node, parent uint64, index int, changed bool) bool {
 	if !sameText {
 		r.ts = layoutOfText(&e.ts)
 	}
+	sameTracks := !e.grid && len(r.cols) == 0 && len(r.rows) == 0 ||
+		slices.Equal(r.cols, e.cols) && slices.Equal(r.rows, e.rows)
 	equal := fresh && r.style == e.layoutStyle && r.flags == e.flags&layoutFlags && r.hidden == e.hidden &&
 		r.spans == spans && r.media == media && r.placeOn == placeOn &&
 		r.parent == parent && r.index == int32(index) && r.nchild == int32(e.nchild) &&
-		slices.Equal(r.cols, e.cols) && slices.Equal(r.rows, e.rows)
+		sameTracks
 	if !equal {
 		r.ok = true
 		r.style, r.flags, r.hidden = e.layoutStyle, e.flags&layoutFlags, e.hidden
-		if !slices.Equal(r.cols, e.cols) || !slices.Equal(r.rows, e.rows) {
+		if !sameTracks {
 			r.cols, r.rows = append(r.cols[:0], e.cols...), append(r.rows[:0], e.rows...)
 		}
 		r.spans, r.media, r.placeOn = spans, media, placeOn
@@ -314,7 +316,12 @@ func reuseBox(e *node, r *layoutRecord) {
 		b := &c.st.lay
 		c.x, c.y = b.box.X, b.box.Y
 		if b.boxed {
-			layoutBox(c, b.box.W, b.box.H)
+			if c.lay&layReuse != 0 && b.sized && b.w == b.box.W && b.h == b.box.H {
+				c.laid = e.laid
+				reuseBox(c, b)
+			} else {
+				layoutBox(c, b.box.W, b.box.H)
+			}
 		} else {
 			c.w, c.h = b.box.W, b.box.H
 		}

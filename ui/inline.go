@@ -24,7 +24,37 @@ func (e *node) inlineText() {
 	if !e.paragraph {
 		e.paragraph, e.ownText = true, e.text
 	}
+	total := len(e.ownText)
+	visible := 0
+	var only *node
+	for ch := e.first; ch != nil; ch = ch.next {
+		if ch.hidden {
+			continue
+		}
+		visible++
+		only = ch
+		total += len(ch.text)
+	}
+	if visible == 0 || e.ownText == "" && visible == 1 {
+		n := utf8.RuneCountInString(e.ownText)
+		for ch := e.first; ch != nil; ch = ch.next {
+			if ch.hidden {
+				ch.runes = [2]int{n, n}
+				continue
+			}
+			m := utf8.RuneCountInString(ch.text)
+			ch.runes = [2]int{n, n + m}
+			n += m
+		}
+		if visible == 0 {
+			e.text = e.ownText
+		} else {
+			e.text = only.text
+		}
+		return
+	}
 	var b strings.Builder
+	b.Grow(total)
 	b.WriteString(e.ownText)
 	n := utf8.RuneCountInString(e.ownText)
 	for ch := e.first; ch != nil; ch = ch.next {
@@ -91,11 +121,13 @@ func (e *node) inlineSpans() []Span {
 			continue
 		}
 		spans := ch.spans
+		var single [1]Span
 		switch {
 		case ch.first != nil:
 			spans = ch.inlineSpans()
 		case spans == nil:
-			spans = []Span{{Text: ch.text}}
+			single[0] = Span{Text: ch.text}
+			spans = single[:]
 		}
 		base, alpha := ch.spanStyle()
 		for _, s := range spans {
