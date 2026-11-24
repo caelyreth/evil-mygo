@@ -528,9 +528,9 @@ func TestRepaintPartsMatchWhole(t *testing.T) {
 }
 
 // TestRepaintPartsWhole checks that a frame paints the window whole when
-// something other than a drawing in a Draw callback moves: a drawing
-// asking from a layer's content, and a drawing whose painting outgrows
-// what the scene held.
+// something other than a drawing in a Draw callback moves (such as a
+// drawing asking from a layer's content), while a drawing whose own output
+// grows across frames stays in repaintParts with bounded scene slice tails.
 func TestRepaintPartsWhole(t *testing.T) {
 	statics := 0
 	tt := newRepaintTester(func(c *context) {
@@ -544,7 +544,8 @@ func TestRepaintPartsWhole(t *testing.T) {
 	if tt.rt.partPaints != 0 || statics != n+1 {
 		t.Errorf("a drawing moving in a layer: %d frames in parts, the rest painted %d times", tt.rt.partPaints, statics-n)
 	}
-	// A drawing painting more and more glyphs.
+	// A drawing painting more and more glyphs stays in repaintParts without
+	// accumulating prior frames' glyphs.
 	k := 1
 	tt = newRepaintTester(func(c *context) {
 		coreBox(c).Size(190, 90).Draw(func(p *Painter, r Rect) {
@@ -555,16 +556,14 @@ func TestRepaintPartsWhole(t *testing.T) {
 			k += 600
 		})
 	})
-	whole := 0
 	for range 10 {
-		p := tt.rt.partPaints
 		tt.frame(8 * time.Millisecond)
-		if tt.rt.partPaints == p {
-			whole++
-		}
 	}
-	if whole == 0 {
-		t.Error("a scene growing in parts was never painted whole")
+	if tt.rt.partPaints != 10 {
+		t.Errorf("partPaints = %d, want 10", tt.rt.partPaints)
+	}
+	if got, bound := len(tt.rt.scene.Glyphs), tt.rt.partMark.glyphs+k; got > bound {
+		t.Errorf("len(scene.Glyphs) = %d, exceeds single-frame bound %d", got, bound)
 	}
 }
 
@@ -666,5 +665,73 @@ func TestRepaintPartsContentTransition(t *testing.T) {
 		if !bytes.Equal(parts.Image().Pix, whole.Image().Pix) {
 			t.Fatalf("frame %d, %v into the transition: painted in parts differs from painted whole", i, time.Duration(i+1)*16*time.Millisecond)
 		}
+	}
+}
+
+func BenchmarkRepaintPartsText(b *testing.B) {
+	tt := newRepaintTester(func(c *context) {
+		coreColumn(c).Size(200, 100).Children(func() {
+			for range 6 {
+				coreText(c, "static background status row").FontSize(8)
+			}
+			coreBox(c).Size(200, 36).Draw(func(p *Painter, r Rect) {
+				p.AnimationFrame()
+				dx := float32(p.Now().UnixMilli() % 20)
+				for row := range 10 {
+					p.Text(r.X+dx, r.Y+8+float32(row)*3, "0123456789abcdefghij", 8, RGB(0, 0, 0))
+				}
+			})
+		})
+	})
+	tt.frame(16 * time.Millisecond) // settle into repaintParts
+	startPaints := tt.rt.paints
+	b.ReportAllocs()
+	for b.Loop() {
+		tt.frame(16 * time.Millisecond)
+	}
+	b.ReportMetric(float64(tt.rt.paints-startPaints)/float64(b.N), "whole-paints/op")
+}
+
+// TestRepaintPartsSteadyBounded checks that steady animated parts reuse scene
+// tail slices rather than accumulating glyph/effect data across frames and
+// forcing periodic whole-window repaints.
+func TestRepaintPartsSteadyBounded(t *testing.T) {
+	statics := 0
+	view := func(c *context) {
+		coreColumn(c).Size(200, 100).Children(func() {
+			coreBox(c).Size(200, 30).Draw(func(p *Painter, r Rect) {
+				statics++
+				p.Text(r.X+4, r.Y+18, "static sibling", 10, RGB(0, 0, 0))
+			})
+			coreBox(c).Size(200, 40).Draw(func(p *Painter, r Rect) {
+				p.AnimationFrame()
+				dx := float32(p.Now().UnixMilli() % 16)
+				for row := range 10 {
+					p.Text(r.X+dx, r.Y+8+float32(row)*3, "0123456789abcdefghij", 8, RGB(0, 0, 0))
+				}
+			})
+		})
+	}
+	parts := newRepaintTester(view)
+	whole := newRepaintTester(view)
+	whole.rt.noParts = true
+	startStatics := statics
+	const frames = 100 // 20,000 glyph emissions >> partsGrowth (4096)
+	for i := range frames {
+		parts.frame(16 * time.Millisecond)
+		whole.frame(16 * time.Millisecond)
+		if i == frames-1 && !bytes.Equal(parts.Image().Pix, whole.Image().Pix) {
+			t.Fatalf("frame %d: steady repaintParts differs from whole repaint", i)
+		}
+	}
+	if parts.rt.partPaints != frames {
+		t.Errorf("partPaints = %d, want %d (unexpected whole repaint)", parts.rt.partPaints, frames)
+	}
+	if statics != startStatics+frames {
+		// whole painted every frame (+100), so parts must have painted statics 0 extra times
+		t.Errorf("statics = %d, want %d", statics, startStatics+frames)
+	}
+	if got, want := len(parts.rt.scene.Glyphs), parts.rt.partMark.glyphs+200; got != want {
+		t.Errorf("len(scene.Glyphs) = %d, want %d", got, want)
 	}
 }

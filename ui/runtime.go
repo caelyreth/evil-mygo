@@ -523,9 +523,10 @@ type engine struct {
 	// drawn are the Draw and DrawOver callbacks of the last frame painted
 	// that asked to be painted again (paintPart), and untracked tells that
 	// something else asked, or that painting the parts alone would not do:
-	// the window is painted whole. partsBase is how much data the scene
-	// held painted whole (sceneData), partOps the operations of the scene
-	// painted before, and partPaints counts the frames painted in parts;
+	// the window is painted whole. partMark holds the scene slice lengths at
+	// the end of the whole paint so repaintParts can truncate prior partial
+	// tails before repainting parts; partOps holds the operations of the
+	// scene painted before, and partPaints counts the frames painted in parts;
 	// noParts paints every frame whole, for tests that compare. atlases
 	// are the generations of the glyph atlases the scene was painted with,
 	// partTransient how many masks of the atlas's transient room the parts
@@ -533,7 +534,7 @@ type engine struct {
 	// the scene draws any.
 	drawn         []paintPart
 	untracked     bool
-	partsBase     int
+	partMark      partMark
 	atlases       [2]uint64
 	partTransient uint64
 	transient     bool

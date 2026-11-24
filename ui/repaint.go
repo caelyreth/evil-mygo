@@ -1,7 +1,5 @@
 package ui
 
-import "github.com/egoist/mygo/internal/scene"
-
 // Frames that only paint again. A drawing that moves with the time
 // (Painter.AnimationFrame, AnimationFrameRate, After) while nothing else
 // changes has the next frame paint the elements of this one again, without
@@ -75,15 +73,11 @@ func (p *Painter) asks() {
 	}
 }
 
-// partsGrowth is how much more glyphs, stops, effects, colors and words a
-// scene painted in parts holds than it did painted whole, past which the
-// next frame paints it whole: what the parts painted before stays in them.
-const partsGrowth = 4096
-
-// sceneData returns how many glyphs, stops, effects, colors and words s
-// holds.
-func sceneData(s *scene.Scene) int {
-	return len(s.Glyphs) + len(s.Stops) + len(s.Effects) + len(s.Wide) + len(s.Words)
+// partMark records the scene slice lengths after a whole paint so
+// repaintParts can truncate away prior partial-frame tails instead of
+// accumulating scene data across frames.
+type partMark struct {
+	glyphs, stops, effects, wide, words int
 }
 
 // repaintParts paints the parts of the last frame painted again (see
@@ -96,7 +90,7 @@ func sceneData(s *scene.Scene) int {
 func (rt *engine) repaintParts() bool {
 	s := &rt.scene
 	if rt.untracked || len(rt.drawn) == 0 || rt.insp.open || rt.drag != nil || rt.noParts ||
-		sceneData(s) > 2*rt.partsBase+partsGrowth || atlasGenerations(s) != rt.atlases || rt.transient {
+		atlasGenerations(s) != rt.atlases || rt.transient {
 		return false
 	}
 	rt.painting = true
@@ -108,6 +102,15 @@ func (rt *engine) repaintParts() bool {
 	// anew are this frame's.
 	clear(s.Canvases)
 	s.Canvases = s.Canvases[:0]
+	// Reclaim tail data appended by previous repaintParts frames; ops outside
+	// rt.drawn only reference indices below rt.partMark, and every part in
+	// rt.drawn is repainted below.
+	s.Glyphs = s.Glyphs[:rt.partMark.glyphs]
+	s.Stops = s.Stops[:rt.partMark.stops]
+	clear(s.Effects[rt.partMark.effects:])
+	s.Effects = s.Effects[:rt.partMark.effects]
+	s.Wide = s.Wide[:rt.partMark.wide]
+	s.Words = s.Words[:rt.partMark.words]
 	for i := range rt.drawn {
 		pt := &rt.drawn[i]
 		rt.painter = pt.painter

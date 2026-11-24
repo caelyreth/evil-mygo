@@ -132,7 +132,13 @@ func (rt *engine) paint(root *node, w, h, scale float32) {
 		s.Ops = append(s.Ops, scene.Op{Kind: scene.OpPopClip})
 	}
 	rt.under, rt.holes = p.under[:0], p.holes[:0] // kept for the next frame's
-	rt.partsBase = sceneData(s)
+	rt.partMark = partMark{
+		glyphs:  len(s.Glyphs),
+		stops:   len(s.Stops),
+		effects: len(s.Effects),
+		wide:    len(s.Wide),
+		words:   len(s.Words),
+	}
 	rt.atlases = atlasGenerations(s)
 	// Layers of paths drawn on the CPU (pathSpill) outside the parts are
 	// reused as the parts are painted again, as masks of the transient
