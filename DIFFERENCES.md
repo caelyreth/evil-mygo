@@ -1,11 +1,11 @@
-# Differences from Upstream
+### Differences from Upstream
 
 `evil-mygo` is a standalone downstream fork diverging from the [egoist/mygo](https://github.com/egoist/mygo) upstream snapshot at commit `da8a9a1a` (snapshotted on `main` at `9b68701d`). This document tracks behavioral additions, performance/rendering fixes, framework boundary removals, and future architectural divergences relative to upstream.
 
 > [!NOTE]
 > The earlier downstream fork containing custom WebGPU and GPU surface work lives on the [`classic`](https://github.com/caelyreth/evil-mygo/tree/classic) branch.
 
-## Performance & Memory
+#### Performance & Memory
 
 - **On-demand `TextLayout` shaping release (`ui.TextLayout.Release` / `Shaped`)**: Offscreen or cold paragraphs can release cached shaped glyphs while retaining measured layout bounds and transparently re-shaping when read again ([`ui/text_layout.go`](ui/text_layout.go)).
 - **Kept-layer raster scale retention (`Element.CacheScaled`)**: Allows kept cached subtrees that translate and scale together to hold their raster scale during motion instead of invalidating and re-rasterizing every frame ([`ui/cache.go`](ui/cache.go), [`ui/rasterscale.go`](ui/rasterscale.go)).
@@ -20,20 +20,20 @@
 - **Per-frame `resolvedText` memoization & fixed-row grid measure skipping**: Caches inherited text styles per element per frame without growing `node`, short-circuits ancestor walks at already-resolved parents (guarding transient `styleFn`/transition mutations), and skips speculative height measurements in `gridLayout` when items do not align by baseline or contribute to intrinsic row tracks ([`ui/element.go`](ui/element.go), [`ui/layout.go`](ui/layout.go), [`ui/grid.go`](ui/grid.go), [`ui/paint.go`](ui/paint.go), [`ui/runtime.go`](ui/runtime.go)).
 - **Direct parent state links & identity transform fast paths in hit testing**: Caches `state.parentSt` pointers during commit to eliminate `rt.states` map hashing on ancestor chains, and skips `world.Inverse()` calls when `!world.Set` in `containsScrolled` ([`ui/context.go`](ui/context.go), [`ui/runtime.go`](ui/runtime.go), [`ui/transform.go`](ui/transform.go), [`ui/input.go`](ui/input.go), [`ui/motion.go`](ui/motion.go)).
 
-## UI, Menus & Rendering Fixes
+#### UI, Menus & Rendering Fixes
 
 - **Raster scale watch & exit-ghost fixes**: Resets stale scale watches and clones active scales onto exit transition ghosts ([`ui/rasterscale.go`](ui/rasterscale.go), [`ui/transition.go`](ui/transition.go)).
 - **Pre-sized initial frame suppression**: Suppresses initial frames laid out before a window finishes taking its requested size ([`ui/fit.go`](ui/fit.go), [`ui/runtime.go`](ui/runtime.go)).
 - **Palette swatch rows in menus (`MenuItem.Palette` / `MenuItem.Swatch`)**: Renders palette submenus as compact Finder-tag-style rows of color swatches in native macOS menus and drawn menus, carrying palette/swatch data through `platform.MenuItem` ([`menu.go`](menu.go), [`ui/menu.go`](ui/menu.go), [`internal/platform/menu.go`](internal/platform/menu.go), [`internal/darwin/menu_swatch.go`](internal/darwin/menu_swatch.go)).
 - **Drawn flyout menus (`ui.FlyoutMenus`) & separator coloring**: Extends drawn popup menus and submenus beyond parent window edges in native flyouts with pre-show fit-content sizing, backdrop blur over system material, a short rise-in animation, and configurable `PopoverMenuOptions.Separator` colors ([`ui/menupresentation.go`](ui/menupresentation.go), [`ui/menuflyout.go`](ui/menuflyout.go), [`ui/popovermenu.go`](ui/popovermenu.go), [`content.go`](content.go)).
 
-## Platform & Tooling
+#### Platform & Tooling
 
 - **`MYGO_LOCALE` launch-language propagation (macOS)**: Propagates `MYGO_LOCALE` at startup so AppKit system dialogs, menus, and framework strings match the configured application language ([`internal/darwin/launch_language.go`](internal/darwin/launch_language.go)).
 - **`macos.icon` asset catalog support in `mygo dev`**: Compiles and packages `macos.icon` asset catalogs into development `.app` bundles ([`cmd/mygo/dev.go`](cmd/mygo/dev.go)).
 - **Windows Known Folders & XDG user directories**: Resolves user home/data/config directories using standard Windows Known Folders and XDG base directory conventions ([`paths.go`](paths.go), [`paths_windows.go`](paths_windows.go), [`paths_other.go`](paths_other.go)).
 
-## Framework Boundary & Removals
+#### Framework Boundary & Removals
 
 `evil-mygo` narrows the repository strictly to a native Go UI and desktop application framework:
 
