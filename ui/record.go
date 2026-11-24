@@ -75,15 +75,16 @@ type DrawImageData struct {
 	ID uint64
 }
 
-// DrawGlyph is a glyph on its baseline at (X, Y), of Font, in Color.
-// Text is what its cluster spells, on the glyph that starts the cluster
-// and empty on the others.
+// DrawGlyph is a glyph on its baseline at (X, Y), of Font, in Color,
+// moving the pen Advance on. Text is what its cluster spells, on the
+// glyph that starts the cluster and empty on the others.
 type DrawGlyph struct {
-	Font  GlyphFont
-	ID    uint32
-	X, Y  float32
-	Color Color
-	Text  string
+	Font    GlyphFont
+	ID      uint32
+	X, Y    float32
+	Advance float32
+	Color   Color
+	Text    string
 }
 
 // GlyphFont is a font glyphs are drawn in; equal values are one font at
@@ -239,7 +240,7 @@ func (p *Painter) recordLine(l *text.Layout, line *text.Line, x, y float32, colo
 				continue
 			}
 		}
-		dg := DrawGlyph{Font: GlyphFont{g.Font}, ID: g.ID, X: x + g.X, Y: y + g.Y, Color: c.Alpha(p.opacity)}
+		dg := DrawGlyph{Font: GlyphFont{g.Font}, ID: g.ID, X: x + g.X, Y: y + g.Y, Advance: g.Advance, Color: c.Alpha(p.opacity)}
 		if i == 0 || line.Glyphs[i-1].Cluster != g.Cluster {
 			if end := g.Cluster + g.Runes; g.Runes > 0 && g.Cluster >= 0 && end <= len(runes) {
 				dg.Text = string(runes[g.Cluster:end])
