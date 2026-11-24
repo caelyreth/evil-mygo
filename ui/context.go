@@ -766,6 +766,7 @@ type state struct {
 	vx, vy, vw, vh float32
 	reposed        bool
 	parent         uint64
+	parentSt       *state
 	flags          uint32
 	// hoverBuilt tells that the pass building the element read its hover
 	// (Hovered): its hover changing builds the view anew. hoverLook tells
@@ -1007,6 +1008,20 @@ type shortcut struct {
 func (rt *engine) stateFor(id uint64) *state {
 	s, _ := rt.lookState(id)
 	return s
+}
+
+// parentState returns s's parent state without a map lookup when the
+// cached pointer still matches s.parent.
+func (s *state) parentState(rt *engine) *state {
+	if s.parent == 0 {
+		return nil
+	}
+	if p := s.parentSt; p != nil && p.id == s.parent && p.rt == rt {
+		return p
+	}
+	p := rt.states[s.parent]
+	s.parentSt = p
+	return p
 }
 
 // lookState returns the state of the element id as stateFor does, and

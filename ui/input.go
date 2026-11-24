@@ -227,11 +227,8 @@ func (rt *engine) appendHitChain(chain []uint64, x, y float32) []uint64 {
 		if !rt.contains(h.st, h.r, x, y) {
 			continue
 		}
-		for s := h.st; s != nil; s = rt.states[s.parent] {
+		for s := h.st; s != nil; s = s.parentState(rt) {
 			chain = append(chain, s.id)
-			if s.parent == 0 {
-				break
-			}
 		}
 		return chain
 	}
@@ -367,11 +364,8 @@ func (rt *engine) unhoverGone() bool {
 		if !built(h.st) || !rt.contains(h.st, h.r, rt.pointerX, rt.pointerY) {
 			continue
 		}
-		for s := h.st; s != nil; s = rt.states[s.parent] {
+		for s := h.st; s != nil; s = s.parentState(rt) {
 			chain = append(chain, s.id)
-			if s.parent == 0 {
-				break
-			}
 		}
 		break
 	}
@@ -413,11 +407,8 @@ func (rt *engine) hoverScrolled() {
 		if !rt.containsScrolled(h.st, h.r, rt.pointerX, rt.pointerY, true) {
 			continue
 		}
-		for s := h.st; s != nil; s = rt.states[s.parent] {
+		for s := h.st; s != nil; s = s.parentState(rt) {
 			chain = append(chain, s.id)
-			if s.parent == 0 {
-				break
-			}
 		}
 		break
 	}
@@ -1111,11 +1102,8 @@ func (rt *engine) focusChain() []uint64 { return rt.appendFocusChain(nil) }
 
 // appendFocusChain appends focusChain() to chain.
 func (rt *engine) appendFocusChain(chain []uint64) []uint64 {
-	for s := rt.states[rt.focused]; s != nil; s = rt.states[s.parent] {
+	for s := rt.states[rt.focused]; s != nil; s = s.parentState(rt) {
 		chain = append(chain, s.id)
-		if s.parent == 0 {
-			break
-		}
 	}
 	return chain
 }
@@ -1963,12 +1951,9 @@ func (e *node) FocusWithin() bool {
 	if rt.insp.isForced(e.id, forceFocusWithin) {
 		return true
 	}
-	for s := rt.states[rt.focused]; s != nil; s = rt.states[s.parent] {
+	for s := rt.states[rt.focused]; s != nil; s = s.parentState(rt) {
 		if s.id == e.id {
 			return true
-		}
-		if s.parent == 0 {
-			break
 		}
 	}
 	return false

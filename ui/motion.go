@@ -619,7 +619,7 @@ func (rt *engine) visibleWithin(s *state, m [4]float32) Rect {
 func (rt *engine) clipAncestors(s *state, v Rect, m [4]float32) Rect {
 	// The clips around an element flying stop at it, as it paints out of
 	// them (contains).
-	for p := rt.states[s.parent]; p != nil && !s.lifted && v.W > 0 && v.H > 0; p = rt.states[p.parent] {
+	for p := s.parentState(rt); p != nil && !s.lifted && v.W > 0 && v.H > 0; p = p.parentState(rt) {
 		if p.clips {
 			r := transformRect(p.world, p.clipRect)
 			if p.flags&(flagScrollX|flagScrollY) != 0 {
@@ -630,7 +630,7 @@ func (rt *engine) clipAncestors(s *state, v Rect, m [4]float32) Rect {
 		if p.selfClips {
 			v = intersect(v, transformRect(p.world, p.selfClip))
 		}
-		if p.lifted || p.parent == 0 {
+		if p.lifted {
 			break
 		}
 	}

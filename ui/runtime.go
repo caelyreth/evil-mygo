@@ -1762,8 +1762,10 @@ func (rt *engine) commitElement(e *node, clip Rect, hidden bool) {
 	s.x, s.y, s.w, s.h = e.x, e.y, e.w, e.h
 	if e.parent != nil {
 		s.parent = e.parent.id
+		s.parentSt = e.parent.st
 	} else {
 		s.parent = 0
+		s.parentSt = nil
 	}
 	s.flags = e.flags
 	if s.fingersFrame != rt.frame && (s.refresh != nil || s.longPress) {

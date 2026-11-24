@@ -432,10 +432,10 @@ func (rt *engine) containsScrolled(s *state, r Rect, x, y float32, scrolled bool
 	// How far the containers around s moved it.
 	var sx, sy float32
 	if scrolled && !s.lifted {
-		for p := rt.states[s.parent]; p != nil; p = rt.states[p.parent] {
+		for p := s.parentState(rt); p != nil; p = p.parentState(rt) {
 			dx, dy := p.scrolled()
 			sx, sy = sx+dx, sy+dy
-			if p.lifted || p.parent == 0 {
+			if p.lifted {
 				break
 			}
 		}
@@ -451,18 +451,21 @@ func (rt *engine) containsScrolled(s *state, r Rect, x, y float32, scrolled bool
 			return false
 		}
 	}
-	m, ok := s.world.Inverse()
-	if !ok {
-		return false
+	lx, ly := x-sx, y-sy
+	if s.world.Set {
+		m, ok := s.world.Inverse()
+		if !ok {
+			return false
+		}
+		lx, ly = m.Point(lx, ly)
 	}
-	lx, ly := m.Point(x-sx, y-sy)
 	if !r.Contains(lx, ly) || s.selfClips && !roundedContains(s.selfClip, uniformRadii(s.selfRadius), lx, ly) ||
 		s.hitFn != nil && !s.hitFn(lx, ly, Rect{s.x, s.y, s.w, s.h}) {
 		return false
 	}
 	// The clips around an element flying stop at it, as it paints out of
 	// them.
-	for p := rt.states[s.parent]; p != nil && !s.lifted; p = rt.states[p.parent] {
+	for p := s.parentState(rt); p != nil && !s.lifted; p = p.parentState(rt) {
 		if scrolled {
 			// A container's own box, and its clip, stay where they were
 			// as its content scrolls.
@@ -470,17 +473,20 @@ func (rt *engine) containsScrolled(s *state, r Rect, x, y float32, scrolled bool
 			sx, sy = sx-dx, sy-dy
 		}
 		if p.clips || p.selfClips {
-			m, ok := p.world.Inverse()
-			if !ok {
-				return false
+			px, py := x-sx, y-sy
+			if p.world.Set {
+				m, ok := p.world.Inverse()
+				if !ok {
+					return false
+				}
+				px, py = m.Point(px, py)
 			}
-			px, py := m.Point(x-sx, y-sy)
 			if p.clips && !roundedContains(p.clipRect, p.clipRadii, px, py) ||
 				p.selfClips && !roundedContains(p.selfClip, uniformRadii(p.selfRadius), px, py) {
 				return false
 			}
 		}
-		if p.lifted || p.parent == 0 {
+		if p.lifted {
 			break
 		}
 	}
