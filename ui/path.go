@@ -517,10 +517,12 @@ type paths struct {
 // pathJob is the mask drawPath asks the text system for, which draws it
 // with the engine's rasterizer and buffer when it is not cached.
 type pathJob struct {
-	f      *flatPath
-	w, h   int
-	hw     float32 // half the stroke's width; 0 fills
-	x0, y0 float32
+	f                *flatPath
+	baked            *BakedPath
+	bakedOx, bakedOy float32
+	w, h             int
+	hw               float32 // half the stroke's width; 0 fills
+	x0, y0           float32
 	// full draws a mask covered whole, as a tile inside a filled path.
 	full      bool
 	rasterize func() (w, h int, pix []byte)
@@ -970,6 +972,10 @@ func (rt *engine) rasterizeJob() (int, int, []byte) {
 	j := &rt.paths.job
 	rt.paths.rasterized = true
 	z := &rt.paths.raster
+	if j.baked != nil {
+		j.baked.fillShifted(&rt.paths.flat, j.bakedOx, j.bakedOy)
+		j.f = &rt.paths.flat
+	}
 	n := j.w * j.h
 	if cap(rt.paths.pix) < n {
 		rt.paths.pix = make([]byte, n)
@@ -1007,6 +1013,242 @@ func (p *Painter) FillPath(path *Path, c Color) {
 	f := &p.rt.paths.flat
 	path.flatten(f, p.scale)
 	p.drawPath(f, 0, c, nil)
+}
+
+type bakedPhase struct {
+	ready  bool
+	ok     bool
+	key    uint64
+	dx, dy float32
+	w, h   int
+}
+
+// BakedPath is an immutable, pre-flattened path whose mask keys and flattened
+// polylines are cached across frames and translations for Painter.FillBakedPath.
+type BakedPath struct {
+	cmds    []pathCmd
+	rule    FillRule
+	trim    [2]float32
+	trimmed bool
+
+	mu     sync.Mutex
+	scale  float32
+	flat   flatPath
+	minX   float32
+	minY   float32
+	valid  bool
+	phases [16]bakedPhase
+}
+
+// BakePath returns an immutable BakedPath snapshot of p for repeated
+// translations via Painter.FillBakedPath.
+func BakePath(p *Path) *BakedPath {
+	if p == nil {
+		return nil
+	}
+	return &BakedPath{
+		cmds:    slices.Clone(p.cmds),
+		rule:    p.rule,
+		trim:    p.trim,
+		trimmed: p.trimmed,
+	}
+}
+
+func (b *BakedPath) prepareLocked(scale float32) bool {
+	if b.scale != scale {
+		src := Path{cmds: b.cmds, rule: b.rule, trim: b.trim, trimmed: b.trimmed}
+		src.flatten(&b.flat, scale)
+		b.phases = [16]bakedPhase{}
+		b.scale = scale
+		b.valid = b.flat.polys() > 0
+		if b.valid {
+			minX, minY := float32(math.MaxFloat32), float32(math.MaxFloat32)
+			for _, pt := range b.flat.pts {
+				minX, minY = min(minX, pt[0]), min(minY, pt[1])
+			}
+			b.minX, b.minY = minX, minY
+		}
+	}
+	return b.valid
+}
+
+func (b *BakedPath) fillTranslated(dst *flatPath, ox, oy float32) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	dst.reset()
+	dst.evenOdd = b.flat.evenOdd
+	dst.starts = append(dst.starts, b.flat.starts...)
+	dst.closed = append(dst.closed, b.flat.closed...)
+	if cap(dst.pts) < len(b.flat.pts) {
+		dst.pts = make([][2]float32, len(b.flat.pts))
+	} else {
+		dst.pts = dst.pts[:len(b.flat.pts)]
+	}
+	for i, pt := range b.flat.pts {
+		dst.pts[i] = [2]float32{pt[0] + ox, pt[1] + oy}
+	}
+}
+
+func (b *BakedPath) fillShifted(dst *flatPath, ox, oy float32) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	fillSnappedPoints(dst, &b.flat, ox, oy)
+}
+
+func fillSnappedPoints(dst, src *flatPath, ox, oy float32) {
+	dst.reset()
+	dst.evenOdd = src.evenOdd
+	dst.starts = append(dst.starts, src.starts...)
+	dst.closed = append(dst.closed, src.closed...)
+	if cap(dst.pts) < len(src.pts) {
+		dst.pts = make([][2]float32, len(src.pts))
+	} else {
+		dst.pts = dst.pts[:len(src.pts)]
+	}
+	for i, pt := range src.pts {
+		dst.pts[i] = [2]float32{round((pt[0]+ox)*4) / 4, round((pt[1]+oy)*4) / 4}
+	}
+}
+
+func hashFillFlatPath(f *flatPath, x0, y0 float32, w, h int) uint64 {
+	var buf [8]byte
+	var hs maphash.Hash
+	hs.SetSeed(pathSeed)
+	key := uint64(1)
+	if f.evenOdd {
+		key = 3
+	}
+	binary.LittleEndian.PutUint64(buf[:], key)
+	hs.Write(buf[:])
+	for i := range f.polys() {
+		for _, pt := range f.poly(i) {
+			binary.LittleEndian.PutUint32(buf[:4], math.Float32bits(round((pt[0]-x0)*4)))
+			binary.LittleEndian.PutUint32(buf[4:], math.Float32bits(round((pt[1]-y0)*4)))
+			hs.Write(buf[:])
+		}
+		end := byte(0xff)
+		if f.closed[i] {
+			end = 0xfe
+		}
+		hs.WriteByte(end)
+	}
+	return hs.Sum64()
+}
+
+func (b *BakedPath) lookupPhase(scale, dx, dy float32, scratch *flatPath) (minX, minY float32, qx, qy int, x0, y0 float32, ph bakedPhase, ok bool) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if !b.prepareLocked(scale) {
+		return 0, 0, 0, 0, 0, 0, bakedPhase{}, false
+	}
+	minX, minY = b.minX, b.minY
+	rawMinX, rawMinY := minX+dx, minY+dy
+	x0 = float32(math.Floor(float64(rawMinX)))
+	y0 = float32(math.Floor(float64(rawMinY)))
+	qx = int(round((rawMinX - x0) * 4))
+	if qx == 4 {
+		qx = 0
+		x0++
+	}
+	qy = int(round((rawMinY - y0) * 4))
+	if qy == 4 {
+		qy = 0
+		y0++
+	}
+	idx := qy*4 + qx
+	ph = b.phases[idx]
+	if !ph.ready {
+		ox := float32(qx)/4 - minX
+		oy := float32(qy)/4 - minY
+		fillSnappedPoints(scratch, &b.flat, ox, oy)
+		sminX, sminY := float32(math.MaxFloat32), float32(math.MaxFloat32)
+		smaxX, smaxY := float32(-math.MaxFloat32), float32(-math.MaxFloat32)
+		for _, pt := range scratch.pts {
+			sminX, smaxX = min(sminX, pt[0]), max(smaxX, pt[0])
+			sminY, smaxY = min(sminY, pt[1]), max(smaxY, pt[1])
+		}
+		mx0 := float32(math.Floor(float64(sminX)))
+		my0 := float32(math.Floor(float64(sminY)))
+		wf, hf := math.Ceil(float64(smaxX-mx0))+1, math.Ceil(float64(smaxY-my0))+1
+		if wf <= 0 || hf <= 0 || wf > pathSpanMax || hf > pathSpanMax {
+			ph = bakedPhase{ready: true, ok: false}
+		} else {
+			w, h := int(wf), int(hf)
+			ph = bakedPhase{
+				ready: true,
+				ok:    true,
+				key:   hashFillFlatPath(scratch, mx0, my0, w, h),
+				dx:    mx0,
+				dy:    my0,
+				w:     w,
+				h:     h,
+			}
+		}
+		b.phases[idx] = ph
+	}
+	return minX, minY, qx, qy, x0, y0, ph, true
+}
+
+// FillBakedPath fills b translated by (x, y) in DIPs using cached flattening
+// and mask keys across frames and placements.
+func (p *Painter) FillBakedPath(b *BakedPath, x, y float32, c Color) {
+	if b == nil || len(b.cmds) == 0 {
+		return
+	}
+	dx, dy := x*p.scale, y*p.scale
+	minX, minY, qx, qy, x0, y0, ph, valid := b.lookupPhase(p.scale, dx, dy, &p.rt.paths.flat)
+	if !valid {
+		return
+	}
+	if !ph.ok {
+		p.rt.pathLost("it is wider or taller than float32 can place its points in (pathSpanMax)")
+		return
+	}
+	ps := &p.rt.paths
+	large := ph.w > pathTile || ph.h > pathTile
+	if p.transform.Set || p.spillOnTop() != nil || spillEveryPath ||
+		ph.w > pathMaskMax || ph.h > pathMaskMax || (large && ps.crowded >= p.rt.paints) {
+		b.fillTranslated(&ps.flat, dx, dy)
+		p.drawPath(&ps.flat, 0, c, nil)
+		return
+	}
+	gx0, gy0 := x0+ph.dx, y0+ph.dy
+	start := int32(len(p.s.Glyphs))
+	c = c.Alpha(p.opacity)
+	tint := scene.Glyph{Color: c.scene(), Wide: p.glyphWide(c)}
+	op := scene.Op{Kind: scene.OpGlyphs}
+	ps.cur = spillPath{op: op, tint: tint}
+	ps.cur.tint.Wide = 0
+	j := &ps.job
+	if j.rasterize == nil {
+		j.rasterize = p.rt.rasterizePath
+	}
+	j.f, j.baked = nil, b
+	j.bakedOx, j.bakedOy = x0+float32(qx)/4-minX, y0+float32(qy)/4-minY
+	j.w, j.h, j.hw, j.x0, j.y0, j.full = ph.w, ph.h, 0, gx0, gy0, false
+	_, quiet := p.spills()
+	ps.rasterized = false
+	var gi text.GlyphImage
+	if quiet {
+		gi = p.rt.text.TryMask(ph.key, j.rasterize)
+	} else {
+		gi = p.rt.text.Mask(ph.key, j.rasterize)
+	}
+	j.f, j.baked = nil, nil
+	if !gi.OK {
+		b.fillTranslated(&ps.flat, dx, dy)
+		p.drawPath(&ps.flat, 0, c, nil)
+		return
+	}
+	if large {
+		ps.large = append(ps.large, ph.key)
+	}
+	g := tint
+	g.X, g.Y, g.W, g.H, g.U, g.V, g.UW, g.VH = gx0, gy0, float32(gi.W), float32(gi.H), gi.X, gi.Y, gi.W, gi.H
+	p.s.Glyphs = append(p.s.Glyphs, g)
+	op.Start, op.End = start, start+1
+	p.add(op)
+	p.endSpill()
 }
 
 // FillPathGradient fills a path with a gradient across its bounds, as the
