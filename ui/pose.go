@@ -168,7 +168,10 @@ func (rt *engine) repose() {
 		if r := e.st.pose; r != nil && (r.moving() || d.current(rt) && d.moving()) {
 			rt.showPose(e, r)
 			e.reposed = true
-			rt.inkStale = true
+			rt.hitsReposed = true
+			for p := e; p != nil && !p.noCull; p = p.parent {
+				p.noCull = true
+			}
 		}
 	}
 	for _, e := range rt.posed {

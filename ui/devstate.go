@@ -94,6 +94,9 @@ func attachDevState(h *windowHost) {
 	go func() {
 		// A window closed drops what's posted to it, which ends this.
 		var waiting atomic.Int32
+		var haveSnap bool
+		var lastFrame, lastPaints uint64
+		var lastPartPaints int
 		for range time.Tick(devStateEvery) {
 			if waiting.Add(1) > 16 {
 				return
@@ -103,6 +106,10 @@ func attachDevState(h *windowHost) {
 				if rt.closed {
 					return
 				}
+				if haveSnap && rt.frame == lastFrame && rt.paints == lastPaints && rt.partPaints == lastPartPaints {
+					return
+				}
+				lastFrame, lastPaints, lastPartPaints, haveSnap = rt.frame, rt.paints, rt.partPaints, true
 				data := rt.keptNow()
 				if data == nil || bytes.Equal(data, last) {
 					return

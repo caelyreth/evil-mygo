@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"bytes"
 	"testing"
 	"time"
 )
@@ -166,5 +167,45 @@ func TestPosePercent(t *testing.T) {
 	tt.Frame()
 	if m := card.st.world; m.X < 24.9 || m.X > 25.1 {
 		t.Errorf("halfway, the card shows at %v", m.X)
+	}
+}
+
+func TestPoseMovesKeepOffscreenCulling(t *testing.T) {
+	dy := float32(0)
+	view := func(c *context) {
+		coreBox(c).Fill().Clip().Children(func() {
+			coreColumn(c).Children(func() {
+				// Start with the animated box slightly above the clip so commit's ink
+				// lies offscreen before repose moves it into view, plus 100 offscreen rows.
+				coreBox(c).Size(40, 20).Background(RGB(220, 40, 40)).
+					AnimatePose(Pose{Y: -30 + dy}, Animation{Duration: 100 * time.Millisecond, Ease: Linear})
+				coreBox(c).Height(120) // push sibling list below the 100px window height
+				for range 100 {
+					coreBox(c).Height(20).Background(RGB(20, 30, 40))
+				}
+			})
+		})
+	}
+	cull := newRepaintTester(view)
+	noCull := newRepaintTester(view)
+	noCull.rt.noCull = true
+
+	dy = 60
+	cull.rt.requestFrame()
+	noCull.rt.requestFrame()
+	cull.frame(0)
+	noCull.frame(0)
+
+	before := cull.rt.culled
+	built, more := cull.frame(50 * time.Millisecond)
+	noCull.frame(50 * time.Millisecond)
+	if built || !more {
+		t.Fatalf("halfway: built=%v more=%v, want paint-only animation", built, more)
+	}
+	if skipped := cull.rt.culled - before; skipped < 95 {
+		t.Errorf("culled=%d offscreen rows during pose frame, want >= 95", skipped)
+	}
+	if !bytes.Equal(cull.Image().Pix, noCull.Image().Pix) {
+		t.Errorf("scoped pose culling differs from noCull rendering")
 	}
 }

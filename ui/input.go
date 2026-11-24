@@ -222,6 +222,23 @@ func (rt *engine) hitChain(x, y float32) []uint64 { return rt.appendHitChain(nil
 
 // appendHitChain appends hitChain(x, y) to chain.
 func (rt *engine) appendHitChain(chain []uint64, x, y float32) []uint64 {
+	if !rt.hitsReposed && !rt.noHitFilter {
+		vis := rt.ensureVisHits()
+		for i := len(vis) - 1; i >= 0; i-- {
+			vh := &vis[i]
+			if vh.boxed && (x < vh.vx0 || y < vh.vy0 || x >= vh.vx1 || y >= vh.vy1) {
+				continue
+			}
+			if !rt.contains(vh.st, vh.r, x, y) {
+				continue
+			}
+			for s := vh.st; s != nil; s = s.parentState(rt) {
+				chain = append(chain, s.id)
+			}
+			return chain
+		}
+		return chain
+	}
 	for i := len(rt.hits) - 1; i >= 0; i-- {
 		h := &rt.hits[i]
 		if !rt.contains(h.st, h.r, x, y) {
@@ -359,15 +376,32 @@ func (rt *engine) unhoverGone() bool {
 		return false
 	}
 	chain := rt.chain[:0]
-	for i := len(rt.hits) - 1; i >= 0; i-- {
-		h := &rt.hits[i]
-		if !built(h.st) || !rt.contains(h.st, h.r, rt.pointerX, rt.pointerY) {
-			continue
+	if !rt.hitsReposed && !rt.noHitFilter {
+		vis := rt.ensureVisHits()
+		for i := len(vis) - 1; i >= 0; i-- {
+			vh := &vis[i]
+			if vh.boxed && (rt.pointerX < vh.vx0 || rt.pointerY < vh.vy0 || rt.pointerX >= vh.vx1 || rt.pointerY >= vh.vy1) {
+				continue
+			}
+			if !built(vh.st) || !rt.contains(vh.st, vh.r, rt.pointerX, rt.pointerY) {
+				continue
+			}
+			for s := vh.st; s != nil; s = s.parentState(rt) {
+				chain = append(chain, s.id)
+			}
+			break
 		}
-		for s := h.st; s != nil; s = s.parentState(rt) {
-			chain = append(chain, s.id)
+	} else {
+		for i := len(rt.hits) - 1; i >= 0; i-- {
+			h := &rt.hits[i]
+			if !built(h.st) || !rt.contains(h.st, h.r, rt.pointerX, rt.pointerY) {
+				continue
+			}
+			for s := h.st; s != nil; s = s.parentState(rt) {
+				chain = append(chain, s.id)
+			}
+			break
 		}
-		break
 	}
 	old := rt.hover
 	if slices.Equal(chain, old) {

@@ -252,7 +252,10 @@ type engine struct {
 
 	// What the last frame laid out, for input until the next one: the
 	// focus order, with the scope of each element, and the dialog on top.
-	hits []hit
+	hits         []hit
+	visHits      []visHit
+	visHitsBuilt bool
+	hitsReposed  bool
 	// liftHits gathers the hits of the elements flying as the frame
 	// commits, which go over the rest of their layer, as they paint
 	// (matches.paint); lifting tells that one is committing.
@@ -541,14 +544,10 @@ type engine struct {
 	partOps       []scene.Op
 	partPaints    int
 	noParts       bool
-	paceEvery     int
-	paceRate      float32
-	pacedAt       time.Time
-	pacedNext     time.Time
-	// inkStale tells that elements moved since commit found their ink
-	// (node.ink), as poses do in frames that only paint: painting then
-	// skips none.
-	inkStale   bool
+	paceEvery  int
+	paceRate   float32
+	pacedAt    time.Time
+	pacedNext  time.Time
 	repaintDue time.Time
 	// late is set when lists built elements while laying out.
 	late bool
@@ -696,6 +695,13 @@ type hit struct {
 	st    *state
 	r     Rect
 	flags uint32
+}
+
+type visHit struct {
+	st                 *state
+	r                  Rect
+	vx0, vy0, vx1, vy1 float32
+	boxed              bool
 }
 
 type shortcutReg struct {
@@ -1653,6 +1659,7 @@ func (rt *engine) dropFrame() {
 	clear(rt.states)
 	rt.free = nil
 	rt.hits, rt.liftHits = nil, nil
+	rt.visHits, rt.visHitsBuilt, rt.hitsReposed = nil, false, false
 	rt.tips.pending = nil
 	rt.journal = journal{}
 	if checkBuilt != nil {
@@ -1678,6 +1685,8 @@ func (rt *engine) endFrame() {
 // boxes, the hit list in paint order, the focus order.
 func (rt *engine) commit(root *node, w, h float32) {
 	rt.hits, rt.liftHits = rt.hits[:0], rt.liftHits[:0]
+	clear(rt.visHits)
+	rt.visHits, rt.visHitsBuilt, rt.hitsReposed = rt.visHits[:0], false, false
 	clear(rt.posed)
 	rt.posed = rt.posed[:0]
 	clear(rt.webPlaces)
@@ -1697,9 +1706,41 @@ func (rt *engine) commit(root *node, w, h float32) {
 	full := Rect{0, 0, w, h}
 	rt.commitElement(root, full, false)
 	rt.liftHitsOver()
-	rt.inkStale = false
 	rt.arrangeFocus()
 	rt.noteGroups()
+}
+
+// ensureVisHits lazily filters rt.hits to entries whose clipped window box is
+// non-empty (plus inline text fragments), caching inline bounds until the next
+// commit or pose movement.
+func (rt *engine) ensureVisHits() []visHit {
+	if rt.visHitsBuilt {
+		return rt.visHits
+	}
+	vis := rt.visHits[:0]
+	for i := range rt.hits {
+		h := &rt.hits[i]
+		s := h.st
+		if h.r == (Rect{s.x, s.y, s.w, s.h}) {
+			if s.vw <= 0 || s.vh <= 0 {
+				continue
+			}
+			const m = 0.5
+			vis = append(vis, visHit{
+				st:    s,
+				r:     h.r,
+				vx0:   s.vx - m,
+				vy0:   s.vy - m,
+				vx1:   s.vx + s.vw + m,
+				vy1:   s.vy + s.vh + m,
+				boxed: true,
+			})
+			continue
+		}
+		vis = append(vis, visHit{st: s, r: h.r})
+	}
+	rt.visHits, rt.visHitsBuilt = vis, true
+	return rt.visHits
 }
 
 func (rt *engine) commitElement(e *node, clip Rect, hidden bool) {

@@ -117,7 +117,7 @@ func (rt *engine) paint(root *node, w, h, scale float32) {
 	p := &rt.painter
 	uses, opened := rt.text.TransientUses(), rt.paths.spill.opened
 	rt.partTransient, rt.paths.spill.inParts = 0, 0
-	p.cull = !rt.inkStale && !rt.noCull
+	p.cull = !rt.noCull
 	p.element(root)
 	p.cull = false
 	if touchPaint != nil {
@@ -288,8 +288,10 @@ func (e *node) ringMargin() float32 {
 func (e *node) setInk(vis Rect) {
 	m := e.shadowMargin() + e.ringMargin()
 	ink := [4]float32{vis.X - m, vis.Y - m, vis.X + vis.W + m, vis.Y + vis.H + m}
+	trec := e.st.trec
+	activeTrec := trec != nil && trec.built == e.c.rt.frame && trec.elem == e
 	no := e.isInline() || e.kind == kindText && e.first != nil || e.effect != nil || e.blur > 0 ||
-		e.flags&(flagDividers|flagDebug) != 0 || e.ghosts || e.leaving != 0 || e.st.trec != nil
+		e.flags&(flagDividers|flagDebug) != 0 || e.ghosts || e.leaving != 0 || activeTrec
 	for ch := e.first; ch != nil; ch = ch.next {
 		ink = [4]float32{min(ink[0], ch.ink[0]), min(ink[1], ch.ink[1]), max(ink[2], ch.ink[2]), max(ink[3], ch.ink[3])}
 		no = no || ch.noCull
@@ -300,7 +302,7 @@ func (e *node) setInk(vis Rect) {
 // paintable reports whether painting e may paint something: whether some
 // of its ink shows in the clip, as visible tests a box.
 func (p *Painter) paintable(e *node) bool {
-	if !p.cull || e.noCull {
+	if !p.cull || e.noCull || e.st.reposed {
 		return true
 	}
 	c, r := p.clip, e.ink
