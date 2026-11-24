@@ -56,25 +56,30 @@ func (r *Renderer) surfaceView(img *scene.Image, s *scene.Surface) uintptr {
 	t := r.images[img.ID()]
 	cw, ch := (img.W+1)/2, (img.H+1)/2
 	if t != nil && (t.chroma == nil || t.w != img.W || t.h != img.H) {
-		freeTexture(t)
+		r.freeImageTexture(t)
+		delete(r.images, img.ID())
 		t = nil
 	}
 	if t == nil {
 		t = &texture{chroma: &texture{}}
 		if r.planeTexture(t, img.W, img.H, formatR8Unorm, s.Planes[0]) != nil ||
 			r.planeTexture(t.chroma, cw, ch, formatR8G8Unorm, s.Planes[1]) != nil {
-			freeTexture(t)
+			r.freeImageTexture(t)
 			delete(r.images, img.ID())
 			return 0
 		}
 		t.ver = img.Version()
 		r.images[img.ID()] = t
+		r.setImageBytes(t, img.W*img.H+cw*ch*2)
 	} else if t.ver != img.Version() {
 		call(r.ctx, ctxUpdateSubresource, t.tex, 0, 0, uintptr(unsafe.Pointer(&s.Planes[0].Pix[0])), uintptr(s.Planes[0].Stride), 0)
 		call(r.ctx, ctxUpdateSubresource, t.chroma.tex, 0, 0, uintptr(unsafe.Pointer(&s.Planes[1].Pix[0])), uintptr(s.Planes[1].Stride), 0)
 		t.ver = img.Version()
 	}
 	t.lastFrame = r.frame
+	if r.imageBytes > maxImageBytes {
+		r.evictImages()
+	}
 	return t.srv
 }
 

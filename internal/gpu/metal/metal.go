@@ -11,12 +11,14 @@ package metal
 //go:generate go run gen.go
 
 import (
+	"cmp"
 	_ "embed"
 	"errors"
 	"fmt"
 	"image"
 	"os"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -363,6 +365,7 @@ type texture struct {
 	cv        [2]uintptr
 	w, h      int
 	alpha     bool
+	bytes     int
 	gen, ver  uint64
 	lastFrame uint64
 	// gpu marks an image's texture that its GPUSource gave, which shows
@@ -479,8 +482,9 @@ type Renderer struct {
 	mask   texture
 	color  texture
 	empty  id // a texture to bind where there is none
-	images map[uint64]*texture
-	video  videoState
+	images     map[uint64]*texture
+	imageBytes int64
+	video      videoState
 	// canvases are the textures canvases are drawn into.
 	canvases map[uint64]*canvasTexture
 	// atlases are the atlases of the frame being drawn, which mask and
@@ -1208,6 +1212,40 @@ func (r *Renderer) syncAtlas(t *texture, a *scene.Atlas, format uint) error {
 	return nil
 }
 
+// maxImageBytes bounds active renderer-owned image and video-plane VRAM.
+const maxImageBytes = 128 << 20
+
+func (r *Renderer) setImageBytes(t *texture, n int) {
+	r.imageBytes += int64(n - t.bytes)
+	t.bytes = n
+}
+
+func (r *Renderer) evictImages() {
+	if r.imageBytes <= maxImageBytes {
+		return
+	}
+	target := int64(maxImageBytes * 3 / 4)
+	type victim struct {
+		id        uint64
+		tex       *texture
+		lastFrame uint64
+	}
+	var victims []victim
+	for k, t := range r.images {
+		if t.bytes > 0 && t.lastFrame < r.frame {
+			victims = append(victims, victim{k, t, t.lastFrame})
+		}
+	}
+	slices.SortFunc(victims, func(a, b victim) int { return cmp.Compare(a.lastFrame, b.lastFrame) })
+	for _, v := range victims {
+		if r.imageBytes <= target {
+			break
+		}
+		r.dropTexture(v.tex)
+		delete(r.images, v.id)
+	}
+}
+
 // imageTexture returns the texture of an image, uploading it when new or
 // changed.
 func (r *Renderer) imageTexture(img *scene.Image) uintptr {
@@ -1250,6 +1288,7 @@ func (r *Renderer) imageTexture(img *scene.Image) uintptr {
 		}
 		t = &texture{tex: tex, w: img.W, h: img.H, alpha: img.Alpha, ver: img.Version()}
 		r.images[img.ID()] = t
+		r.setImageBytes(t, img.W*img.H*bpp)
 		img.Uploaded()
 	} else if t.w != img.W || t.h != img.H || t.alpha != img.Alpha {
 		if pix := img.Pixels(); pix != nil {
@@ -1259,6 +1298,7 @@ func (r *Renderer) imageTexture(img *scene.Image) uintptr {
 			}
 			release(&t.tex)
 			t.tex, t.w, t.h, t.alpha, t.ver = tex, img.W, img.H, img.Alpha, img.Version()
+			r.setImageBytes(t, img.W*img.H*bpp)
 			img.Uploaded()
 		}
 	} else if t.ver != img.Version() {
@@ -1272,6 +1312,9 @@ func (r *Renderer) imageTexture(img *scene.Image) uintptr {
 		}
 	}
 	t.lastFrame = r.frame
+	if r.imageBytes > maxImageBytes {
+		r.evictImages()
+	}
 	return t.tex
 }
 
@@ -1293,6 +1336,7 @@ func (r *Renderer) gpuTexture(img *scene.Image) uintptr {
 		r.images[img.ID()] = t
 	} else {
 		// The previous frame's, or a texture of its pixels.
+		r.setImageBytes(t, 0)
 		release(&t.tex)
 	}
 	t.tex, t.w, t.h, t.alpha, t.ver, t.lastFrame, t.gpu = tex, img.W, img.H, false, img.Version(), r.frame, true
@@ -2209,6 +2253,7 @@ func (r *Renderer) releaseTextures() {
 		r.dropTexture(t)
 		delete(r.images, key)
 	}
+	r.imageBytes = 0
 	for key, t := range r.canvases {
 		release(&t.tex)
 		t.drawState.release()
@@ -2504,6 +2549,7 @@ func (r *Renderer) sweep() {
 			delete(r.images, key)
 		}
 	}
+	r.evictImages()
 	for key, t := range r.canvases {
 		if c := t.canvas.Value(); c == nil || c.Transient && t.lastFrame != r.frame {
 			release(&t.tex)

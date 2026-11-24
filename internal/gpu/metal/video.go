@@ -103,6 +103,7 @@ func (r *Renderer) surfaceTexture(img *scene.Image, s *scene.Surface) id {
 		}
 		t = &texture{tex: luma, chroma: chroma, w: img.W, h: img.H, ver: img.Version()}
 		r.images[img.ID()] = t
+		r.setImageBytes(t, img.W*img.H+cw*ch*2)
 	} else {
 		lumaRect := []image.Rectangle{image.Rect(0, 0, img.W, img.H)}
 		chromaRect := []image.Rectangle{image.Rect(0, 0, cw, ch)}
@@ -116,6 +117,9 @@ func (r *Renderer) surfaceTexture(img *scene.Image, s *scene.Surface) id {
 		t.ver = img.Version()
 	}
 	t.lastFrame = r.frame
+	if r.imageBytes > maxImageBytes {
+		r.evictImages()
+	}
 	return t.tex
 }
 
@@ -176,6 +180,7 @@ func (r *Renderer) chromaTexture(img *scene.Image) uintptr {
 // made, and those wrapping a CVPixelBuffer once the frames in flight,
 // which may read them, completed.
 func (r *Renderer) dropTexture(t *texture) {
+	r.setImageBytes(t, 0)
 	if t.cv != [2]uintptr{} {
 		for _, c := range t.cv {
 			if c != 0 {

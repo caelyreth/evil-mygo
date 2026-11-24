@@ -13,10 +13,12 @@ package d3d11
 //go:generate go run gen.go
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"image"
 	"os"
+	"slices"
 	"sync"
 	"syscall"
 	"time"
@@ -268,6 +270,7 @@ type texture struct {
 	chroma    *texture
 	w, h      int
 	alpha     bool
+	bytes     int
 	gen, ver  uint64
 	lastFrame uint64
 	// source belongs to uploads of RGBA images. Holding it weakly lets
@@ -380,6 +383,7 @@ type Renderer struct {
 
 	mask, color texture
 	images      map[uint64]*texture
+	imageBytes  int64
 	video       videoState
 	frame       uint64
 	swept       uint64 // the frame of the last sweep
@@ -848,6 +852,7 @@ func (r *Renderer) Release() {
 		freeTexture(t)
 	}
 	r.images = nil
+	r.imageBytes = 0
 	r.releaseShared()
 	r.sweepShared(true)
 	for _, t := range r.canvases {
@@ -926,6 +931,45 @@ func (r *Renderer) syncAtlas(t *texture, a *scene.Atlas, format uint32) error {
 	return nil
 }
 
+// maxImageBytes bounds active renderer-owned image and video-plane VRAM.
+const maxImageBytes = 128 << 20
+
+func (r *Renderer) setImageBytes(t *texture, n int) {
+	r.imageBytes += int64(n - t.bytes)
+	t.bytes = n
+}
+
+func (r *Renderer) freeImageTexture(t *texture) {
+	r.setImageBytes(t, 0)
+	freeTexture(t)
+}
+
+func (r *Renderer) evictImages() {
+	if r.imageBytes <= maxImageBytes {
+		return
+	}
+	target := int64(maxImageBytes * 3 / 4)
+	type victim struct {
+		id        uint64
+		tex       *texture
+		lastFrame uint64
+	}
+	var victims []victim
+	for k, t := range r.images {
+		if t.bytes > 0 && t.lastFrame < r.frame {
+			victims = append(victims, victim{k, t, t.lastFrame})
+		}
+	}
+	slices.SortFunc(victims, func(a, b victim) int { return cmp.Compare(a.lastFrame, b.lastFrame) })
+	for _, v := range victims {
+		if r.imageBytes <= target {
+			break
+		}
+		r.freeImageTexture(v.tex)
+		delete(r.images, v.id)
+	}
+}
+
 // imageView returns the texture view of an image, uploading it when new or
 // changed.
 func (r *Renderer) imageView(img *scene.Image) uintptr {
@@ -946,7 +990,7 @@ func (r *Renderer) imageView(img *scene.Image) uintptr {
 	t := r.images[img.ID()]
 	if t != nil && t.chroma != nil {
 		// It showed a frame of video in planes, and no longer does.
-		freeTexture(t)
+		r.freeImageTexture(t)
 		delete(r.images, img.ID())
 		t = nil
 	}
@@ -961,6 +1005,7 @@ func (r *Renderer) imageView(img *scene.Image) uintptr {
 		}
 		t.ver = img.Version()
 		r.images[img.ID()] = t
+		r.setImageBytes(t, img.W*img.H*bpp)
 		img.Uploaded()
 	} else if t.w != img.W || t.h != img.H || t.alpha != img.Alpha {
 		if pix := img.Pixels(); pix != nil {
@@ -968,6 +1013,7 @@ func (r *Renderer) imageView(img *scene.Image) uintptr {
 				return 0
 			}
 			t.alpha, t.ver = img.Alpha, img.Version()
+			r.setImageBytes(t, img.W*img.H*bpp)
 			img.Uploaded()
 		}
 	} else if t.ver != img.Version() {
@@ -978,6 +1024,9 @@ func (r *Renderer) imageView(img *scene.Image) uintptr {
 		}
 	}
 	t.lastFrame = r.frame
+	if r.imageBytes > maxImageBytes {
+		r.evictImages()
+	}
 	return t.srv
 }
 
@@ -2022,7 +2071,7 @@ func (r *Renderer) TrimIdleImages() {
 	removed := false
 	for id, t := range r.images {
 		if t.chroma == nil && t.source.Value() == nil {
-			freeTexture(t)
+			r.freeImageTexture(t)
 			delete(r.images, id)
 			removed = true
 		}
@@ -2039,10 +2088,11 @@ func (r *Renderer) TrimIdleImages() {
 func (r *Renderer) sweep() {
 	for id, t := range r.images {
 		if r.frame-t.lastFrame > 240 {
-			freeTexture(t)
+			r.freeImageTexture(t)
 			delete(r.images, id)
 		}
 	}
+	r.evictImages()
 	r.sweepShared(false)
 	for id, t := range r.canvases {
 		if c := t.canvas.Value(); c == nil || c.Transient && t.lastFrame != r.frame {

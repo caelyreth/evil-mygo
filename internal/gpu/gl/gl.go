@@ -13,10 +13,12 @@
 package gl
 
 import (
+	"cmp"
 	_ "embed"
 	"fmt"
 	"image"
 	"os"
+	"slices"
 	"strings"
 	"unsafe"
 	"weak"
@@ -103,6 +105,7 @@ type texture struct {
 	chroma    uint32
 	w, h      int
 	alpha     bool
+	bytes     int
 	gen, ver  uint64
 	lastFrame uint64
 }
@@ -132,11 +135,12 @@ type Renderer struct {
 	program  uint32
 	vao, buf uint32
 	uSize    int32
-	mask     texture
-	color    texture
-	empty    uint32 // a texture to bind where there is none
-	images   map[uint64]*texture
-	frame    uint64
+	mask       texture
+	color      texture
+	empty      uint32 // a texture to bind where there is none
+	images     map[uint64]*texture
+	imageBytes int64
+	frame      uint64
 	// canvases are the textures canvases are drawn into, and canvasTex
 	// the names of those textures.
 	canvases  map[uint64]*canvasTexture
@@ -540,6 +544,50 @@ func (r *Renderer) syncAtlas(t *texture, a *scene.Atlas, internal int32, format 
 	return nil
 }
 
+// maxImageBytes bounds active renderer-owned image and video-plane VRAM.
+const maxImageBytes = 128 << 20
+
+func (r *Renderer) setImageBytes(t *texture, n int) {
+	r.imageBytes += int64(n - t.bytes)
+	t.bytes = n
+}
+
+func (r *Renderer) deleteImageTexture(t *texture) {
+	r.setImageBytes(t, 0)
+	if t.tex != 0 {
+		glDeleteTextures(1, &t.tex)
+	}
+	if t.chroma != 0 {
+		glDeleteTextures(1, &t.chroma)
+	}
+}
+
+func (r *Renderer) evictImages() {
+	if r.imageBytes <= maxImageBytes {
+		return
+	}
+	target := int64(maxImageBytes * 3 / 4)
+	type victim struct {
+		id        uint64
+		tex       *texture
+		lastFrame uint64
+	}
+	var victims []victim
+	for k, t := range r.images {
+		if t.bytes > 0 && t.lastFrame < r.frame {
+			victims = append(victims, victim{k, t, t.lastFrame})
+		}
+	}
+	slices.SortFunc(victims, func(a, b victim) int { return cmp.Compare(a.lastFrame, b.lastFrame) })
+	for _, v := range victims {
+		if r.imageBytes <= target {
+			break
+		}
+		r.deleteImageTexture(v.tex)
+		delete(r.images, v.id)
+	}
+}
+
 func (r *Renderer) imageTexture(img *scene.Image) uintptr {
 	if img.W > r.maxSize || img.H > r.maxSize {
 		return 0
@@ -563,8 +611,7 @@ func (r *Renderer) imageTexture(img *scene.Image) uintptr {
 	t := r.images[img.ID()]
 	if t != nil && t.chroma != 0 {
 		// It showed a frame of video in planes, and no longer does.
-		glDeleteTextures(1, &t.tex)
-		glDeleteTextures(1, &t.chroma)
+		r.deleteImageTexture(t)
 		delete(r.images, img.ID())
 		t = nil
 	}
@@ -575,12 +622,14 @@ func (r *Renderer) imageTexture(img *scene.Image) uintptr {
 		}
 		t = &texture{tex: newTexture(internal, format, img.W, img.H, pix, img.W*bpp), w: img.W, h: img.H, alpha: img.Alpha, ver: img.Version()}
 		r.images[img.ID()] = t
+		r.setImageBytes(t, img.W*img.H*bpp)
 		img.Uploaded()
 	} else if t.w != img.W || t.h != img.H || t.alpha != img.Alpha {
 		if pix := img.Pixels(); pix != nil {
 			glDeleteTextures(1, &t.tex)
 			t.tex = newTexture(internal, format, img.W, img.H, pix, img.W*bpp)
 			t.w, t.h, t.alpha, t.ver = img.W, img.H, img.Alpha, img.Version()
+			r.setImageBytes(t, img.W*img.H*bpp)
 			img.Uploaded()
 		}
 	} else if t.ver != img.Version() {
@@ -594,6 +643,9 @@ func (r *Renderer) imageTexture(img *scene.Image) uintptr {
 		}
 	}
 	t.lastFrame = r.frame
+	if r.imageBytes > maxImageBytes {
+		r.evictImages()
+	}
 	return uintptr(t.tex)
 }
 
@@ -605,10 +657,8 @@ func (r *Renderer) planesTexture(img *scene.Image, s *scene.Surface) uintptr {
 	cw, ch := (img.W+1)/2, (img.H+1)/2
 	t := r.images[img.ID()]
 	if t != nil && (t.chroma == 0 || t.w != img.W || t.h != img.H) {
-		glDeleteTextures(1, &t.tex)
-		if t.chroma != 0 {
-			glDeleteTextures(1, &t.chroma)
-		}
+		r.deleteImageTexture(t)
+		delete(r.images, img.ID())
 		t = nil
 	}
 	if t == nil {
@@ -616,6 +666,7 @@ func (r *Renderer) planesTexture(img *scene.Image, s *scene.Surface) uintptr {
 		t.tex = newTexture(glR8, glRed, img.W, img.H, s.Planes[0].Pix, s.Planes[0].Stride)
 		t.chroma = newTexture(glRG8, glRG, cw, ch, s.Planes[1].Pix, s.Planes[1].Stride)
 		r.images[img.ID()] = t
+		r.setImageBytes(t, img.W*img.H+cw*ch*2)
 	} else if t.ver != img.Version() {
 		glBindTexture(glTexture2D, t.tex)
 		unpack(s.Planes[0].Stride, glR8)
@@ -627,6 +678,9 @@ func (r *Renderer) planesTexture(img *scene.Image, s *scene.Surface) uintptr {
 		t.ver = img.Version()
 	}
 	t.lastFrame = r.frame
+	if r.imageBytes > maxImageBytes {
+		r.evictImages()
+	}
 	return uintptr(t.tex)
 }
 
@@ -634,11 +688,8 @@ func (r *Renderer) planesTexture(img *scene.Image, s *scene.Surface) uintptr {
 // (the surface's Native) into the texture it returns, GPU to GPU.
 func (r *Renderer) elementTexture(img *scene.Image, s *scene.Surface) uintptr {
 	t := r.images[img.ID()]
-	if t != nil && (t.chroma != 0 || t.w != img.W || t.h != img.H) {
-		glDeleteTextures(1, &t.tex)
-		if t.chroma != 0 {
-			glDeleteTextures(1, &t.chroma)
-		}
+	if t != nil && (t.chroma != 0 || t.w != img.W || t.h != img.H || t.bytes > 0) {
+		r.deleteImageTexture(t)
 		delete(r.images, img.ID())
 		t = nil
 	}
@@ -1296,6 +1347,7 @@ func (r *Renderer) forget() {
 	r.grab, r.backdrop, r.backdropFB = texture{}, [2]texture{}, [2]uint32{}
 	r.mask, r.color = texture{}, texture{}
 	clear(r.images)
+	r.imageBytes = 0
 	for _, t := range r.canvases {
 		t.b.Release()
 	}
@@ -1402,13 +1454,11 @@ func (r *Renderer) FrameInfo() string {
 func (r *Renderer) sweep() {
 	for key, t := range r.images {
 		if r.frame-t.lastFrame > 240 {
-			glDeleteTextures(1, &t.tex)
-			if t.chroma != 0 {
-				glDeleteTextures(1, &t.chroma)
-			}
+			r.deleteImageTexture(t)
 			delete(r.images, key)
 		}
 	}
+	r.evictImages()
 	for key, t := range r.canvases {
 		if c := t.canvas.Value(); c == nil || c.Transient && t.lastFrame != r.frame {
 			r.deleteCanvas(t)

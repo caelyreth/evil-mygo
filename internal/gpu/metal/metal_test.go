@@ -1580,3 +1580,41 @@ func TestLayerBackdropHysteresis(t *testing.T) {
 		}
 	})
 }
+
+func TestImageVRAMCapEvictsLRU(t *testing.T) {
+	r, err := newRenderer()
+	if err != nil {
+		unavailable(t, err)
+	}
+	defer r.Release()
+
+	// Each 4096×2048 RGBA image is 32 MiB; uploading 5 across distinct frames
+	// (160 MiB) exceeds maxImageBytes (128 MiB) and must evict oldest entries down
+	// to <= 96 MiB without evicting current-frame textures.
+	const w, h = 4096, 2048
+	pix := make([]byte, w*h*4)
+	imgs := make([]*scene.Image, 5)
+	pool(func() {
+		for i := range imgs {
+			imgs[i] = scene.NewImageRGBA(w, h, pix)
+			r.frame++
+			if tex := r.imageTexture(imgs[i]); tex == 0 {
+				t.Fatalf("frame %d: imageTexture returned 0", i)
+			}
+		}
+	})
+	if r.imageBytes > maxImageBytes*3/4 {
+		t.Fatalf("after eviction imageBytes = %d MiB, want <= %d MiB", r.imageBytes>>20, (maxImageBytes*3/4)>>20)
+	}
+	if r.images[imgs[0].ID()] != nil || r.images[imgs[1].ID()] != nil {
+		t.Fatal("oldest LRU image textures were not evicted")
+	}
+	if r.images[imgs[4].ID()] == nil {
+		t.Fatal("current-frame image texture was evicted")
+	}
+	// Release frees remaining textures and zeroes tracked imageBytes.
+	pool(r.releaseTextures)
+	if r.imageBytes != 0 {
+		t.Fatalf("after releaseTextures imageBytes = %d, want 0", r.imageBytes)
+	}
+}
