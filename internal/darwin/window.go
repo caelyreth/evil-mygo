@@ -762,6 +762,12 @@ func (b *Backend) watchModalInput() {
 // gives it the keyboard when it takes it. Showing it does not activate
 // the app: it shows over a parent the user is using.
 func (w *window) showFlyout(key bool) {
+	fade := w.flyout.FadeIn && !sendBool(w.win, "isVisible") &&
+		!sendBool(workspace(), "accessibilityDisplayShouldReduceMotion")
+	if fade {
+		msgSetFloat(w.win, sel("setAlphaValue:"), 0)
+		defer w.fadeIn()
+	}
 	if key {
 		w.b.watchOutsideClicks()
 		send(w.win, "makeKeyAndOrderFront:", 0)
@@ -771,6 +777,23 @@ func (w *window) showFlyout(key bool) {
 	if p := w.parent; p != nil && !p.closed && send(w.win, "parentWindow") == 0 {
 		send(p.win, "addChildWindow:ordered:", uintptr(w.win), 1) // NSWindowAbove
 	}
+}
+
+// flyoutFade is how long a flyout that fades in (Flyout.FadeIn) takes.
+const flyoutFade = 0.14
+
+// fadeIn brings the window's alpha to 1 over flyoutFade, easing out, its
+// material, shadow and content together.
+func (w *window) fadeIn() {
+	withPool(func() {
+		ctx := class("NSAnimationContext")
+		send(ctx, "beginGrouping")
+		cur := send(ctx, "currentContext")
+		msgSetFloat(cur, sel("setDuration:"), flyoutFade)
+		send(cur, "setTimingFunction:", uintptr(send(class("CAMediaTimingFunction"), "functionWithName:", uintptr(nsString("easeOut")))))
+		msgSetFloat(send(w.win, "animator"), sel("setAlphaValue:"), 1)
+		send(ctx, "endGrouping")
+	})
 }
 
 // hideFlyout hides a flyout. It stops being a child window, which AppKit

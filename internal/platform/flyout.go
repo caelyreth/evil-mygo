@@ -30,6 +30,10 @@ type Flyout struct {
 	// Radius rounds the flyout's corners, in DIPs, its content, material
 	// and shadow with them (macOS).
 	Radius int
+	// FadeIn fades the flyout in as it shows, its material, shadow and
+	// content together (macOS); while the desktop asks for less motion,
+	// it shows at once.
+	FadeIn bool
 }
 
 // Side is the side of the anchor a flyout goes to.

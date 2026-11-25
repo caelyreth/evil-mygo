@@ -180,6 +180,7 @@ func (w *Window) contentFlyout(spec surface.FlyoutSpec, content surface.Content)
 		Hidden:       true,
 		Vibrancy:     material,
 		CornerRadius: int(math.Round(spec.Radius)),
+		FadeIn:       spec.FadeIn,
 		Content:      content,
 	})
 	return &flyoutOfContent{f}

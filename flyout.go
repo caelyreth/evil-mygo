@@ -155,6 +155,10 @@ type FlyoutOptions struct {
 	// material and content are cut to them, and its shadow follows them.
 	// Windows 11 rounds flyouts as it rounds its menus; Linux does not.
 	CornerRadius int
+	// FadeIn fades the flyout in as it shows, as a menu comes in: its
+	// material, shadow and content together, on macOS; elsewhere, and
+	// while the desktop asks for less motion, it shows at once.
+	FadeIn bool
 
 	// DevTools selects whether the native UI inspector is available.
 	DevTools DevTools
@@ -226,6 +230,7 @@ func (o *FlyoutOptions) platform() (*platform.Flyout, error) {
 		Focusable: o.Focusable,
 		Popover:   o.Popover,
 		Radius:    o.CornerRadius,
+		FadeIn:    o.FadeIn,
 	}, nil
 }
 

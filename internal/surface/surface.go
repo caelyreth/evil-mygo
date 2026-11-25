@@ -152,6 +152,8 @@ type FlyoutSpec struct {
 	Gap       int
 	Material  bool
 	Radius    float64
+	// FadeIn fades it in as it shows (FlyoutOptions.FadeIn).
+	FadeIn bool
 }
 
 // Flyout is a flyout Conn.Flyout opened. Main thread only.
