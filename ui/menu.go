@@ -254,6 +254,11 @@ func (m *Menu) EditItems() {
 			continue
 		}
 		it := m.Item(c.label).Disabled(!c.on)
+		// The keys the text takes the command by (commandKeys), shown as
+		// the Edit menu shows them.
+		if k, ok := commandKeys[c.name]; ok {
+			it.Shortcut(k.mods, k.key)
+		}
 		if m.run.collect {
 			m.run.commands[it.seq-1] = c.name
 		}
