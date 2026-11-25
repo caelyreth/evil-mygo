@@ -176,6 +176,10 @@ type surface struct {
 	marked    string
 	markedSel nsRange
 	keyDown   bool // in interpretKeyEvents: text typed with the key
+	// forced is whether the press now deepened to a force click has looked
+	// up what it is on, so the Look Up AppKit may send with it does not
+	// look it up again.
+	forced bool
 	// withheld is the key keyDown: kept from the content while the input
 	// method composed, or Backspace, during interpretKeyEvents:
 	// doCommandBySelector: sends it if the input method ends the
@@ -1394,18 +1398,37 @@ func registerSurfaceClass() {
 			x, y := s.location(ev)
 			s.send(platform.SurfaceEvent{Kind: platform.PointerZoom, X: x, Y: y, Scale: 1 + msgFloat(ev, sel("magnification")), Mods: eventMods(ev)})
 		}),
-		// A force click, or a tap of three fingers, looks up what is under
-		// the pointer: the content shows it (ShowDefinition), or AppKit
-		// goes on with it.
+		// A tap of three fingers looks up what is under the pointer: the
+		// content shows it (ShowDefinition), or AppKit goes on with it.
 		method("quickLookWithEvent:", func(self id, _ objc.SEL, ev id) {
 			s := b().surfaceOf(self)
-			if s == nil {
+			if s == nil || s.forced {
 				return
 			}
 			x, y := s.location(ev)
 			if !s.send(platform.SurfaceEvent{Kind: platform.PointerLookUp, X: x, Y: y, Mods: eventMods(ev)}) {
 				sendSuper(self, "MyGoSurfaceView", sel("quickLookWithEvent:"), uintptr(ev))
 			}
+		}),
+		// A force click looks up what it is on too, where the user has it
+		// look up (the trackpad's Force Click setting): AppKit leaves that
+		// to the view, as a press deepens to its second stage.
+		method("pressureChangeWithEvent:", func(self id, _ objc.SEL, ev id) {
+			s := b().surfaceOf(self)
+			if s == nil {
+				return
+			}
+			stage := sendInt(ev, "stage")
+			if stage < 2 {
+				s.forced = false
+				return
+			}
+			if sendInt(ev, "stageTransition") <= 0 || s.forced || !forceClickLooksUp() {
+				return
+			}
+			s.forced = true
+			x, y := s.location(ev)
+			s.send(platform.SurfaceEvent{Kind: platform.PointerLookUp, X: x, Y: y, Mods: eventMods(ev)})
 		}),
 		method("swipeWithEvent:", func(self id, _ objc.SEL, ev id) {
 			s := b().surfaceOf(self)

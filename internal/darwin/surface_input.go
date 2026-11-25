@@ -252,3 +252,17 @@ func (s *surface) ShowDefinition(text string, x, y float64, font platform.Defini
 	})
 	return true
 }
+
+// forceClickLooksUp reports whether a force click looks up what it is on,
+// as the trackpad's settings have it: so unless the user turned it off.
+func forceClickLooksUp() bool {
+	on := true
+	withPool(func() {
+		defaults := send(class("NSUserDefaults"), "standardUserDefaults")
+		key := nsString("com.apple.trackpad.forceClick")
+		if send(defaults, "objectForKey:", uintptr(key)) != 0 {
+			on = sendBool(defaults, "boolForKey:", uintptr(key))
+		}
+	})
+	return on
+}
