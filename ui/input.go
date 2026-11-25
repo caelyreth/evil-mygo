@@ -175,6 +175,8 @@ func (rt *engine) event(ev platform.SurfaceEvent) (taken bool) {
 	case platform.TextComposition:
 		taken = rt.editEvent(rt.replaced(editEvent{kind: editCompose, text: ev.Text, caret: ev.Caret}, ev))
 	case platform.SurfaceCommand:
+		// The system's edit menu closes as its command is chosen.
+		rt.touchText.menu = false
 		rt.editEvent(editEvent{kind: editCommand, text: ev.Text, repeat: ev.Repeat})
 	case platform.SurfaceFocus:
 		rt.windowFocused = true
@@ -188,10 +190,11 @@ func (rt *engine) event(ev platform.SurfaceEvent) (taken bool) {
 		clear(rt.byPosition)
 		rt.releaseKeys()
 		rt.spacePressed = 0
-		if p := rt.pressed; p != nil {
-			x, y := p.local(rt.pointerX, rt.pointerY)
-			rt.endPress(p.input, x, y)
+		button := -1
+		if held != 0 {
+			button = bits.TrailingZeros8(held)
 		}
+		rt.pointerCancel(button)
 		rt.focusChanged()
 	case platform.FileDragOver:
 		taken = rt.fileDrag(x, y)

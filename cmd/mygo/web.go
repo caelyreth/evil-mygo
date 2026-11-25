@@ -162,6 +162,9 @@ func buildWeb(c *Config, opts buildOptions) ([]string, error) {
 	wasm := filepath.Join(stage, "app.wasm")
 	t := con.start("Compiling " + webPlatform)
 	err = compileWeb(context.Background(), c, t, wasm, opts.debug)
+	if err == nil {
+		err = checkSize(wasm, opts.maxSize)
+	}
 	if err := t.end(err, "Compiled "+webPlatform); err != nil {
 		return nil, err
 	}
