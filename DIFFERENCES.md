@@ -1,6 +1,6 @@
 ### Differences from Upstream
 
-`evil-mygo` is a standalone downstream fork diverging from the [egoist/mygo](https://github.com/egoist/mygo) upstream snapshot at commit `da8a9a1a` (snapshotted on `main` at `9b68701d`). This document tracks behavioral additions, performance/rendering fixes, framework boundary removals, and future architectural divergences relative to upstream.
+`evil-mygo` is a standalone downstream fork diverging from the [egoist/mygo](https://github.com/egoist/mygo) upstream snapshot at commit `da8a9a1a` (snapshotted on `main` at `9b68701d`). This document tracks behavioral additions, performance/rendering fixes, framework boundary removals, and future architectural divergences relative to upstream; see [README.md](/README.md) for the high-level overview and [BENCHMARKS.md](/BENCHMARKS.md) for recorded benchmark results.
 
 > [!NOTE]
 > The earlier downstream fork containing custom WebGPU and GPU surface work lives on the [`classic`](https://github.com/caelyreth/evil-mygo/tree/classic) branch.
