@@ -1168,6 +1168,32 @@ func (e *PluginError) Error() string {
 	return e.Code + ": " + e.Message
 }
 
+// SpellingBackend is a Backend with the system's spelling and grammar
+// checker: NSSpellChecker on macOS. Its methods may be called from any
+// goroutine, before Init.
+type SpellingBackend interface {
+	// CheckText reports text's misspelled words and, where grammar is
+	// asked, its grammar issues, in byte offsets of text.
+	CheckText(text string, grammar bool) []TextIssue
+	// Guesses are the corrections for text's word from to to, best first.
+	Guesses(text string, from, to int) []string
+	LearnWord(word string)
+	UnlearnWord(word string)
+	HasLearnedWord(word string) bool
+	// CorrectsAutomatically reports whether the system's settings
+	// correct spelling as one types.
+	CorrectsAutomatically() bool
+}
+
+// TextIssue is a misspelled word or a grammar issue: bytes From to To
+// of the checked text.
+type TextIssue struct {
+	From, To int
+	Grammar  bool
+	// Description says what is wrong, for grammar.
+	Description string
+}
+
 // Orientations of the screen, for DeviceBackend.SetOrientations.
 const (
 	OrientationPortrait uint32 = 1 << iota
