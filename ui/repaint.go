@@ -1,5 +1,7 @@
 package ui
 
+import "github.com/egoist/mygo/internal/scene"
+
 // Frames that only paint again. A drawing that moves with the time
 // (Painter.AnimationFrame, AnimationFrameRate, After) while nothing else
 // changes has the next frame paint the elements of this one again, without
@@ -98,6 +100,18 @@ func (rt *engine) repaintParts() bool {
 	rt.partPaints++
 	rt.paths.spill.beginPaint()
 	n := len(s.Ops)
+	baseID := s.ID
+	firstStart := rt.drawn[0].start
+	lastOldEnd := rt.drawn[len(rt.drawn)-1].end
+	validSpan := baseID != 0 && firstStart >= 0 && firstStart <= lastOldEnd && lastOldEnd <= n
+	prevEnd := 0
+	for i := range rt.drawn {
+		if rt.drawn[i].start < prevEnd || rt.drawn[i].end < rt.drawn[i].start || rt.drawn[i].end > lastOldEnd {
+			validSpan = false
+			break
+		}
+		prevEnd = rt.drawn[i].end
+	}
 	// The canvases the last frame drew are drawn: those the parts draw
 	// anew are this frame's.
 	clear(s.Canvases)
@@ -143,6 +157,23 @@ func (rt *engine) repaintParts() bool {
 	ops = append(ops, s.Ops[last:n]...)
 	clear(s.Ops)
 	rt.partOps, s.Ops = s.Ops[:0], ops
+	lastNewEnd := rt.drawn[len(rt.drawn)-1].end
+	s.ID = scene.NextSceneID()
+	if validSpan && lastNewEnd >= firstStart && lastNewEnd <= len(s.Ops) {
+		s.Partial = scene.PartEdit{
+			BaseID:     baseID,
+			OpStart:    firstStart,
+			OldOpEnd:   lastOldEnd,
+			NewOpEnd:   lastNewEnd,
+			GlyphMark:  rt.partMark.glyphs,
+			StopMark:   rt.partMark.stops,
+			EffectMark: rt.partMark.effects,
+			WideMark:   rt.partMark.wide,
+			WordMark:   rt.partMark.words,
+		}
+	} else {
+		s.Partial = scene.PartEdit{}
+	}
 	rt.finishSpills()
 	return true
 }

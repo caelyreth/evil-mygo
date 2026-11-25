@@ -3,6 +3,7 @@ package scene
 import (
 	"image"
 	"math"
+	"slices"
 )
 
 // A Differ finds where the successive scenes of a window differ, so that a
@@ -56,6 +57,18 @@ type Differ struct {
 	// pre and suf are how many ops the scenes Diff compared last share at
 	// their starts and ends, n and m how many each has (see Match).
 	pre, suf, n, m int
+
+	// Incremental tracking for Scene.Partial repaints.
+	sceneID     uint64
+	diffSceneID uint64
+	clipOps     []int
+	imgOps      []int
+	fxImgOps    []int
+	tmpOps      []int
+	fast        bool
+	allSame     bool
+	fastEdit    PartEdit
+	partBounds  []image.Rectangle
 }
 
 // atlasMark is the state of an atlas a scene drew from.
@@ -85,7 +98,22 @@ func (m *atlasMark) set(a *Atlas) {
 }
 
 // Invalidate makes the next Diff find that everything changed.
-func (d *Differ) Invalidate() { d.valid = false }
+func (d *Differ) Invalidate() {
+	d.valid = false
+	d.sceneID = 0
+	d.diffSceneID = 0
+	d.fast = false
+}
+
+// ReuseUnchanged updates the tracked scene identity after Diff reported zero
+// damage for a partial update of identical shape, keeping subsequent partial
+// frames aligned without running Remember.
+func (d *Differ) ReuseUnchanged(s *Scene) {
+	if d.fast && d.allSame && s.ID != 0 && s.ID == d.diffSceneID {
+		d.sceneID = s.ID
+		d.fast = false
+	}
+}
 
 // Diff compares s with the last scene Remember kept, and returns the
 // rectangles where they differ, at most eight, apart from each other, or
@@ -94,6 +122,10 @@ func (d *Differ) Invalidate() { d.valid = false }
 // each operation of s draws as it goes (Bounds). The rectangles are valid
 // until the next Diff.
 func (d *Differ) Diff(s *Scene) ([]image.Rectangle, bool) {
+	d.fast, d.allSame = false, false
+	if damage, ok := d.tryPartialDiff(s); ok {
+		return damage, true
+	}
 	d.next = d.opBounds(s, d.next[:0])
 	d.pre, d.suf, d.n, d.m = 0, 0, 0, len(s.Ops)
 	if !d.valid || s.Width != d.w || s.Height != d.h || s.Clear != d.clear || s.Text != d.text {
@@ -157,7 +189,38 @@ func (d *Differ) Match(j int) (int, bool) {
 
 // Bounds returns where each operation of the scene Diff was given last
 // draws, within the clips around it.
-func (d *Differ) Bounds() []image.Rectangle { return d.next }
+func (d *Differ) Bounds() []image.Rectangle {
+	if !d.fast {
+		return d.next
+	}
+	pe := d.fastEdit
+	n := pe.OpStart + len(d.partBounds) + (len(d.bounds) - pe.OldOpEnd)
+	d.next = slices.Grow(d.next[:0], n)[:0]
+	d.next = append(d.next, d.bounds[:pe.OpStart]...)
+	d.next = append(d.next, d.partBounds...)
+	d.next = append(d.next, d.bounds[pe.OldOpEnd:]...)
+	return d.next
+}
+
+// OpBound returns the clipped bounds computed by the last Diff for op j,
+// without materializing a full slice when Diff used the partial fast path.
+func (d *Differ) OpBound(j int) image.Rectangle {
+	if !d.fast {
+		return d.next[j]
+	}
+	pe := d.fastEdit
+	if j < pe.OpStart {
+		return d.bounds[j]
+	}
+	if j < pe.NewOpEnd {
+		return d.partBounds[j-pe.OpStart]
+	}
+	return d.bounds[j-pe.NewOpEnd+pe.OldOpEnd]
+}
+
+// RememberedBound returns the clipped bounds stored by the last Remember for
+// op j.
+func (d *Differ) RememberedBound(j int) image.Rectangle { return d.bounds[j] }
 
 // AddBackdrops adds to damage, rectangles to redraw in s after Diff, the
 // effects of s that read their backdrops it meets, with those backdrops,
@@ -173,14 +236,18 @@ func (d *Differ) AddBackdrops(s *Scene, damage []image.Rectangle) []image.Rectan
 		changed = false
 		for i := range s.Ops {
 			op := &s.Ops[i]
-			if op.Kind != OpEffect || int(op.Start) >= len(s.Effects) || d.next[i].Empty() {
+			if op.Kind != OpEffect || int(op.Start) >= len(s.Effects) {
+				continue
+			}
+			bound := d.OpBound(i)
+			if bound.Empty() {
 				continue
 			}
 			fx := &s.Effects[op.Start]
 			if fx.Effect == nil || !fx.Effect.Backdrop {
 				continue
 			}
-			need := s.BackdropOf(op.Transform.Bounds(op.Rect), fx.Blur, s.Width, s.Height).Area.Union(d.next[i])
+			need := s.BackdropOf(op.Transform.Bounds(op.Rect), fx.Blur, s.Width, s.Height).Area.Union(bound)
 			for _, r := range damage {
 				if r.Overlaps(need) && !need.In(r) {
 					damage = addRect(damage, need)
@@ -341,59 +408,173 @@ func addRect(damage []image.Rectangle, b image.Rectangle) []image.Rectangle {
 	return damage
 }
 
+func (d *Differ) reachOf(m Affine) float32 {
+	if m.Set {
+		return d.Reach + 3
+	}
+	return d.Reach
+}
+
+// opBound returns the unclipped pixel bounds of a single non-clip op of s.
+func (d *Differ) opBound(s *Scene, op *Op) image.Rectangle {
+	switch op.Kind {
+	case OpFill, OpImage, OpEffect, OpHole:
+		return outset(op.Transform.Bounds(op.Rect), d.reachOf(op.Transform))
+	case OpShadow:
+		if op.Inset {
+			return outset(op.Transform.Bounds(op.Cast), d.reachOf(op.Transform))
+		}
+		e := 1.5*op.Blur + 1
+		box := Rect{X: op.Rect.X - e, Y: op.Rect.Y - e, W: op.Rect.W + 2*e, H: op.Rect.H + 2*e}
+		return outset(op.Transform.Bounds(box), d.reachOf(op.Transform))
+	case OpGlyphs:
+		var b image.Rectangle
+		// The glyphs without transforms of their own as one box, which
+		// the op's transform maps, the others each.
+		x0, y0, x1, y1 := float32(math.MaxFloat32), float32(math.MaxFloat32), float32(-math.MaxFloat32), float32(-math.MaxFloat32)
+		for _, g := range s.Glyphs[op.Start:op.End] {
+			// The GPU's renderers draw the bitmap's own size, at a
+			// whole pixel.
+			w, h := max(g.W, float32(g.UW)), max(g.H, float32(g.VH))
+			if !g.Transform.Set {
+				x0, y0, x1, y1 = min(x0, g.X), min(y0, g.Y), max(x1, g.X+w), max(y1, g.Y+h)
+				continue
+			}
+			m := op.Transform.Mul(g.Transform)
+			b = b.Union(outset(m.Bounds(Rect{X: g.X, Y: g.Y, W: w, H: h}), d.reachOf(m)))
+		}
+		switch {
+		case x0 > x1:
+		case op.Transform.Set:
+			b = b.Union(outset(op.Transform.Bounds(Rect{X: x0, Y: y0, W: x1 - x0, H: y1 - y0}), d.reachOf(op.Transform)))
+		default:
+			b = b.Union(outsetEdges(x0, y0, x1, y1, d.Reach))
+		}
+		return b
+	}
+	return image.Rectangle{}
+}
+
+func (d *Differ) tryPartialDiff(s *Scene) ([]image.Rectangle, bool) {
+	pe := s.Partial
+	if !d.valid || pe.BaseID == 0 || pe.BaseID != d.sceneID ||
+		s.Width != d.w || s.Height != d.h || s.Clear != d.clear || s.Text != d.text {
+		return nil, false
+	}
+	n, m := len(d.ops), len(s.Ops)
+	if pe.OpStart < 0 || pe.OpStart > pe.OldOpEnd || pe.OldOpEnd > n ||
+		pe.NewOpEnd < pe.OpStart || pe.NewOpEnd > m ||
+		m-pe.NewOpEnd != n-pe.OldOpEnd {
+		return nil, false
+	}
+	if pe.GlyphMark < 0 || pe.GlyphMark > len(d.glyphs) || pe.GlyphMark > len(s.Glyphs) ||
+		pe.StopMark < 0 || pe.StopMark > len(d.stops) || pe.StopMark > len(s.Stops) ||
+		pe.EffectMark < 0 || pe.EffectMark > len(d.effects) || pe.EffectMark > len(s.Effects) ||
+		pe.WideMark < 0 || pe.WideMark > len(s.Wide) || (d.Wide && pe.WideMark > len(d.wide)) {
+		return nil, false
+	}
+	if maskRects, ok := d.mask.changes(s.MaskAtlas); !ok || len(maskRects) > 0 {
+		return nil, false
+	}
+	if colorRects, ok := d.color.changes(s.ColorAtlas); !ok || len(colorRects) > 0 {
+		return nil, false
+	}
+	for _, idx := range d.imgOps {
+		if idx >= pe.OpStart && idx < pe.OldOpEnd {
+			continue
+		}
+		if img := d.ops[idx].Image; img != nil && img.Version() != d.versions[idx] {
+			return nil, false
+		}
+	}
+	for _, idx := range d.fxImgOps {
+		if idx >= pe.OpStart && idx < pe.OldOpEnd {
+			continue
+		}
+		sa := d.ops[idx].Start
+		for k, img := range d.effects[sa].Images {
+			if img != nil && img.Version() != d.fxVers[sa][k] {
+				return nil, false
+			}
+		}
+	}
+	prevScene := Scene{Glyphs: d.glyphs, Effects: d.effects}
+	for i := pe.OpStart; i < pe.OldOpEnd; i++ {
+		op := &d.ops[i]
+		if op.Kind == OpPushClip || op.Kind == OpPopClip || Reshaped(&prevScene, op) {
+			return nil, false
+		}
+	}
+	for j := pe.OpStart; j < pe.NewOpEnd; j++ {
+		op := &s.Ops[j]
+		if op.Kind == OpPushClip || op.Kind == OpPopClip || Reshaped(s, op) {
+			return nil, false
+		}
+	}
+	clip := image.Rect(0, 0, s.Width, s.Height)
+	d.clips = d.clips[:0]
+	for _, idx := range d.clipOps {
+		if idx >= pe.OpStart {
+			break
+		}
+		if d.ops[idx].Kind == OpPushClip {
+			d.clips = append(d.clips, clip)
+			clip = d.bounds[idx]
+		} else if len(d.clips) > 0 {
+			clip = d.clips[len(d.clips)-1]
+			d.clips = d.clips[:len(d.clips)-1]
+		}
+	}
+	need := pe.NewOpEnd - pe.OpStart
+	d.partBounds = slices.Grow(d.partBounds[:0], need)[:0]
+	for j := pe.OpStart; j < pe.NewOpEnd; j++ {
+		b := d.opBound(s, &s.Ops[j])
+		d.partBounds = append(d.partBounds, b.Intersect(clip))
+	}
+	d.pre, d.suf, d.n, d.m = pe.OpStart, n-pe.OldOpEnd, n, m
+	d.damage = d.damage[:0]
+	allSame := pe.OldOpEnd == pe.NewOpEnd &&
+		len(d.glyphs) == len(s.Glyphs) && len(d.stops) == len(s.Stops) &&
+		len(d.effects) == len(s.Effects) && (!d.Wide || len(d.wide) == len(s.Wide))
+	if pe.OldOpEnd == pe.NewOpEnd {
+		for k := pe.OpStart; k < pe.OldOpEnd; k++ {
+			if !d.same(k, s, k, nil, nil) {
+				allSame = false
+				d.damage = addRect(d.damage, d.bounds[k])
+				d.damage = addRect(d.damage, d.partBounds[k-pe.OpStart])
+			}
+		}
+	} else {
+		for i := pe.OpStart; i < pe.OldOpEnd; i++ {
+			d.damage = addRect(d.damage, d.bounds[i])
+		}
+		for j := pe.OpStart; j < pe.NewOpEnd; j++ {
+			d.damage = addRect(d.damage, d.partBounds[j-pe.OpStart])
+		}
+	}
+	d.fast = true
+	d.allSame = allSame
+	d.fastEdit = pe
+	d.diffSceneID = s.ID
+	return d.damage, true
+}
+
 // opBounds appends where each operation of s draws, within the clips
 // around it.
 func (d *Differ) opBounds(s *Scene, out []image.Rectangle) []image.Rectangle {
 	clip := image.Rect(0, 0, s.Width, s.Height)
 	d.clips, d.pushes = d.clips[:0], d.pushes[:0]
 	d.corners.Reset()
-	d.encloses2 = append(d.encloses2[:0], make([]bool, len(s.Ops))...)
-	reach := func(m Affine) float32 {
-		if m.Set {
-			return d.Reach + 3
-		}
-		return d.Reach
-	}
+	d.encloses2 = slices.Grow(d.encloses2[:0], len(s.Ops))[:len(s.Ops)]
+	clear(d.encloses2)
 	for i := range s.Ops {
 		op := &s.Ops[i]
 		var b image.Rectangle
 		corners := false
 		switch op.Kind {
-		case OpFill, OpImage, OpEffect, OpHole:
-			b = outset(op.Transform.Bounds(op.Rect), reach(op.Transform))
-		case OpShadow:
-			if op.Inset {
-				b = outset(op.Transform.Bounds(op.Cast), reach(op.Transform))
-			} else {
-				e := 1.5*op.Blur + 1
-				box := Rect{X: op.Rect.X - e, Y: op.Rect.Y - e, W: op.Rect.W + 2*e, H: op.Rect.H + 2*e}
-				b = outset(op.Transform.Bounds(box), reach(op.Transform))
-			}
-		case OpGlyphs:
-			// The glyphs without transforms of their own as one box, which
-			// the op's transform maps, the others each.
-			x0, y0, x1, y1 := float32(math.MaxFloat32), float32(math.MaxFloat32), float32(-math.MaxFloat32), float32(-math.MaxFloat32)
-			for _, g := range s.Glyphs[op.Start:op.End] {
-				// The GPU's renderers draw the bitmap's own size, at a
-				// whole pixel.
-				w, h := max(g.W, float32(g.UW)), max(g.H, float32(g.VH))
-				if !g.Transform.Set {
-					x0, y0, x1, y1 = min(x0, g.X), min(y0, g.Y), max(x1, g.X+w), max(y1, g.Y+h)
-					continue
-				}
-				m := op.Transform.Mul(g.Transform)
-				b = b.Union(outset(m.Bounds(Rect{X: g.X, Y: g.Y, W: w, H: h}), reach(m)))
-			}
-			switch {
-			case x0 > x1:
-			case op.Transform.Set:
-				b = b.Union(outset(op.Transform.Bounds(Rect{X: x0, Y: y0, W: x1 - x0, H: y1 - y0}), reach(op.Transform)))
-			default:
-				b = b.Union(outsetEdges(x0, y0, x1, y1, d.Reach))
-			}
 		case OpPushClip:
 			// A clip that changes changes everything it cuts.
-			b = outset(op.Transform.Bounds(op.Rect), reach(op.Transform))
+			b = outset(op.Transform.Bounds(op.Rect), d.reachOf(op.Transform))
 			d.clips = append(d.clips, clip)
 			d.pushes = append(d.pushes, i)
 			clip = clip.Intersect(b)
@@ -405,6 +586,8 @@ func (d *Differ) opBounds(s *Scene, out []image.Rectangle) []image.Rectangle {
 				d.pushes = d.pushes[:len(d.pushes)-1]
 				d.corners.Pop()
 			}
+		default:
+			b = d.opBound(s, op)
 		}
 		// The GPU's renderers cut what a clip holds with a mask once an op
 		// in it is drawn under a transform that does more than move it
@@ -445,7 +628,13 @@ func outset(rc Rect, d float32) image.Rectangle {
 // Remember keeps what Diff needs of s, which Diff was given last, to
 // compare the next scene with.
 func (d *Differ) Remember(s *Scene) {
+	if d.fast && s.ID != 0 && s.ID == d.diffSceneID && s.Partial == d.fastEdit && s.Partial.BaseID == d.sceneID {
+		d.rememberPartial(s)
+		return
+	}
+	d.fast, d.allSame = false, false
 	d.valid = true
+	d.sceneID = s.ID
 	d.w, d.h = s.Width, s.Height
 	d.clear, d.text = s.Clear, s.Text
 	if len(d.ops) > len(s.Ops) {
@@ -462,16 +651,73 @@ func (d *Differ) Remember(s *Scene) {
 		clear(d.effects[len(s.Effects):])
 	}
 	d.effects = append(d.effects[:0], s.Effects...)
-	// The uniforms' and the quads' words, which the scene reuses next
-	// frame (Words), kept apart.
-	d.words = d.words[:0]
-	for i := range d.effects {
+	d.sliceEffectWords(0, 0)
+	d.bounds, d.next = d.next, d.bounds
+	d.encloses, d.encloses2 = d.encloses2, d.encloses
+	d.versions = d.versions[:0]
+	d.clipOps = d.clipOps[:0]
+	d.imgOps = d.imgOps[:0]
+	d.fxImgOps = d.fxImgOps[:0]
+	for i := range s.Ops {
+		op := &s.Ops[i]
+		v := uint64(0)
+		if img := op.Image; img != nil {
+			v = img.Version()
+			d.imgOps = append(d.imgOps, i)
+		}
+		d.versions = append(d.versions, v)
+		if op.Kind == OpPushClip || op.Kind == OpPopClip {
+			d.clipOps = append(d.clipOps, i)
+		} else if hasEffectImage(s, op) {
+			d.fxImgOps = append(d.fxImgOps, i)
+		}
+	}
+	d.fxVers = d.fxVers[:0]
+	for i := range s.Effects {
+		d.fxVers = append(d.fxVers, effectVersions(&s.Effects[i]))
+	}
+	d.mask.set(s.MaskAtlas)
+	d.color.set(s.ColorAtlas)
+}
+
+func hasEffectImage(s *Scene, op *Op) bool {
+	if op.Kind != OpEffect || op.Start < 0 || int(op.Start) >= len(s.Effects) {
+		return false
+	}
+	for _, img := range s.Effects[op.Start].Images {
+		if img != nil {
+			return true
+		}
+	}
+	return false
+}
+
+func effectVersions(fx *EffectOp) (vs [4]uint64) {
+	for k, img := range fx.Images {
+		if img != nil {
+			vs[k] = img.Version()
+		}
+	}
+	return vs
+}
+
+func (d *Differ) sliceEffectWords(start, at int) {
+	if start == 0 {
+		d.words = d.words[:0]
+		at = 0
+	} else {
+		d.words = d.words[:at]
+	}
+	oldCap := cap(d.words)
+	for i := start; i < len(d.effects); i++ {
 		d.words = append(d.words, d.effects[i].Uniforms...)
 		d.words = append(d.words, d.effects[i].WideUniforms...)
 		d.words = append(d.words, d.effects[i].Instances...)
 	}
-	at := 0
-	for i := range d.effects {
+	if start > 0 && cap(d.words) != oldCap {
+		start, at = 0, 0
+	}
+	for i := start; i < len(d.effects); i++ {
 		fx := &d.effects[i]
 		n, w, q := len(fx.Uniforms), len(fx.WideUniforms), len(fx.Instances)
 		fx.Uniforms = d.words[at : at+n : at+n]
@@ -483,28 +729,100 @@ func (d *Differ) Remember(s *Scene) {
 		}
 		at += n + w + q
 	}
-	d.bounds, d.next = d.next, d.bounds
-	d.encloses, d.encloses2 = d.encloses2, d.encloses
-	d.versions = d.versions[:0]
-	for i := range s.Ops {
-		v := uint64(0)
-		if img := s.Ops[i].Image; img != nil {
-			v = img.Version()
+}
+
+func (d *Differ) rememberPartial(s *Scene) {
+	pe := s.Partial
+	d.fast, d.allSame = false, false
+	d.valid = true
+	d.sceneID = s.ID
+	delta := pe.NewOpEnd - pe.OldOpEnd
+	if delta == 0 {
+		copy(d.ops[pe.OpStart:pe.NewOpEnd], s.Ops[pe.OpStart:pe.NewOpEnd])
+		copy(d.bounds[pe.OpStart:pe.NewOpEnd], d.partBounds)
+		clear(d.encloses[pe.OpStart:pe.NewOpEnd])
+	} else {
+		oldLen, newLen := len(d.ops), len(s.Ops)
+		if delta > 0 {
+			d.ops = slices.Grow(d.ops, delta)[:newLen]
+			d.bounds = slices.Grow(d.bounds, delta)[:newLen]
+			d.encloses = slices.Grow(d.encloses, delta)[:newLen]
+			d.versions = slices.Grow(d.versions, delta)[:newLen]
 		}
-		d.versions = append(d.versions, v)
-	}
-	d.fxVers = d.fxVers[:0]
-	for i := range s.Effects {
-		var vs [4]uint64
-		for k, img := range s.Effects[i].Images {
-			if img != nil {
-				vs[k] = img.Version()
+		copy(d.ops[pe.NewOpEnd:newLen], d.ops[pe.OldOpEnd:oldLen])
+		copy(d.bounds[pe.NewOpEnd:newLen], d.bounds[pe.OldOpEnd:oldLen])
+		copy(d.encloses[pe.NewOpEnd:newLen], d.encloses[pe.OldOpEnd:oldLen])
+		copy(d.versions[pe.NewOpEnd:newLen], d.versions[pe.OldOpEnd:oldLen])
+		if delta < 0 {
+			clear(d.ops[newLen:])
+			d.ops = d.ops[:newLen]
+			d.bounds = d.bounds[:newLen]
+			d.encloses = d.encloses[:newLen]
+			d.versions = d.versions[:newLen]
+		}
+		copy(d.ops[pe.OpStart:pe.NewOpEnd], s.Ops[pe.OpStart:pe.NewOpEnd])
+		copy(d.bounds[pe.OpStart:pe.NewOpEnd], d.partBounds)
+		clear(d.encloses[pe.OpStart:pe.NewOpEnd])
+		for k := range d.clipOps {
+			if d.clipOps[k] >= pe.OldOpEnd {
+				d.clipOps[k] += delta
 			}
 		}
-		d.fxVers = append(d.fxVers, vs)
 	}
+	for j := pe.OpStart; j < pe.NewOpEnd; j++ {
+		v := uint64(0)
+		if img := s.Ops[j].Image; img != nil {
+			v = img.Version()
+		}
+		d.versions[j] = v
+	}
+	d.glyphs = append(d.glyphs[:pe.GlyphMark], s.Glyphs[pe.GlyphMark:]...)
+	d.stops = append(d.stops[:pe.StopMark], s.Stops[pe.StopMark:]...)
+	if d.Wide {
+		d.wide = append(d.wide[:pe.WideMark], s.Wide[pe.WideMark:]...)
+	} else {
+		d.wide = d.wide[:0]
+	}
+	if pe.EffectMark < len(s.Effects) || pe.EffectMark < len(d.effects) {
+		wordAt := 0
+		for i := 0; i < pe.EffectMark; i++ {
+			fx := &d.effects[i]
+			wordAt += len(fx.Uniforms) + len(fx.WideUniforms) + len(fx.Instances)
+		}
+		if len(d.effects) > len(s.Effects) {
+			clear(d.effects[len(s.Effects):])
+		}
+		d.effects = append(d.effects[:pe.EffectMark], s.Effects[pe.EffectMark:]...)
+		d.sliceEffectWords(pe.EffectMark, wordAt)
+		d.fxVers = d.fxVers[:pe.EffectMark]
+		for i := pe.EffectMark; i < len(s.Effects); i++ {
+			d.fxVers = append(d.fxVers, effectVersions(&s.Effects[i]))
+		}
+	}
+	d.imgOps = d.spliceOpIndex(d.imgOps, pe, delta, func(j int) bool { return s.Ops[j].Image != nil })
+	d.fxImgOps = d.spliceOpIndex(d.fxImgOps, pe, delta, func(j int) bool { return hasEffectImage(s, &s.Ops[j]) })
 	d.mask.set(s.MaskAtlas)
 	d.color.set(s.ColorAtlas)
+}
+
+func (d *Differ) spliceOpIndex(list []int, pe PartEdit, delta int, match func(int) bool) []int {
+	d.tmpOps = d.tmpOps[:0]
+	for _, idx := range list {
+		if idx < pe.OpStart {
+			d.tmpOps = append(d.tmpOps, idx)
+		}
+	}
+	for j := pe.OpStart; j < pe.NewOpEnd; j++ {
+		if match(j) {
+			d.tmpOps = append(d.tmpOps, j)
+		}
+	}
+	for _, idx := range list {
+		if idx >= pe.OldOpEnd {
+			d.tmpOps = append(d.tmpOps, idx+delta)
+		}
+	}
+	return append(list[:0], d.tmpOps...)
 }
 
 // Release forgets the last scene and lets go of what it kept.

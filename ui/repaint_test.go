@@ -734,4 +734,10 @@ func TestRepaintPartsSteadyBounded(t *testing.T) {
 	if got, want := len(parts.rt.scene.Glyphs), parts.rt.partMark.glyphs+200; got != want {
 		t.Errorf("len(scene.Glyphs) = %d, want %d", got, want)
 	}
+	if parts.rt.scene.Partial.BaseID == 0 {
+		t.Error("expected Scene.Partial.BaseID to be populated after repaintParts")
+	}
+	if whole.rt.scene.Partial.BaseID != 0 {
+		t.Errorf("expected whole paint Scene.Partial.BaseID == 0, got %d", whole.rt.scene.Partial.BaseID)
+	}
 }

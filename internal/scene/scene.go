@@ -384,7 +384,33 @@ type Scene struct {
 	// than its content: backdrops end at its edge (BackdropOf), as at the
 	// edge of a canvas of its size, and nothing is drawn beyond it.
 	Drawn image.Point
+
+	// ID uniquely identifies a painted or repainted scene version.
+	ID uint64
+	// Partial, when BaseID != 0, describes the single contiguous op-slice
+	// edit that produced this Scene by splicing repainted parts into BaseID.
+	Partial PartEdit
 }
+
+// PartEdit describes an incremental update from scene BaseID where
+// Ops[OpStart:OldOpEnd] was replaced by Ops[OpStart:NewOpEnd] and
+// resource slices above the corresponding *Mark offsets were repainted.
+type PartEdit struct {
+	BaseID     uint64
+	OpStart    int
+	OldOpEnd   int
+	NewOpEnd   int
+	GlyphMark  int
+	StopMark   int
+	EffectMark int
+	WideMark   int
+	WordMark   int
+}
+
+var lastSceneID atomic.Uint64
+
+// NextSceneID returns a fresh unique scene identifier.
+func NextSceneID() uint64 { return lastSceneID.Add(1) }
 
 // BackdropOf is BackdropOf in s, a frame of w×h pixels, ending at the edge
 // of the part Drawn says.
@@ -435,6 +461,8 @@ func (s *Scene) eachShown(fn func(*Image)) {
 func (s *Scene) Reset(width, height int, color Color) {
 	s.Width, s.Height, s.Clear = width, height, color
 	s.Drawn = image.Point{}
+	s.ID = NextSceneID()
+	s.Partial = PartEdit{}
 	// Ops and effects can keep images and effect resources alive beyond
 	// the end of the shorter list the next frame paints.
 	clear(s.Ops)
