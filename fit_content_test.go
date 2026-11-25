@@ -133,10 +133,12 @@ func TestFlyoutFitNativeContent(t *testing.T) {
 		onMain(func() {})
 		settle()
 	}
-	bounds("before its first frame, above the anchor", 100, 800-120, 150, 120)
+	// It fits before it shows: its first frame is at its content's size,
+	// below the anchor, and resizes nothing.
+	bounds("before its first frame", 100, 800, 120, 65)
 	settle()
 	bounds("its content's size, below the anchor", 100, 800, 120, 65)
-	if resizes != 1 {
+	if resizes != 0 {
 		t.Errorf("%d resizes for the first frame", resizes)
 	}
 
