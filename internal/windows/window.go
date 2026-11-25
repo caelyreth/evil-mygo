@@ -522,6 +522,9 @@ func (w *window) message(m uint32, wp, lp uintptr) (uintptr, bool) {
 			r = w.placing
 		}
 		procSetWindowPos.Call(w.hwnd, 0, uintptr(r.Left), uintptr(r.Top), uintptr(r.Right-r.Left), uintptr(r.Bottom-r.Top), swpNoZOrder|swpNoActivate)
+		if w.surface != nil && len(w.surface.lastOverlays) > 0 {
+			w.surface.PlaceOverlays(w.surface.lastOverlays)
+		}
 		return 0, true
 	case wmNCCalcSize:
 		if w.captionless() && wp != 0 && !w.fullScreen {

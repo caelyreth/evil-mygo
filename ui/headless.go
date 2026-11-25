@@ -105,6 +105,10 @@ type headless struct {
 	webViews   []placedWebView
 	tabbedInto embeddedView
 	tabbedBack bool
+	// overlaySupport and overlays track compositor overlays in headless tests.
+	overlaySupport bool
+	overlays       []platform.OverlayPlacement
+	overlayCalls   int
 
 	// invalidated asks for a frame built anew, as a window's Changed.
 	invalidated atomic.Bool
@@ -271,8 +275,13 @@ func (h *headless) flyout(spec surface.FlyoutSpec, content surface.Content) surf
 func (h *headless) placeWebViews(views []placedWebView) {
 	h.webViews = append(h.webViews[:0], views...)
 }
-func (h *headless) nativeGlass() bool                              { return false }
-func (h *headless) placeGlass([]platform.GlassPlacement)           {}
+func (h *headless) nativeGlass() bool                    { return false }
+func (h *headless) placeGlass([]platform.GlassPlacement) {}
+func (h *headless) compositorOverlays() bool             { return h.overlaySupport }
+func (h *headless) placeOverlays(places []platform.OverlayPlacement) {
+	h.overlayCalls++
+	h.overlays = append(h.overlays[:0], places...)
+}
 func (h *headless) tabIntoWebView(v embeddedView, back bool)       { h.tabbedInto, h.tabbedBack = v, back }
 func (h *headless) platformWebView(embeddedView) platform.EmbeddedView { return nil }
 func (h *headless) image() *image.RGBA {

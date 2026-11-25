@@ -56,6 +56,19 @@ func comCallFloat32(obj uintptr, i int, f float32) uintptr {
 	return m.(func(uintptr, float32) uintptr)(obj, f)
 }
 
+var animSegMethods sync.Map
+
+func comCallAnimSeg(obj uintptr, i int, a float64, b, c, d, e float32) uintptr {
+	fn := *(*uintptr)(unsafe.Add(native(*(*uintptr)(native(obj))), i*int(unsafe.Sizeof(uintptr(0)))))
+	m, ok := animSegMethods.Load(fn)
+	if !ok {
+		var call func(uintptr, float64, float32, float32, float32, float32) uintptr
+		purego.RegisterFunc(&call, fn)
+		m, _ = animSegMethods.LoadOrStore(fn, call)
+	}
+	return m.(func(uintptr, float64, float32, float32, float32, float32) uintptr)(obj, a, b, c, d, e)
+}
+
 func failed(hr uintptr) bool { return int32(uint32(hr)) < 0 }
 
 func hresultError(what string, hr uintptr) error {

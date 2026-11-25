@@ -169,6 +169,11 @@ type surface struct {
 	// redirection bitmap, where GDI cannot (compositor.go); nil while none
 	// shows.
 	comp *compositor
+	// overlays holds DirectComposition visual overlays composed above the
+	// surface (overlay.go); nil until overlays are placed.
+	overlays     *overlayTree
+	overlaysLost bool
+	lastOverlays []platform.OverlayPlacement
 	// gdiFailed tells that SetDIBitsToDevice refused a frame, which was
 	// logged once.
 	gdiFailed bool
@@ -1103,6 +1108,8 @@ func (s *surface) message(hwnd uintptr, m uint32, wp, lp uintptr) (uintptr, bool
 		s.destroyAccess()
 		s.revokeFileDrops()
 		s.freeComp()
+		s.freeOverlays()
+		s.lastOverlays = nil
 		s.SetBackground(platform.Color{})
 		delete(s.w.b.surfaces, hwnd)
 		return 0, true

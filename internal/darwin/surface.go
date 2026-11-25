@@ -207,6 +207,8 @@ type surface struct {
 	// and above embedded views; glassShown is their order, bottom to top.
 	glass      map[uint64]id
 	glassShown []id
+	// overlays are Core Animation compositor layers placed above the surface.
+	overlays map[uint64]*overlayLayer
 }
 
 func (w *window) createSurface(content NSRect) {
@@ -277,6 +279,7 @@ func (s *surface) destroy() {
 		release(v)
 	}
 	s.glass = nil
+	s.destroyOverlays()
 	send(s.view, "removeTrackingArea:", uintptr(s.tracking))
 	release(s.tracking)
 	delete(s.w.b.bySurface, s.view)

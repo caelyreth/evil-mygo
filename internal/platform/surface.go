@@ -3,6 +3,7 @@ package platform
 import (
 	"github.com/egoist/mygo/transfer"
 	"image"
+	"time"
 )
 
 // Surface is the drawing area of a window created with
@@ -113,6 +114,37 @@ type GlassSurface interface {
 	// PlaceGlass shows the glass where the content's last frame shows it,
 	// and hides the rest.
 	PlaceGlass(places []GlassPlacement)
+}
+
+// OverlayPlacement is a solid rounded-rectangle overlay placed above the
+// surface by the OS compositor, clipped in surface coordinates (DIPs from
+// the surface's top left), with optional declarative opacity pulsing.
+type OverlayPlacement struct {
+	// ID identifies the overlay from one frame to the next.
+	ID uint64
+	// Frame is the unclipped rounded rectangle in surface DIPs; Clip is its
+	// visible intersection with active rectangular clips and the surface.
+	Frame, Clip  RectF
+	CornerRadius float64
+	Color        Color
+	Opacity      float32
+	PulseStart   time.Time
+	PulseDelay   time.Duration
+	PulsePeriod  time.Duration
+	PulseMin     float32
+	PulseMax     float32
+}
+
+// OverlaySurface is a Surface that composes solid rounded-rectangle overlays
+// above its drawn content via the OS compositor, with optional declarative
+// opacity animations that run without surface wakeups.
+type OverlaySurface interface {
+	// CompositorOverlaysSupported reports whether compositor overlays and
+	// their declarative animations are supported on this surface.
+	CompositorOverlaysSupported() bool
+	// PlaceOverlays shows the given overlays above the surface and removes any
+	// no longer listed.
+	PlaceOverlays(places []OverlayPlacement)
 }
 
 // MaterialSurface is a Surface whose window can show a material

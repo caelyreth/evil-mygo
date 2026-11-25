@@ -81,6 +81,8 @@ func (rt *engine) paint(root *node, w, h, scale float32) {
 	defer func() { rt.painting = false }()
 	rt.paints++
 	rt.drawn = rt.drawn[:0]
+	rt.overlays = rt.overlays[:0]
+	rt.paintSeq = 0
 	rt.paths.spill.beginPaint()
 	s := &rt.scene
 	// The root paints the theme's background: frames start transparent, so
@@ -137,6 +139,7 @@ func (rt *engine) paint(root *node, w, h, scale float32) {
 	if rounded {
 		s.Ops = append(s.Ops, scene.Op{Kind: scene.OpPopClip})
 	}
+	rt.resolveOverlays(s, false)
 	rt.under, rt.holes = p.under[:0], p.holes[:0] // kept for the next frame's
 	rt.partMark = partMark{
 		glyphs:  len(s.Glyphs),

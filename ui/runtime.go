@@ -106,6 +106,12 @@ type host interface {
 	// placeGlass shows the system's glass where the frame shows it, and
 	// hides the rest.
 	placeGlass(places []platform.GlassPlacement)
+	// compositorOverlays reports whether the surface supports OS-composited
+	// overlays with optional declarative opacity animations.
+	compositorOverlays() bool
+	// placeOverlays shows the compositor overlays where the frame shows them,
+	// and removes the rest.
+	placeOverlays(places []platform.OverlayPlacement)
 	// tabIntoWebView gives v the keyboard as Tab does, from its end when back.
 	tabIntoWebView(v embeddedView, back bool)
 	// platformWebView returns the embedded view of the platform v is, if any.
@@ -290,6 +296,16 @@ type engine struct {
 	// glassShown tells that the last frame showed some.
 	glassPlaces []platform.GlassPlacement
 	glassShown  bool
+	// overlays holds candidate compositor overlays collected during paint or
+	// repaintParts, overlayPlaces holds those promoted to the surface, and
+	// overlaysShown tells whether the last frame showed some.
+	overlays       []pendingOverlay
+	overlayPlaces  []platform.OverlayPlacement
+	overlaysShown  bool
+	paintSeq       uint32
+	activePart     paintPart
+	curDrawOvStart int
+	curPartSlot    int
 	// maxButton is where the frame shows the window's maximize button
 	// (MaximizeButton), and maxSent what the host got of it, in the
 	// window's DIPs.
@@ -1018,6 +1034,7 @@ func (rt *engine) runFrame() {
 	rt.stackShown()
 	rt.placeWebViews()
 	rt.placeNativeGlass()
+	rt.placeOverlays()
 	// The window hit-tests its maximize button in its own DIPs.
 	if r := rt.windowRect(rt.maxButton); r != rt.maxSent {
 		rt.maxSent = r
@@ -1297,6 +1314,7 @@ func (rt *engine) repaintFrame(w, h, scale float32) {
 	rt.stats.lap(phasePaint)
 	rt.insp.repainted(time.Since(start))
 	rt.host.present(&rt.scene)
+	rt.placeOverlays()
 	rt.stats.lap(phasePresent)
 	rt.text.EndFrame()
 	rt.next()
@@ -1658,6 +1676,10 @@ func (rt *engine) dropFrame() {
 	rt.scene = scene.Scene{}
 	rt.maskScene = nil
 	clear(rt.pathClips)
+	clear(rt.overlays)
+	rt.overlays = nil
+	rt.overlayPlaces = nil
+	rt.activePart = paintPart{}
 	c := &rt.c
 	c.parent, c.root, c.overlay = nil, nil, nil
 	c.chunks, c.spare = nil, nil

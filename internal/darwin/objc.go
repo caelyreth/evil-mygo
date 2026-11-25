@@ -42,6 +42,9 @@ var (
 	msgFloat           func(obj id, sel objc.SEL) float64
 	msgFloat32         func(obj id, sel objc.SEL) float32
 	msgSetFloat        func(obj id, sel objc.SEL, v float64)
+	msgSetFloat32      func(obj id, sel objc.SEL, v float32)
+	msgTimingCurve     func(cls id, sel objc.SEL, c1x, c1y, c2x, c2y float32) id
+	caCurrentMediaTime func() float64
 	msgSize            func(obj id, sel objc.SEL) NSSize
 	msgSetSize         func(obj id, sel objc.SEL, s NSSize)
 	msgSuperSetSize    func(sup uintptr, sel objc.SEL, s NSSize)
@@ -96,9 +99,9 @@ func mustDlopen(path string) uintptr {
 }
 
 var (
-	libObjC, libCF, libCG, libAppKit, libFoundation, libCarbon uintptr
-	libCoreServices                                            uintptr
-	loadOnce                                                   sync.Once
+	libObjC, libCF, libCG, libAppKit, libFoundation, libCarbon, libQuartzCore uintptr
+	libCoreServices                                                           uintptr
+	loadOnce                                                                  sync.Once
 )
 
 // load opens the frameworks and prepares the typed message functions.
@@ -111,6 +114,7 @@ func load() {
 		libAppKit = mustDlopen("/System/Library/Frameworks/AppKit.framework/AppKit")
 		libCarbon = mustDlopen("/System/Library/Frameworks/Carbon.framework/Carbon")
 		libCoreServices = mustDlopen("/System/Library/Frameworks/CoreServices.framework/CoreServices")
+		libQuartzCore = mustDlopen("/System/Library/Frameworks/QuartzCore.framework/QuartzCore")
 		// Optional frameworks, loaded so their classes are registered.
 		_, _ = purego.Dlopen("/System/Library/Frameworks/UniformTypeIdentifiers.framework/UniformTypeIdentifiers", purego.RTLD_GLOBAL|purego.RTLD_NOW)
 		_, _ = purego.Dlopen("/System/Library/Frameworks/UserNotifications.framework/UserNotifications", purego.RTLD_GLOBAL|purego.RTLD_NOW)
@@ -148,6 +152,9 @@ func load() {
 		purego.RegisterFunc(&msgFloat, msgSendAddr)
 		purego.RegisterFunc(&msgFloat32, msgSendAddr)
 		purego.RegisterFunc(&msgSetFloat, msgSendAddr)
+		purego.RegisterFunc(&msgSetFloat32, msgSendAddr)
+		purego.RegisterFunc(&msgTimingCurve, msgSendAddr)
+		purego.RegisterLibFunc(&caCurrentMediaTime, libQuartzCore, "CACurrentMediaTime")
 		purego.RegisterFunc(&msgSize, msgSendAddr)
 		purego.RegisterFunc(&msgSetSize, msgSendAddr)
 		purego.RegisterFunc(&msgSuperSetSize, msgSendSuperAddr)

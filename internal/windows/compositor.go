@@ -53,10 +53,23 @@ const (
 	dcompDevCreateTargetForHwnd      = 6
 	dcompDevCreateVisual             = 7
 	dcompDevCreateSurface            = 8
+	dcompDevCreateEffectGroup        = 23
+	dcompDevCreateAnimation          = 25
 	dcompDevCheckDeviceState         = 26
 	dcompTargetSetRoot               = 3  // IDCompositionTarget
+	dcompVisualSetOffsetXFloat       = 4  // IDCompositionVisual, MSVC reverses overload vtable slots
+	dcompVisualSetOffsetYFloat       = 6
+	dcompVisualSetEffect             = 10
 	dcompVisualSetContent            = 15 // IDCompositionVisual, whose overloads take a slot each
-	dcompSurfaceBeginDraw            = 3  // IDCompositionSurface
+	dcompVisualAddVisual             = 16
+	dcompVisualRemoveVisual          = 17
+	dcompVisualRemoveAllVisuals      = 18
+	dcompEffectSetOpacityAnim        = 3 // IDCompositionEffectGroup
+	dcompEffectSetOpacityFloat       = 4
+	dcompAnimReset                   = 3 // IDCompositionAnimation
+	dcompAnimAddCubic                = 5
+	dcompAnimAddSinusoidal           = 6
+	dcompSurfaceBeginDraw            = 3 // IDCompositionSurface
 	dcompSurfaceEndDraw              = 4
 
 	dxgiFormatB8G8R8A8     = 87
@@ -208,6 +221,10 @@ func (b *Backend) loseComposition(err error) {
 		if s.comp != nil {
 			s.comp.free()
 		}
+		if s.overlays != nil || len(s.lastOverlays) > 0 {
+			s.freeOverlays()
+			s.overlaysLost = len(s.lastOverlays) > 0
+		}
 	}
 	if b.comp != nil {
 		b.comp.free()
@@ -250,6 +267,12 @@ func (b *Backend) recompose() {
 	}
 	// Frames drawn in memory that could not show draw again.
 	for _, s := range b.surfaces {
+		if s.overlaysLost {
+			s.overlaysLost = false
+			if len(s.lastOverlays) > 0 {
+				s.PlaceOverlays(s.lastOverlays)
+			}
+		}
 		if s.comp == nil || s.comp.dev != nil {
 			continue
 		}

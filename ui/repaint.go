@@ -30,7 +30,10 @@ type paintPart struct {
 	holes      []Rect
 	// from and to are where it painted the frame being painted, at the
 	// end of the scene's operations.
-	from, to int
+	from, to       int
+	seq            uint32
+	transientDelta uint64
+	spillDelta     uint64
 }
 
 // draw calls e's Draw callback (DrawOver's when after) with box, noting
@@ -52,16 +55,34 @@ func (p *Painter) draw(e *node, box Rect, after bool) {
 	sp := &rt.paths.spill
 	sp.run++
 	opened := sp.opened
+	rt.paintSeq++
+	rt.activePart = paintPart{
+		e: e, after: after, box: box, start: start, end: -1,
+		painter: state, seq: rt.paintSeq,
+	}
+	rt.curDrawOvStart = len(rt.overlays)
 	p.drawing, p.asked = true, false
 	fn(p, box)
 	p.drawing = false
 	sp.run++
-	if p.asked {
-		rt.partTransient += rt.text.TransientUses() - uses
-		sp.inParts += sp.opened - opened
-		rt.drawn = append(rt.drawn, paintPart{e: e, after: after, box: box, start: start, end: len(p.s.Ops), painter: state,
-			under: append([]opaqueBox(nil), state.under...), holes: append([]Rect(nil), state.holes...)})
+	hadOv := rt.curDrawOvStart < len(rt.overlays)
+	if p.asked || hadOv {
+		rt.activePart.end = len(p.s.Ops)
+		rt.activePart.under = append([]opaqueBox(nil), state.under...)
+		rt.activePart.holes = append([]Rect(nil), state.holes...)
+		rt.activePart.transientDelta = rt.text.TransientUses() - uses
+		rt.activePart.spillDelta = sp.opened - opened
+		if p.asked {
+			rt.partTransient += rt.activePart.transientDelta
+			sp.inParts += rt.activePart.spillDelta
+			rt.drawn = append(rt.drawn, rt.activePart)
+		} else {
+			for i := rt.curDrawOvStart; i < len(rt.overlays); i++ {
+				rt.overlays[i].part = rt.activePart
+			}
+		}
 	}
+	rt.activePart = paintPart{}
 }
 
 // asks notes that the drawing painting asks to be painted again: by
@@ -125,6 +146,28 @@ func (rt *engine) repaintParts() bool {
 	s.Effects = s.Effects[:rt.partMark.effects]
 	s.Wide = s.Wide[:rt.partMark.wide]
 	s.Words = s.Words[:rt.partMark.words]
+
+	// Retain overlays belonging to untouched parts or non-Draw elements while
+	// removing those owned by parts about to repaint.
+	var keptOverlays []pendingOverlay
+	if len(rt.overlays) > 0 {
+		for _, ov := range rt.overlays {
+			repainted := false
+			if ov.inDraw {
+				for i := range rt.drawn {
+					if rt.drawn[i].e == ov.partKey.e && rt.drawn[i].after == ov.partKey.after {
+						repainted = true
+						break
+					}
+				}
+			}
+			if !repainted {
+				keptOverlays = append(keptOverlays, ov)
+			}
+		}
+		rt.overlays = rt.overlays[:0]
+	}
+
 	for i := range rt.drawn {
 		pt := &rt.drawn[i]
 		rt.painter = pt.painter
@@ -138,23 +181,61 @@ func (rt *engine) repaintParts() bool {
 		// A part that no longer asks to be painted again stays, as what
 		// it painted last stays in the scene.
 		pt.from = len(s.Ops)
+		rt.curPartSlot = i
+		rt.activePart = *pt
+		rt.curDrawOvStart = len(rt.overlays)
 		p.drawing, p.asked = true, false
 		rt.paths.spill.run++
 		fn(p, pt.box)
 		rt.paths.spill.run++
 		p.drawing = false
 		pt.to = len(s.Ops)
+		for j := rt.curDrawOvStart; j < len(rt.overlays); j++ {
+			rt.overlays[j].opIndex -= pt.from
+			rt.overlays[j].part = *pt
+		}
+		rt.activePart = paintPart{}
 		rt.under, rt.holes = p.under[:0], p.holes[:0]
 	}
+
+	var mergedOverlays []pendingOverlay
+	keptIdx, newIdx := 0, 0
 	ops, last := rt.partOps[:0], 0
 	for i := range rt.drawn {
 		pt := &rt.drawn[i]
+		gapNew := len(ops)
 		ops = append(ops, s.Ops[last:pt.start]...)
+		for keptIdx < len(keptOverlays) {
+			k := &keptOverlays[keptIdx]
+			if !(k.opIndex < pt.start || (k.opIndex == pt.start && k.seq < pt.seq)) {
+				break
+			}
+			k.opIndex = gapNew + (k.opIndex - last)
+			mergedOverlays = append(mergedOverlays, *k)
+			keptIdx++
+		}
 		start := len(ops)
 		ops = append(ops, s.Ops[pt.from:pt.to]...)
-		last, pt.start, pt.end = pt.end, start, len(ops)
+		newEnd := len(ops)
+		for newIdx < len(rt.overlays) && rt.overlays[newIdx].partSlot == i {
+			ov := rt.overlays[newIdx]
+			ov.opIndex = start + ov.opIndex
+			ov.part.start = start
+			ov.part.end = newEnd
+			mergedOverlays = append(mergedOverlays, ov)
+			newIdx++
+		}
+		last, pt.start, pt.end = pt.end, start, newEnd
 	}
+	sufNew := len(ops)
 	ops = append(ops, s.Ops[last:n]...)
+	for keptIdx < len(keptOverlays) {
+		k := keptOverlays[keptIdx]
+		k.opIndex = sufNew + (k.opIndex - last)
+		mergedOverlays = append(mergedOverlays, k)
+		keptIdx++
+	}
+	rt.overlays = append(rt.overlays[:0], mergedOverlays...)
 	clear(s.Ops)
 	rt.partOps, s.Ops = s.Ops[:0], ops
 	lastNewEnd := rt.drawn[len(rt.drawn)-1].end
@@ -175,5 +256,6 @@ func (rt *engine) repaintParts() bool {
 		s.Partial = scene.PartEdit{}
 	}
 	rt.finishSpills()
+	rt.resolveOverlays(s, true)
 	return true
 }

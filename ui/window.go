@@ -182,6 +182,8 @@ type windowHost struct {
 	views  []embeddedView
 	// glassPlaced is where the surface shows the system's glass.
 	glassPlaced []platform.GlassPlacement
+	// overlayPlaced is where the surface shows compositor overlays.
+	overlayPlaced []platform.OverlayPlacement
 	// waiting tells that a frame paced by the display waits for waitingOn,
 	// the GPU renderer or refresh, to be able to draw it (displayWaiter);
 	// wake and displayReady draw it then, at the time the display asked
@@ -864,7 +866,7 @@ func (h *windowHost) detach() {
 	h.releaseParked()
 	// The last frame, and the bitmaps it drew, go with the window (#1281).
 	h.last = nil
-	h.placed, h.views, h.glassPlaced = nil, nil, nil
+	h.placed, h.views, h.glassPlaced, h.overlayPlaced = nil, nil, nil, nil
 }
 
 func (h *windowHost) requestFrame() {
@@ -1155,6 +1157,33 @@ func sameGlassPlacement(a, b platform.GlassPlacement) bool {
 		return false
 	}
 	return a.Tint == nil || *a.Tint == *b.Tint
+}
+
+// compositorOverlays reports whether the surface composes solid overlays.
+func (h *windowHost) compositorOverlays() bool {
+	s, ok := h.conn.Surface.(platform.OverlaySurface)
+	return ok && s.CompositorOverlaysSupported()
+}
+
+// placeOverlays gives the surface where the frame shows compositor overlays,
+// unless unchanged from the last frame.
+func (h *windowHost) placeOverlays(places []platform.OverlayPlacement) {
+	s, ok := h.conn.Surface.(platform.OverlaySurface)
+	if !ok {
+		return
+	}
+	if slices.EqualFunc(places, h.overlayPlaced, sameOverlayPlacement) {
+		return
+	}
+	h.overlayPlaced = append(h.overlayPlaced[:0], places...)
+	s.PlaceOverlays(places)
+}
+
+func sameOverlayPlacement(a, b platform.OverlayPlacement) bool {
+	return a.ID == b.ID && a.Frame == b.Frame && a.Clip == b.Clip &&
+		a.CornerRadius == b.CornerRadius && a.Color == b.Color && a.Opacity == b.Opacity &&
+		a.PulseStart.Equal(b.PulseStart) && a.PulseDelay == b.PulseDelay && a.PulsePeriod == b.PulsePeriod &&
+		a.PulseMin == b.PulseMin && a.PulseMax == b.PulseMax
 }
 
 // placeWebViews gives the surface where the frame shows the window's web
