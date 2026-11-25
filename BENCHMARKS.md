@@ -37,11 +37,13 @@ Unobstructed breathing overlays (`Painter.OverlayFill`, `ui.Pulse`, `platform.Ov
 | `BenchmarkBuildRows-15` | `149,732 ns/op` (`0 allocs`) | `147,919 ns/op` (`0 allocs`) | `-1.2%` |
 | `BenchmarkDiffRows/unchanged-15` | `52,764 ns/op` (`0 allocs`) | `47,842 ns/op` (`0 allocs`) | `-9.3%` |
 
-**Recorded `plugins/glass` baselines (`-count=5` medians)**
+**`plugins/glass` single-pass mip-pyramid blur (`67f97c8b`, `-count=5` medians)**
 
-- `BenchmarkBlur/even-15`: `1,580,738 ns/op`, `187,635 B/op`, `22 allocs/op`
-- `BenchmarkBlur/progressive-15`: `10,552,532 ns/op`, `7,937,286 B/op`, `22 allocs/op`
-- `BenchmarkGlass-15`: `5,917,404 ns/op`, `4,321,250 B/op`, `24 allocs/op`
+| Benchmark | Baseline Median | After | Delta |
+| --- | --- | --- | --- |
+| `BenchmarkBlur/even-15` | `1,580,738 ns/op` (`187,635 B/op`, `22 allocs`) | `1,398,171 ns/op` (`188,275 B/op`, `22 allocs`) | **`-11.5%` (`1.13×` faster)** |
+| `BenchmarkBlur/progressive-15` | `10,552,532 ns/op` (`7,937,286 B/op`, `22 allocs`) | `3,423,362 ns/op` (`8,572,322 B/op`, `30 allocs`) | **`-67.6%` (`3.08×` faster)** |
+| `BenchmarkGlass-15` | `5,917,404 ns/op` (`4,321,250 B/op`, `24 allocs`) | `5,384,581 ns/op` (`4,321,885 B/op`, `24 allocs`) | **`-9.0%` (`1.10×` faster)** |
 
 #### Text Rasterization, Layout, Lists & Hit Testing
 
@@ -102,3 +104,16 @@ Unobstructed breathing overlays (`Painter.OverlayFill`, `ui.Pulse`, `platform.Ov
 | `BenchmarkRepaintPartsText-15` (`ui`) | `9,517 ns/op` (`0.04166 whole-paints/op`, `14 B/op`, `0 allocs`) | `9,110 ns/op` (`0 whole-paints/op`, `0 B/op`, `0 allocs`) | **`100%` elimination of periodic full repaints (`-4.3%` ns, `0 B/op`)** |
 | `BenchmarkBoundsForRange-15` (`ui`) | `33,779 ns/op` (`31,240 B/op`, `15 allocs`) | `3,162 ns/op` (`16 B/op`, `1 allocs`) | **`-90.6%` ns (`10.7×` faster), `-99.95%` B, `-93.3%` allocs** |
 | `BenchmarkTextAreaLinesType-15` (`ui`) | `1,012,049 ns/op` (`448,574 B/op`, `1,087 allocs`, `b.N=3,811`) | `930,624 / 1,358,024 / 1,433,821 ns/op` (`414k–627k B/op`, `628–852 allocs`, `b.N=5,469–7,758`) | **Fewer allocs (`-42%` at `b.N=5,469`), `b.N` grew 2× as paragraph 0 grew monotonically** |
+
+**Long-text windowed (`7f96b946`) and incremental line-reuse (`d21bd725`) Core Text typesetting (`internal/text`, `-count=5` medians)**
+
+`BenchmarkLayoutLong` measures wrapped paragraphs past `typesetLong` (`8,192` runes): `cold` releases shaping between iterations, while `edit` cycles 16 distinct middle-word mutations across consecutive `EndFrame()` frames. Windowed `typesetWindows` enforces exact Core Text shaping and strictly linear cold scaling (`4.57 → 18.0 → 72.3 ms` for `16 → 64 → 256 KiB`), and `long_darwin.go` reuses unchanged head and tail lines across consecutive edits:
+
+| Benchmark | Pre-Window (`46ae2db2`) | Windowed Linear (`7f96b946`) | Incremental Reuse (`d21bd725`) | Delta |
+| --- | --- | --- | --- | --- |
+| `BenchmarkLayoutLong/cold/16KiB-15` | `561,181 ns/op` (`3.35 MB`, `82 allocs`) | `4,569,020 ns/op` (`3.06 MB`, `4,453 allocs`) | `4,588,506 ns/op` (`4.13 MB`, `4,469 allocs`) | Linear windowed cold pass |
+| `BenchmarkLayoutLong/cold/64KiB-15` | `2,703,207 ns/op` (`13.3 MB`, `147 allocs`) | `18,022,152 ns/op` (`12.2 MB`, `17,668 allocs`) | `18,237,029 ns/op` (`16.4 MB`, `17,686 allocs`) | Linear `4×` scaling with length |
+| `BenchmarkLayoutLong/cold/256KiB-15` | `24,488,482 ns/op` *(bimodal `6.4–39.7 ms`, `451 allocs`)* | `72,311,522 ns/op` (`49.2 MB`, `70,486 allocs`) | `72,489,561 ns/op` (`65.9 MB`, `70,507 allocs`) | Eliminates whole-text spike |
+| `BenchmarkLayoutLong/edit/16KiB-15` | `534,454 ns/op` (`3.35 MB`, `82 allocs`) | `4,575,260 ns/op` (`3.06 MB`, `4,453 allocs`) | `585,619 ns/op` (`3.55 MB`, `122 allocs`) | **`-87.2%` vs windowed (`7.81×` faster), `-97.3%` allocs** |
+| `BenchmarkLayoutLong/edit/64KiB-15` | `2,547,564 ns/op` (`13.2 MB`, `143 allocs`) | `17,994,351 ns/op` (`12.2 MB`, `17,667 allocs`) | `1,535,567 ns/op` (`14.1 MB`, `130 allocs`) | **`-91.5%` vs windowed (`11.7×` faster), `-39.7%` vs `46ae2db2`** |
+| `BenchmarkLayoutLong/edit/256KiB-15` | `23,829,881 ns/op` *(bimodal `6.1–39.5 ms`, `445 allocs`)* | `72,597,120 ns/op` (`49.2 MB`, `70,486 allocs`) | `4,686,002 ns/op` (`56.7 MB`, `142 allocs`) | **`-93.5%` vs windowed (`15.5×` faster), `-80.3%` vs `46ae2db2` median** |

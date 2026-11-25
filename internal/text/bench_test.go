@@ -173,3 +173,77 @@ func BenchmarkGlyphCache(b *testing.B) {
 		}
 	})
 }
+
+func longBenchParagraph(minBytes int) string {
+	const sentence = "The quick brown fox jumps over a lazy dog by the river window while writing clean prose for long documents. "
+	var b strings.Builder
+	b.Grow(minBytes + len(sentence))
+	for b.Len() < minBytes {
+		b.WriteString(sentence)
+	}
+	return b.String()
+}
+
+// BenchmarkLayoutLong lays out a wrapped paragraph past typesetLong (8,192
+// runes): cold releases shaping on every iteration (measuring windowed linear
+// typesetting), while edit alternates distinct one-word mutations in the
+// middle across consecutive frames without dropping shaping (measuring
+// incremental long-text line reuse).
+func BenchmarkLayoutLong(b *testing.B) {
+	sizes := []struct {
+		name  string
+		bytes int
+	}{
+		{"16KiB", 16 << 10},
+		{"64KiB", 64 << 10},
+		{"256KiB", 256 << 10},
+	}
+	for _, tc := range sizes {
+		a := longBenchParagraph(tc.bytes)
+		mid := len(a) / 2
+		off := strings.Index(a[mid:], "fox")
+		variants := make([]Params, 16)
+		for k := range variants {
+			word := "fog" + strconv.Itoa(10+k)
+			if k%2 == 1 {
+				word = "fogg" + strconv.Itoa(10+k)
+			}
+			variants[k] = Params{
+				Text:  a[:mid+off] + word + a[mid+off+3:],
+				Style: Style{Size: 15},
+				Width: 600,
+			}
+		}
+		coldP := variants[0]
+
+		b.Run("cold/"+tc.name, func(b *testing.B) {
+			s := Shared()
+			s.ReleaseShaping()
+			b.ReportAllocs()
+			for b.Loop() {
+				s.ReleaseShaping()
+				s.mu.Lock()
+				s.layout(coldP)
+				s.mu.Unlock()
+			}
+		})
+
+		b.Run("edit/"+tc.name, func(b *testing.B) {
+			s := Shared()
+			s.ReleaseShaping()
+			s.mu.Lock()
+			s.layout(variants[15])
+			s.mu.Unlock()
+			s.EndFrame()
+			var i int
+			b.ReportAllocs()
+			for b.Loop() {
+				s.mu.Lock()
+				s.layout(variants[i&15])
+				s.mu.Unlock()
+				s.EndFrame()
+				i++
+			}
+		})
+	}
+}
