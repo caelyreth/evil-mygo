@@ -81,9 +81,13 @@ func retryInUse(f func() error) error {
 			!errors.Is(err, syscall.Errno(32)) && !errors.Is(err, syscall.Errno(5)) {
 			return err
 		}
-		time.Sleep(time.Duration(i) * 100 * time.Millisecond)
+		inUseWait(i)
 	}
 }
+
+// inUseWait waits before the ith retry of what Windows reported in use;
+// tests replace it.
+var inUseWait = func(i int) { time.Sleep(time.Duration(i) * 100 * time.Millisecond) }
 
 // writeAppFile writes a file of the app's own: a new file renamed over
 // it, so that it is whole or not there.
