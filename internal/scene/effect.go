@@ -38,6 +38,10 @@ type Effect struct {
 	Name string
 	// Backdrop tells that the effect reads its backdrop.
 	Backdrop bool
+	// Pyramid tells that the backdrop is built as a mip pyramid of
+	// downsampled, blurred levels (MaxPyramidLevels) rather than a single
+	// Gaussian pass. Requires Backdrop.
+	Pyramid bool
 	// Metal and HLSL are the effect's shader in Metal Shading Language
 	// and HLSL, with the code compiled ahead of time from it; GLSL is its
 	// shader in GLSL 3.30 and GLSL ES 3.00, which drivers compile.
@@ -216,10 +220,60 @@ type EffectPixels interface {
 // Renderers keep each step in 8 bits a channel, rounded to the nearest,
 // as textures hold them.
 type Backdrop struct {
-	Area   image.Rectangle
-	Down   int
-	Sigma  float32
-	Radius int
+	Area    image.Rectangle
+	Down    int
+	Sigma   float32
+	Radius  int
+	Pyramid int
+}
+
+const (
+	// MaxPyramidLevels is the maximum number of mip levels in a backdrop
+	// pyramid (levels 0..5, downsampling by 1..32).
+	MaxPyramidLevels = 6
+	// PyramidBlurSigma and PyramidBlurRadius define the separable 9-tap
+	// Gaussian filter applied after each 2x2 downsample in a pyramid.
+	PyramidBlurSigma  float32 = 1.05
+	PyramidBlurRadius         = 4
+)
+
+var pyramidSigmas = func() [MaxPyramidLevels]float32 {
+	var out [MaxPyramidLevels]float32
+	var v float64
+	sig := float64(PyramidBlurSigma)
+	for k := 1; k < MaxPyramidLevels; k++ {
+		scale := float64(int(1) << k)
+		half := float64(int(1) << (k - 1))
+		v += 0.25*half*half + (sig*scale)*(sig*scale)
+		out[k] = float32(math.Sqrt(v))
+	}
+	return out
+}()
+
+// PyramidSigma returns the approximate effective blur radius in pixels
+// of mip level k (0..MaxPyramidLevels-1) of a backdrop pyramid.
+func PyramidSigma(k int) float32 {
+	if k <= 0 {
+		return 0
+	}
+	if k >= MaxPyramidLevels {
+		k = MaxPyramidLevels - 1
+	}
+	return pyramidSigmas[k]
+}
+
+// BackdropPyramidOf returns a mip-pyramid backdrop covering r and the
+// reach of a blur up to maxBlur pixels in a frame of w×h pixels.
+func BackdropPyramidOf(r Rect, maxBlur float32, w, h int) Backdrop {
+	maxBlur = max(maxBlur, 0)
+	levels := 2
+	for levels < MaxPyramidLevels && PyramidSigma(levels-1) < maxBlur {
+		levels++
+	}
+	reach := float32(math.Ceil(float64(3 * maxBlur)))
+	area := image.Rect(int(math.Floor(float64(r.X-reach))), int(math.Floor(float64(r.Y-reach))),
+		int(math.Ceil(float64(r.X+r.W+reach))), int(math.Ceil(float64(r.Y+r.H+reach))))
+	return Backdrop{Area: area.Intersect(image.Rect(0, 0, w, h)), Down: 1, Pyramid: levels}
 }
 
 // BackdropOf returns the backdrop of a shape r blurred by blur, in a frame
@@ -293,13 +347,72 @@ func BlurWeight(i int, sigma float32) float32 {
 
 // BackdropImage is a backdrop as the CPU renderer computes it: W×H texels
 // of premultiplied RGBA, each channel a byte over 255, as a texture
-// reads.
+// reads. For a Pyramid backdrop, Levels holds levels 0..Pyramid-1.
 type BackdropImage struct {
 	Backdrop
 	// Transform maps local sampling coordinates to the frame.
 	Transform Affine
 	W, H      int
 	Pix       []float32
+	Levels    [][]float32
+}
+
+// LevelSize returns the width and height in texels of pyramid level k.
+func (b *BackdropImage) LevelSize(k int) (int, int) {
+	w, h := b.W, b.H
+	for range k {
+		w = max((w+1)>>1, 1)
+		h = max((h+1)>>1, 1)
+	}
+	return w, h
+}
+
+// SampleLevel samples a backdrop pyramid at frame/local (x, y) and
+// continuous mip level lod, trilinearly filtering across mip levels.
+func (b *BackdropImage) SampleLevel(x, y, lod float32) [4]float32 {
+	if len(b.Levels) == 0 {
+		return [4]float32{}
+	}
+	x, y = b.Transform.Point(x, y)
+	lod = min(max(lod, 0), float32(len(b.Levels)-1))
+	lo := int(lod)
+	hi := min(lo+1, len(b.Levels)-1)
+	f := lod - float32(lo)
+	c0 := b.sampleSlice(lo, x, y)
+	if hi == lo || f <= 0 {
+		return c0
+	}
+	c1 := b.sampleSlice(hi, x, y)
+	return [4]float32{
+		c0[0] + (c1[0]-c0[0])*f,
+		c0[1] + (c1[1]-c0[1])*f,
+		c0[2] + (c1[2]-c0[2])*f,
+		c0[3] + (c1[3]-c0[3])*f,
+	}
+}
+
+func (b *BackdropImage) sampleSlice(level int, x, y float32) [4]float32 {
+	pix := b.Levels[level]
+	lw, lh := b.LevelSize(level)
+	if lw <= 0 || lh <= 0 || len(pix) < 4*lw*lh {
+		return [4]float32{}
+	}
+	k := float32(int(1) << level)
+	u := (x-float32(b.Area.Min.X))/k - 0.5
+	v := (y-float32(b.Area.Min.Y))/k - 0.5
+	fu, fv := float32(math.Floor(float64(u))), float32(math.Floor(float64(v)))
+	tx, ty := u-fu, v-fv
+	x0, y0 := min(max(int(fu), 0), lw-1), min(max(int(fv), 0), lh-1)
+	x1, y1 := min(max(int(fu)+1, 0), lw-1), min(max(int(fv)+1, 0), lh-1)
+	p00, p10 := pix[4*(y0*lw+x0):][:4], pix[4*(y0*lw+x1):][:4]
+	p01, p11 := pix[4*(y1*lw+x0):][:4], pix[4*(y1*lw+x1):][:4]
+	var c [4]float32
+	for i := range c {
+		top := p00[i]*(1-tx) + p10[i]*tx
+		bot := p01[i]*(1-tx) + p11[i]*tx
+		c[i] = top*(1-ty) + bot*ty
+	}
+	return c
 }
 
 // Sample returns the backdrop at (x, y), in the frame's pixels,

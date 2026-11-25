@@ -472,6 +472,35 @@ func (b *Builder) BackdropSize() (w, h int) {
 	return w, h
 }
 
+// PyramidDownPass returns the pass downsampling mip level src-1 of a pyramid
+// whose previous level has size sw×sh into the current level.
+func PyramidDownPass(sw, sh int) Pass {
+	return Pass{Limit: [2]int32{int32(sw - 1), int32(sh - 1)}, Down: 2, Mode: PassUnflipped}
+}
+
+// PyramidBlurPass returns the pass blurring a pyramid level of size w×h
+// along rows (dir 1, 0) or columns (0, 1).
+func PyramidBlurPass(w, h int, dir [2]int32) Pass {
+	return Pass{
+		Limit:  [2]int32{int32(w - 1), int32(h - 1)},
+		Dir:    dir,
+		Radius: scene.PyramidBlurRadius,
+		Sigma:  scene.PyramidBlurSigma,
+	}
+}
+
+// PyramidBackdropSize returns how large the mip-pyramid backdrop textures
+// of the last scene built must be at level 0, or 0, 0 when none uses a pyramid.
+func (b *Builder) PyramidBackdropSize() (w, h int) {
+	for _, bk := range b.Backdrops {
+		if bk.Pyramid > 0 {
+			bw, bh := bk.Size()
+			w, h = max(w, bw), max(h, bh)
+		}
+	}
+	return w, h
+}
+
 type clip struct {
 	rect    scene.Rect
 	radii   [4]float32
@@ -1625,7 +1654,12 @@ func (b *Builder) addEffect(s *scene.Scene, op *scene.Op) {
 		b.fxImages(fx, &batch)
 	}
 	if fx.Effect.Backdrop {
-		bk := s.BackdropOf(op.Transform.Bounds(op.Rect), fx.Blur, s.Width, s.Height)
+		var bk scene.Backdrop
+		if fx.Effect.Pyramid {
+			bk = scene.BackdropPyramidOf(op.Transform.Bounds(op.Rect), fx.Blur, s.Width, s.Height)
+		} else {
+			bk = s.BackdropOf(op.Transform.Bounds(op.Rect), fx.Blur, s.Width, s.Height)
+		}
 		if bk.Area.Empty() {
 			return
 		}
@@ -1634,7 +1668,11 @@ func (b *Builder) addEffect(s *scene.Scene, op *scene.Op) {
 		batch.Backdrop = len(b.Backdrops)
 		tw, th := bk.Size()
 		in.UV = [4]float32{float32(bk.Area.Min.X), float32(bk.Area.Min.Y), float32(tw), float32(th)}
-		in.Params[2] = float32(bk.Down)
+		if bk.Pyramid > 0 {
+			in.Params[2] = float32(bk.Pyramid)
+		} else {
+			in.Params[2] = float32(bk.Down)
+		}
 	}
 	b.Batches = append(b.Batches, batch)
 	b.Instances = append(b.Instances, in)

@@ -1,6 +1,9 @@
 package glass
 
-import "github.com/egoist/mygo/ui"
+import (
+	"github.com/egoist/mygo/internal/scene"
+	"github.com/egoist/mygo/ui"
+)
 
 // ScrollEdge is the scroll edge effect of macOS 26 and later, a
 // ui.Material: what macOS draws over content scrolling under a bar of
@@ -44,13 +47,16 @@ func (e ScrollEdge) PaintMaterial(p *ui.Painter, box ui.Rect, radii [4]float32) 
 	}
 	if !e.Hard {
 		// The background, its alpha 0.85 at the bar's edge, falling
-		// linearly to 0 at the other, as AppKit's soft pocket replays the
-		// window's background under a gradient mask, in sRGB.
-		g := ui.LinearGradient{From: bg.Alpha(softEdge), To: bg.Alpha(0), Angle: 180}
+		// linearly to 0 at the other, with IGN dithering to avoid 8-bit
+		// banding without reading the backdrop.
+		dir := float32(0)
 		if e.Bottom {
-			g.Angle = 0
+			dir = 1
 		}
-		fillGradient(p, box, radii, g)
+		p.Effect(edgeEffect, box, radii, 0, [5][4]float32{
+			{float32(bg.R) / 255, float32(bg.G) / 255, float32(bg.B) / 255, softEdge},
+			{dir, 0, 0, 0},
+		})
 		return
 	}
 	// Under a hard edge, the content blurred, saturated by 1.25
@@ -108,23 +114,26 @@ func toned(c [3]float32, saturation, offset float32) [3]float32 {
 	return c
 }
 
-// fillGradient fills box, rounded by radii, with g: as one rounded
-// rectangle when its corners are alike, else as a path.
-func fillGradient(p *ui.Painter, box ui.Rect, radii [4]float32, g ui.LinearGradient) {
-	if radii[0] == radii[1] && radii[1] == radii[2] && radii[2] == radii[3] {
-		p.FillGradient(box, g, radii[0])
-		return
+type edgePixels struct {
+	rect   scene.Rect
+	p0, p1 [4]float32
+}
+
+func (px *edgePixels) Begin(op *scene.EffectOp, rect scene.Rect, _ [4]float32) {
+	px.rect, px.p0, px.p1 = rect, op.Params[0], op.Params[1]
+}
+
+func (px *edgePixels) Color(x, y float32, _ *scene.BackdropImage) [4]float32 {
+	t := min(max((y-px.rect.Y)/max(px.rect.H, 0.0001), 0), 1)
+	if px.p1[0] > 0.5 {
+		t = 1 - t
 	}
-	var path ui.Path
-	x0, y0, x1, y1 := box.X, box.Y, box.X+box.W, box.Y+box.H
-	// A cubic Bézier's control points for a quarter circle are k of the
-	// radius from its ends.
-	const k = 0.5523
-	tl, tr, br, bl := radii[0], radii[1], radii[2], radii[3]
-	path.MoveTo(x0+tl, y0).LineTo(x1-tr, y0)
-	path.CubeTo(x1-tr+k*tr, y0, x1, y0+tr-k*tr, x1, y0+tr).LineTo(x1, y1-br)
-	path.CubeTo(x1, y1-br+k*br, x1-br+k*br, y1, x1-br, y1).LineTo(x0+bl, y1)
-	path.CubeTo(x0+bl-k*bl, y1, x0, y1-bl+k*bl, x0, y1-bl).LineTo(x0, y0+tl)
-	path.CubeTo(x0, y0+tl-k*tl, x0+tl-k*tl, y0, x0+tl, y0).Close()
-	p.FillPathGradient(&path, g)
+	a := px.p0[3] * (1 - t)
+	if a <= 0 {
+		return [4]float32{}
+	}
+	if t > 0 && t < 1 {
+		a = min(max(a+pyrIGN(x, y), 0), 1)
+	}
+	return [4]float32{px.p0[0] * a, px.p0[1] * a, px.p0[2] * a, a}
 }

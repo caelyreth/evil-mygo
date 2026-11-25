@@ -55,4 +55,10 @@ func TestMetalLibrary(t *testing.T) {
 	if gpu.SourceSum(metal.EffectSource(blurMetalSource)) != blurMetalSum {
 		t.Error("blur.metal or the Metal renderer's effect.metal changed since shaders_darwin.go was generated: run go generate ./plugins/glass on macOS")
 	}
+	if gpu.SourceSum(metal.EffectSource(progMetalSource)) != progMetalSum {
+		t.Error("prog.metal or the Metal renderer's effect.metal changed since shaders_darwin.go was generated: run go generate ./plugins/glass on macOS")
+	}
+	if gpu.SourceSum(metal.EffectSource(edgeMetalSource)) != edgeMetalSum {
+		t.Error("edge.metal or the Metal renderer's effect.metal changed since shaders_darwin.go was generated: run go generate ./plugins/glass on macOS")
+	}
 }

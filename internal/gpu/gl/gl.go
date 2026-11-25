@@ -69,6 +69,8 @@ const (
 	glTextureMagFilter   = 0x2800
 	glTextureWrapS       = 0x2802
 	glTextureWrapT       = 0x2803
+	glTextureBaseLevel   = 0x813C
+	glTextureMaxLevel    = 0x813D
 	glLinear             = 0x2601
 	glClampToEdge        = 0x812F
 	glR8                 = 0x8229
@@ -158,6 +160,8 @@ type Renderer struct {
 	grab       texture
 	backdrop   [2]texture
 	backdropFB [2]uint32
+	pyramid    [2]texture
+	pyramidFB  [2]uint32
 	// header is what the shaders start with; effects are the programs of
 	// the effects drawn, made as first drawn.
 	header  string
@@ -1017,12 +1021,17 @@ func (r *Renderer) drawBuilt(s *scene.Scene, b *gpu.Builder, part *gpu.Part) err
 		}
 		if bt.Backdrop != 0 {
 			// The effect shows what is drawn so far.
-			r.readBackdrop(uint32(fb), s.Height, b.Backdrops[bt.Backdrop-1])
+			bk := b.Backdrops[bt.Backdrop-1]
+			r.readBackdrop(uint32(fb), s.Height, bk)
 			glBindFramebuffer(glFramebuffer, uint32(fb))
 			glViewport(0, 0, int32(s.Width), int32(s.Height))
 			r.bindState(s)
 			glActiveTexture(glTexture0 + 3)
-			glBindTexture(glTexture2D, r.backdrop[0].tex)
+			tex := r.backdrop[0].tex
+			if bk.Pyramid > 0 {
+				tex = r.pyramid[0].tex
+			}
+			glBindTexture(glTexture2D, tex)
 			glActiveTexture(glTexture0 + 2)
 			bound, program, hole = uintptr(r.empty), r.program, false
 		}
@@ -1265,8 +1274,9 @@ func (r *Renderer) blendFunc(hole bool) {
 }
 
 // readBackdrop computes the backdrop bk of what the framebuffer fb holds,
-// a frame height pixels high, into r.backdrop[0]: it copies the area into
-// grab, whose rows go up as GL's, averages its squares and blurs them.
+// a frame height pixels high, into r.backdrop[0] or r.pyramid[0]: it copies
+// the area into grab, whose rows go up as GL's, averages its squares and
+// blurs them.
 func (r *Renderer) readBackdrop(fb uint32, height int, bk scene.Backdrop) {
 	w, h := bk.Size()
 	glDisable(glBlend)
@@ -1275,6 +1285,38 @@ func (r *Renderer) readBackdrop(fb uint32, height int, bk scene.Backdrop) {
 	glBindTexture(glTexture2D, r.grab.tex)
 	glCopyTexSubImage2D(glTexture2D, 0, 0, 0, int32(bk.Area.Min.X), int32(height-bk.Area.Max.Y), int32(bk.Area.Dx()), int32(bk.Area.Dy()))
 	glBindVertexArray(r.passVAO)
+	if bk.Pyramid > 0 {
+		r.down.set(gpu.DownPass(bk, [2]int32{int32(bk.Area.Min.X), int32(bk.Area.Max.Y - 1)}))
+		r.passPyr(0, 0, w, h)
+		levels := min(bk.Pyramid, scene.MaxPyramidLevels)
+		pw, ph := w, h
+		for k := 1; k < levels; k++ {
+			wk, hk := max((pw+1)>>1, 1), max((ph+1)>>1, 1)
+			mw, mh := max(r.pyramid[0].w>>k, 1), max(r.pyramid[0].h>>k, 1)
+			r.down.set(gpu.PyramidDownPass(pw, ph))
+			glBindTexture(glTexture2D, r.pyramid[0].tex)
+			glTexParameteri(glTexture2D, glTextureBaseLevel, int32(k-1))
+			glTexParameteri(glTexture2D, glTextureMaxLevel, int32(k-1))
+			r.passPyrLevel(0, k, mw, mh, wk, hk)
+
+			r.blur.set(gpu.PyramidBlurPass(wk, hk, [2]int32{1, 0}))
+			glTexParameteri(glTexture2D, glTextureBaseLevel, int32(k))
+			glTexParameteri(glTexture2D, glTextureMaxLevel, int32(k))
+			r.passPyrLevel(1, k, mw, mh, wk, hk)
+
+			r.blur.set(gpu.PyramidBlurPass(wk, hk, [2]int32{0, 1}))
+			glBindTexture(glTexture2D, r.pyramid[1].tex)
+			glTexParameteri(glTexture2D, glTextureBaseLevel, int32(k))
+			glTexParameteri(glTexture2D, glTextureMaxLevel, int32(k))
+			r.passPyrLevel(0, k, mw, mh, wk, hk)
+			pw, ph = wk, hk
+		}
+		glBindTexture(glTexture2D, r.pyramid[0].tex)
+		glTexParameteri(glTexture2D, glTextureBaseLevel, 0)
+		glTexParameteri(glTexture2D, glTextureMaxLevel, int32(levels-1))
+		glBindTexture(glTexture2D, 0)
+		return
+	}
 	// Rows go up in grab: the frame's row y is its row Max.Y-1-y.
 	r.down.set(gpu.DownPass(bk, [2]int32{int32(bk.Area.Min.X), int32(bk.Area.Max.Y - 1)}))
 	r.pass(0, w, h)
@@ -1286,6 +1328,18 @@ func (r *Renderer) readBackdrop(fb uint32, height int, bk scene.Backdrop) {
 		glBindTexture(glTexture2D, r.backdrop[1].tex)
 		r.pass(0, w, h)
 	}
+}
+
+func (r *Renderer) passPyr(i, level, w, h int) {
+	r.passPyrLevel(i, level, r.pyramid[i].w, r.pyramid[i].h, w, h)
+}
+
+func (r *Renderer) passPyrLevel(i, level, tw, th, w, h int) {
+	glBindFramebuffer(glFramebuffer, r.pyramidFB[i])
+	glFramebufferTexture2D(glFramebuffer, glColorAttachment0, glTexture2D, r.pyramid[i].tex, int32(level))
+	glViewport(0, 0, int32(tw), int32(th))
+	glScissor(0, 0, int32(w), int32(h))
+	glDrawArraysInstanced(glTriangleStrip, 0, 4, 1)
 }
 
 // set uses the program with the uniforms of p.
@@ -1319,35 +1373,71 @@ func (r *Renderer) fitBackdrop(b *gpu.Builder) error {
 		aw, ah = max(aw, bk.Area.Dx()), max(ah, bk.Area.Dy())
 	}
 	if aw > r.grab.w || ah > r.grab.h {
-		// Somewhat larger, so that a pane growing does not make it again
-		// every frame.
-		aw, ah = min(max(aw+aw/4, r.grab.w), r.maxSize), min(max(ah+ah/4, r.grab.h), r.maxSize)
+		// Rounded to 64 texels with headroom so growing avoids churn.
+		aw = min(max(((aw+aw/4+63)/64)*64, r.grab.w), r.maxSize)
+		ah = min(max(((ah+ah/4+63)/64)*64, r.grab.h), r.maxSize)
 		if r.grab.tex != 0 {
 			glDeleteTextures(1, &r.grab.tex)
 		}
 		r.grab = texture{tex: newTexture(glRGBA8, glRGBA, aw, ah, nil, 0), w: aw, h: ah}
 	}
-	if w <= r.backdrop[0].w && h <= r.backdrop[0].h {
-		return nil
+	if w > r.backdrop[0].w || h > r.backdrop[0].h {
+		nw := min(max(((w+w/4+63)/64)*64, r.backdrop[0].w), r.maxSize)
+		nh := min(max(((h+h/4+63)/64)*64, r.backdrop[0].h), r.maxSize)
+		for i := range r.backdrop {
+			t := &r.backdrop[i]
+			if t.tex != 0 {
+				glDeleteTextures(1, &t.tex)
+			}
+			*t = texture{tex: newTexture(glRGBA8, glRGBA, nw, nh, nil, 0), w: nw, h: nh}
+			if r.backdropFB[i] == 0 {
+				glGenFramebuffers(1, &r.backdropFB[i])
+			}
+			var fb int32
+			glGetIntegerv(glFramebufferBinding, &fb)
+			glBindFramebuffer(glFramebuffer, r.backdropFB[i])
+			glFramebufferTexture2D(glFramebuffer, glColorAttachment0, glTexture2D, t.tex, 0)
+			done := glCheckFramebufferState(glFramebuffer) == glFramebufferDone
+			glBindFramebuffer(glFramebuffer, uint32(fb))
+			if !done {
+				return fmt.Errorf("gl: cannot draw into a %d×%d backdrop texture", nw, nh)
+			}
+		}
 	}
-	w, h = min(max(w+w/4, r.backdrop[0].w), r.maxSize), min(max(h+h/4, r.backdrop[0].h), r.maxSize)
-	for i := range r.backdrop {
-		t := &r.backdrop[i]
-		if t.tex != 0 {
-			glDeleteTextures(1, &t.tex)
-		}
-		*t = texture{tex: newTexture(glRGBA8, glRGBA, w, h, nil, 0), w: w, h: h}
-		if r.backdropFB[i] == 0 {
-			glGenFramebuffers(1, &r.backdropFB[i])
-		}
-		var fb int32
-		glGetIntegerv(glFramebufferBinding, &fb)
-		glBindFramebuffer(glFramebuffer, r.backdropFB[i])
-		glFramebufferTexture2D(glFramebuffer, glColorAttachment0, glTexture2D, t.tex, 0)
-		done := glCheckFramebufferState(glFramebuffer) == glFramebufferDone
-		glBindFramebuffer(glFramebuffer, uint32(fb))
-		if !done {
-			return fmt.Errorf("gl: cannot draw into a %d×%d backdrop texture", w, h)
+	pw, ph := b.PyramidBackdropSize()
+	if pw > 0 && (pw > r.pyramid[0].w || ph > r.pyramid[0].h) {
+		nw := min(max(((pw+pw/4+63)/64)*64, 128, r.pyramid[0].w), r.maxSize)
+		nh := min(max(((ph+ph/4+63)/64)*64, 128, r.pyramid[0].h), r.maxSize)
+		for i := range r.pyramid {
+			t := &r.pyramid[i]
+			if t.tex != 0 {
+				glDeleteTextures(1, &t.tex)
+			}
+			var tex uint32
+			glGenTextures(1, &tex)
+			glBindTexture(glTexture2D, tex)
+			glTexParameteri(glTexture2D, glTextureMinFilter, glNearest)
+			glTexParameteri(glTexture2D, glTextureMagFilter, glNearest)
+			glTexParameteri(glTexture2D, glTextureWrapS, glClampToEdge)
+			glTexParameteri(glTexture2D, glTextureWrapT, glClampToEdge)
+			glTexParameteri(glTexture2D, glTextureBaseLevel, 0)
+			glTexParameteri(glTexture2D, glTextureMaxLevel, scene.MaxPyramidLevels-1)
+			for k := range scene.MaxPyramidLevels {
+				glTexImage2D(glTexture2D, int32(k), glRGBA8, int32(max(nw>>k, 1)), int32(max(nh>>k, 1)), 0, glRGBA, glUnsignedByte, nil)
+			}
+			*t = texture{tex: tex, w: nw, h: nh}
+			if r.pyramidFB[i] == 0 {
+				glGenFramebuffers(1, &r.pyramidFB[i])
+			}
+			var fb int32
+			glGetIntegerv(glFramebufferBinding, &fb)
+			glBindFramebuffer(glFramebuffer, r.pyramidFB[i])
+			glFramebufferTexture2D(glFramebuffer, glColorAttachment0, glTexture2D, t.tex, 0)
+			done := glCheckFramebufferState(glFramebuffer) == glFramebufferDone
+			glBindFramebuffer(glFramebuffer, uint32(fb))
+			if !done {
+				return fmt.Errorf("gl: cannot draw into a %d×%d pyramid texture", nw, nh)
+			}
 		}
 	}
 	return nil
@@ -1366,6 +1456,7 @@ func (r *Renderer) forget() {
 	r.down, r.blur, r.passVAO = passProgram{}, passProgram{}, 0
 	clear(r.effects)
 	r.grab, r.backdrop, r.backdropFB = texture{}, [2]texture{}, [2]uint32{}
+	r.pyramid, r.pyramidFB = [2]texture{}, [2]uint32{}
 	r.mask, r.color = texture{}, texture{}
 	clear(r.images)
 	r.imageBytes = 0
@@ -1420,7 +1511,7 @@ func (r *Renderer) Release() {
 		r.blurTmp[i].release()
 	}
 	r.blurred, r.used = nil, 0
-	for _, tex := range []*uint32{&r.mask.tex, &r.color.tex, &r.empty, &r.grab.tex, &r.backdrop[0].tex, &r.backdrop[1].tex, &r.stops.tex} {
+	for _, tex := range []*uint32{&r.mask.tex, &r.color.tex, &r.empty, &r.grab.tex, &r.backdrop[0].tex, &r.backdrop[1].tex, &r.pyramid[0].tex, &r.pyramid[1].tex, &r.stops.tex} {
 		if *tex != 0 {
 			glDeleteTextures(1, tex)
 		}
@@ -1428,6 +1519,9 @@ func (r *Renderer) Release() {
 	for i := range r.backdropFB {
 		if r.backdropFB[i] != 0 {
 			glDeleteFramebuffers(1, &r.backdropFB[i])
+		}
+		if r.pyramidFB[i] != 0 {
+			glDeleteFramebuffers(1, &r.pyramidFB[i])
 		}
 	}
 	for _, p := range r.effects {

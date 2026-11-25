@@ -49,12 +49,18 @@ type backdrop struct {
 	// tmp holds the rows blurred, before the columns are.
 	tmp     []float32
 	weights []float32
+	// pyrTmp and pyrPix hold pyramid level buffers across frames.
+	pyrPix [scene.MaxPyramidLevels][]float32
+	pyrTmp []float32
 
 	// lines does the passes of read on several cores, each line of pass
 	// over dst (line).
 	lines team
 	dst   *Image
 	pass  int
+	// pyrLvl is the pyramid level currently being downsampled/blurred.
+	pyrLvl int
+	srcLvl int
 }
 
 // The passes of backdrop.read.
@@ -62,6 +68,9 @@ const (
 	averagePass = iota
 	rowsPass
 	columnsPass
+	pyrDownPass
+	pyrRowsPass
+	pyrColumnsPass
 )
 
 // texelWork is how many texels times taps are worth waking other cores
@@ -70,12 +79,20 @@ const texelWork = 64 << 10
 
 // read computes the backdrop b of dst.
 func (bd *backdrop) read(dst *Image, b scene.Backdrop) {
+	if b.Pyramid > 0 {
+		bd.readPyramid(dst, b)
+		return
+	}
 	img := &bd.img
 	img.Backdrop = b
+	img.Levels = nil
 	img.W, img.H = b.Size()
 	n := 4 * img.W * img.H
 	if cap(img.Pix) < n {
-		img.Pix, bd.tmp = make([]float32, n), make([]float32, n)
+		img.Pix = make([]float32, n)
+	}
+	if cap(bd.tmp) < n {
+		bd.tmp = make([]float32, n)
 	}
 	img.Pix, bd.tmp = img.Pix[:n], bd.tmp[:n]
 	if n == 0 {
@@ -94,6 +111,52 @@ func (bd *backdrop) read(dst *Image, b scene.Backdrop) {
 	taps := 2*b.Radius + 1
 	bd.run(rowsPass, img.H, img.W*taps)
 	bd.run(columnsPass, img.W, img.H*taps)
+}
+
+func (bd *backdrop) readPyramid(dst *Image, b scene.Backdrop) {
+	img := &bd.img
+	img.Backdrop = b
+	img.W, img.H = b.Size()
+	levels := min(max(b.Pyramid, 1), scene.MaxPyramidLevels)
+	img.Levels = img.Levels[:0]
+	n0 := 4 * img.W * img.H
+	if n0 == 0 {
+		return
+	}
+	bd.dst = dst
+	if cap(bd.pyrPix[0]) < n0 {
+		bd.pyrPix[0] = make([]float32, n0)
+	}
+	bd.pyrPix[0] = bd.pyrPix[0][:n0]
+	img.Pix = bd.pyrPix[0]
+	img.Levels = append(img.Levels, bd.pyrPix[0])
+	bd.run(averagePass, img.H, img.W)
+
+	bd.weights = bd.weights[:0]
+	for i := 0; i <= scene.PyramidBlurRadius; i++ {
+		bd.weights = append(bd.weights, scene.BlurWeight(i, scene.PyramidBlurSigma))
+	}
+	taps := 2*scene.PyramidBlurRadius + 1
+	pw, ph := img.W, img.H
+	for k := 1; k < levels; k++ {
+		wk, hk := max((pw+1)>>1, 1), max((ph+1)>>1, 1)
+		nk := 4 * wk * hk
+		if cap(bd.pyrPix[k]) < nk {
+			bd.pyrPix[k] = make([]float32, nk)
+		}
+		if cap(bd.pyrTmp) < nk {
+			bd.pyrTmp = make([]float32, nk)
+		}
+		bd.pyrPix[k] = bd.pyrPix[k][:nk]
+		bd.pyrTmp = bd.pyrTmp[:nk]
+		img.Levels = append(img.Levels, bd.pyrPix[k])
+		bd.srcLvl = k - 1
+		bd.pyrLvl = k
+		bd.run(pyrDownPass, hk, wk*4)
+		bd.run(pyrRowsPass, hk, wk*taps)
+		bd.run(pyrColumnsPass, wk, hk*taps)
+		pw, ph = wk, hk
+	}
 }
 
 // run does lines 0 to n-1 of pass, each work texels times taps, on
@@ -121,8 +184,43 @@ func (bd *backdrop) line(_, i int) {
 		bd.average(bd.dst, i)
 	case rowsPass:
 		bd.blur(bd.tmp, img.Pix, 4, 4*img.W, img.W, i)
-	default:
+	case columnsPass:
 		bd.blur(img.Pix, bd.tmp, 4*img.W, 4, img.H, i)
+	case pyrDownPass:
+		bd.downsampleLevel(bd.srcLvl, bd.pyrLvl, i)
+	case pyrRowsPass:
+		wk, _ := img.LevelSize(bd.pyrLvl)
+		bd.blurRad(bd.pyrTmp, img.Levels[bd.pyrLvl], 4, 4*wk, wk, i, scene.PyramidBlurRadius)
+	case pyrColumnsPass:
+		wk, hk := img.LevelSize(bd.pyrLvl)
+		bd.blurRad(img.Levels[bd.pyrLvl], bd.pyrTmp, 4*wk, 4, hk, i, scene.PyramidBlurRadius)
+	}
+}
+
+func (bd *backdrop) downsampleLevel(srcLvl, dstLvl, j int) {
+	img := &bd.img
+	sw, sh := img.LevelSize(srcLvl)
+	dw, _ := img.LevelSize(dstLvl)
+	src := img.Levels[srcLvl]
+	dst := img.Levels[dstLvl]
+	for i := range dw {
+		var c [4]float32
+		for dy := range 2 {
+			sy := min(2*j+dy, sh-1)
+			row := src[4*sy*sw:]
+			for dx := range 2 {
+				sx := min(2*i+dx, sw-1)
+				p := row[4*sx : 4*sx+4]
+				c[0] += p[0]
+				c[1] += p[1]
+				c[2] += p[2]
+				c[3] += p[3]
+			}
+		}
+		o := dst[4*(j*dw+i):][:4]
+		for ch := range o {
+			o[ch] = texel(c[ch] * 0.25)
+		}
 	}
 }
 
@@ -161,7 +259,10 @@ func texel(v float32) float32 { return float32(to8(v)) / 255 }
 // blur blurs line of src into dst: n texels step apart, from line×next,
 // clamping at its ends.
 func (bd *backdrop) blur(dst, src []float32, step, next, n, line int) {
-	rad := bd.img.Radius
+	bd.blurRad(dst, src, step, next, n, line, bd.img.Radius)
+}
+
+func (bd *backdrop) blurRad(dst, src []float32, step, next, n, line, rad int) {
 	w := bd.weights
 	// Every texel takes every weight, those past the ends on the last
 	// texel.

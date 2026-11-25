@@ -74,6 +74,7 @@ type (
 	mtlOrigin      struct{ X, Y, Z uint }
 	mtlSize        struct{ W, H, D uint }
 	mtlRegion      struct{ X, Y, Z, W, H, D uint }
+	mtlNSRange     struct{ Location, Length uint }
 	mtlScissorRect struct{ X, Y, W, H uint }
 	mtlClearColor  struct{ R, G, B, A float64 }
 	cgSize         struct{ W, H float64 }
@@ -89,6 +90,8 @@ const (
 	// leave 0 to 1.
 	pixelFormatRGBA16Float = 115
 	pixelFormatRGBA32Float = 125
+
+	textureType2D = 2
 
 	// gpuFamilyMac2 is MTLGPUFamilyMac2.
 	gpuFamilyMac2 = 2002
@@ -133,6 +136,7 @@ var (
 	msgSetRect             func(obj id, sel objc.SEL, r cgRect)
 	msgRect                func(obj id, sel objc.SEL) cgRect
 	msgSetFloat            func(obj id, sel objc.SEL, v float64)
+	msgNewTextureView      func(obj id, sel objc.SEL, format, texType uint, levels, slices mtlNSRange) id
 	selMu                  sync.Mutex
 	selectors              = map[string]objc.SEL{}
 	renderPass             id // MTLRenderPassDescriptor
@@ -235,6 +239,7 @@ func load() error {
 		purego.RegisterFunc(&msgSetSize, msgSend)
 		purego.RegisterFunc(&msgSetRect, msgSend)
 		purego.RegisterFunc(&msgSetFloat, msgSend)
+		purego.RegisterFunc(&msgNewTextureView, msgSend)
 		purego.RegisterFunc(&msgRect, stret)
 		renderPass = class("MTLRenderPassDescriptor")
 		selSetPipeline = sel("setRenderPipelineState:")
@@ -417,6 +422,8 @@ type formatState struct {
 	// effects, into the textures of backdrop, the second only along rows.
 	downPipe, blurPipe id
 	backdrop           [2]texture
+	pyramid            [2]texture
+	pyrViews           [2][scene.MaxPyramidLevels]id
 	// clear is a texel of the frame's color, cleared to it, which a frame
 	// drawn in part copies over what it redraws (see clearArea).
 	clear id
@@ -1061,7 +1068,15 @@ func respondsTo(obj id, method string) bool {
 // newTexture returns an owned w×h texture holding pix, rows of stride
 // bytes, when given.
 func (r *Renderer) newTexture(w, h int, format, usage uint, pix []byte, stride int) id {
-	desc := send(class("MTLTextureDescriptor"), "texture2DDescriptorWithPixelFormat:width:height:mipmapped:", uintptr(format), uintptr(w), uintptr(h), 0)
+	return r.newTextureMip(w, h, format, usage, pix, stride, false)
+}
+
+func (r *Renderer) newTextureMip(w, h int, format, usage uint, pix []byte, stride int, mipmapped bool) id {
+	mip := uintptr(0)
+	if mipmapped {
+		mip = 1
+	}
+	desc := send(class("MTLTextureDescriptor"), "texture2DDescriptorWithPixelFormat:width:height:mipmapped:", uintptr(format), uintptr(w), uintptr(h), mip)
 	if desc == 0 {
 		return 0
 	}
@@ -1677,12 +1692,17 @@ func (r *Renderer) drawBuilt(cb id, s *scene.Scene, target id, d *drawState, par
 		}
 		if b.Backdrop != 0 {
 			// The effect shows what is drawn so far.
+			bk := d.b.Backdrops[b.Backdrop-1]
 			send(enc, "endEncoding")
-			r.readBackdrop(cb, target, d.b.Backdrops[b.Backdrop-1])
+			r.readBackdrop(cb, target, bk)
 			if enc, err = r.begin(cb, target, loadActionLoad, s, &d.b); err != nil {
 				return err
 			}
-			msg2(enc, selSetFragmentTexture, r.cur.backdrop[0].tex, 3)
+			tex := r.cur.backdrop[0].tex
+			if bk.Pyramid > 0 {
+				tex = r.cur.pyramid[0].tex
+			}
+			msg2(enc, selSetFragmentTexture, tex, 3)
 			if instBuf != 0 {
 				bindInstances(enc, instBuf)
 			}
@@ -1938,10 +1958,27 @@ func (r *Renderer) blurImage(cb id, img *scene.Image, bk scene.Backdrop) uintptr
 }
 
 // readBackdrop encodes the passes computing the backdrop bk of what
-// target holds, into r.cur.backdrop[0].
+// target holds, into r.cur.backdrop[0] or r.cur.pyramid[0].
 func (r *Renderer) readBackdrop(cb, target id, bk scene.Backdrop) {
 	f := r.cur
 	w, h := bk.Size()
+	if bk.Pyramid > 0 {
+		p := gpu.DownPass(bk, [2]int32{})
+		r.pass(cb, f.downPipe, target, f.pyrViews[0][0], w, h, &p)
+		levels := min(bk.Pyramid, scene.MaxPyramidLevels)
+		pw, ph := w, h
+		for k := 1; k < levels; k++ {
+			wk, hk := max((pw+1)>>1, 1), max((ph+1)>>1, 1)
+			dp := gpu.PyramidDownPass(pw, ph)
+			r.pass(cb, f.downPipe, f.pyrViews[0][k-1], f.pyrViews[0][k], wk, hk, &dp)
+			hp := gpu.PyramidBlurPass(wk, hk, [2]int32{1, 0})
+			r.pass(cb, f.blurPipe, f.pyrViews[0][k], f.pyrViews[1][k], wk, hk, &hp)
+			vp := gpu.PyramidBlurPass(wk, hk, [2]int32{0, 1})
+			r.pass(cb, f.blurPipe, f.pyrViews[1][k], f.pyrViews[0][k], wk, hk, &vp)
+			pw, ph = wk, hk
+		}
+		return
+	}
 	p := gpu.DownPass(bk, [2]int32{})
 	r.pass(cb, f.downPipe, target, f.backdrop[0].tex, w, h, &p)
 	if bk.Radius == 0 {
@@ -1975,20 +2012,45 @@ func (r *Renderer) pass(cb, pipe, src, dst id, w, h int, p *gpu.Pass) {
 func (r *Renderer) fitBackdrop(b *gpu.Builder) error {
 	f := r.cur
 	w, h := b.BackdropSize()
-	if w == 0 || f.backdrop[0].w >= w && f.backdrop[0].h >= h {
-		return nil
-	}
-	// Somewhat larger, so that a pane growing does not make them again
-	// every frame.
-	w, h = max(w+w/4, f.backdrop[0].w), max(h+h/4, f.backdrop[0].h)
-	for i := range f.backdrop {
-		t := &f.backdrop[i]
-		release(&t.tex)
-		if t.tex = r.newTexture(w, h, f.format, usageRenderTarget|usageShaderRead, nil, 0); t.tex == 0 {
-			t.w, t.h = 0, 0
-			return errors.New("metal: cannot create a backdrop texture")
+	if w > 0 && (f.backdrop[0].w < w || f.backdrop[0].h < h) {
+		// Rounded to 64 texels with headroom so resizing avoids churn.
+		nw := max(((w+w/4+63)/64)*64, f.backdrop[0].w)
+		nh := max(((h+h/4+63)/64)*64, f.backdrop[0].h)
+		for i := range f.backdrop {
+			t := &f.backdrop[i]
+			release(&t.tex)
+			if t.tex = r.newTexture(nw, nh, f.format, usageRenderTarget|usageShaderRead, nil, 0); t.tex == 0 {
+				t.w, t.h = 0, 0
+				return errors.New("metal: cannot create a backdrop texture")
+			}
+			t.w, t.h = nw, nh
 		}
-		t.w, t.h = w, h
+	}
+	pw, ph := b.PyramidBackdropSize()
+	if pw > 0 && (f.pyramid[0].w < pw || f.pyramid[0].h < ph) {
+		nw := max(((pw+pw/4+63)/64)*64, 128, f.pyramid[0].w)
+		nh := max(((ph+ph/4+63)/64)*64, 128, f.pyramid[0].h)
+		viewSel := sel("newTextureViewWithPixelFormat:textureType:levels:slices:")
+		for i := range f.pyramid {
+			for k := range f.pyrViews[i] {
+				release(&f.pyrViews[i][k])
+			}
+			t := &f.pyramid[i]
+			release(&t.tex)
+			if t.tex = r.newTextureMip(nw, nh, f.format, usageRenderTarget|usageShaderRead, nil, 0, true); t.tex == 0 {
+				t.w, t.h = 0, 0
+				return errors.New("metal: cannot create a pyramid backdrop texture")
+			}
+			for k := range f.pyrViews[i] {
+				v := msgNewTextureView(t.tex, viewSel, f.format, textureType2D, mtlNSRange{Location: uint(k), Length: 1}, mtlNSRange{Location: 0, Length: 1})
+				if v == 0 {
+					t.w, t.h = 0, 0
+					return errors.New("metal: cannot create a pyramid mip view")
+				}
+				f.pyrViews[i][k] = v
+			}
+			t.w, t.h = nw, nh
+		}
 	}
 	return nil
 }
@@ -2314,6 +2376,13 @@ func (r *Renderer) releaseTextures() {
 		for j := range r.formats[i].backdrop {
 			release(&r.formats[i].backdrop[j].tex)
 			r.formats[i].backdrop[j] = texture{}
+		}
+		for j := range r.formats[i].pyramid {
+			for k := range r.formats[i].pyrViews[j] {
+				release(&r.formats[i].pyrViews[j][k])
+			}
+			release(&r.formats[i].pyramid[j].tex)
+			r.formats[i].pyramid[j] = texture{}
 		}
 	}
 	r.b.Release()

@@ -23,6 +23,18 @@ var (
 	blurHLSLSource string
 	//go:embed blur.glsl
 	blurGLSLSource string
+	//go:embed prog.metal
+	progMetalSource string
+	//go:embed prog.hlsl
+	progHLSLSource string
+	//go:embed prog.glsl
+	progGLSLSource string
+	//go:embed edge.metal
+	edgeMetalSource string
+	//go:embed edge.hlsl
+	edgeHLSLSource string
+	//go:embed edge.glsl
+	edgeGLSLSource string
 )
 
 // Effect is the glass's effect, which the renderers draw (see
@@ -48,6 +60,28 @@ var blurEffect = &scene.Effect{
 	HLSL:     scene.EffectCode{Source: blurHLSLSource, Compiled: blurBytecode, Sum: blurHLSLSum},
 	GLSL:     blurGLSLSource,
 	Pixels:   func() scene.EffectPixels { return &blurPixels{} },
+}
+
+// progBlurEffect draws a progressive blur along a mask gradient in a
+// single pass over the backdrop's mip pyramid.
+var progBlurEffect = &scene.Effect{
+	Name:     "progressive-blur",
+	Backdrop: true,
+	Pyramid:  true,
+	Metal:    scene.EffectCode{Source: progMetalSource, Compiled: progMetalLibrary, Sum: progMetalSum},
+	HLSL:     scene.EffectCode{Source: progHLSLSource, Compiled: progBytecode, Sum: progHLSLSum},
+	GLSL:     progGLSLSource,
+	Pixels:   func() scene.EffectPixels { return &progBlurPixels{} },
+}
+
+// edgeEffect draws a dithered soft scroll edge without reading the backdrop.
+var edgeEffect = &scene.Effect{
+	Name:     "scroll-edge",
+	Backdrop: false,
+	Metal:    scene.EffectCode{Source: edgeMetalSource, Compiled: edgeMetalLibrary, Sum: edgeMetalSum},
+	HLSL:     scene.EffectCode{Source: edgeHLSLSource, Compiled: edgeBytecode, Sum: edgeHLSLSum},
+	GLSL:     edgeGLSLSource,
+	Pixels:   func() scene.EffectPixels { return &edgePixels{} },
 }
 
 // material is a pane of glass, in device pixels: the effect's parameters.

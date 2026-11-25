@@ -262,6 +262,28 @@ type swapChainDesc1 struct {
 	Flags                          uint32
 }
 
+type shaderResourceViewDesc struct {
+	Format, ViewDimension uint32
+	Params                [4]uint32
+}
+
+type renderTargetViewDesc struct {
+	Format, ViewDimension uint32
+	Params                [3]uint32
+}
+
+type pyrTarget struct {
+	tex, srv uintptr
+	mipSRV   [scene.MaxPyramidLevels]uintptr
+	mipRTV   [scene.MaxPyramidLevels]uintptr
+	w, h     int
+}
+
+const (
+	srvDimTexture2D = 4
+	rtvDimTexture2D = 4
+)
+
 type texture struct {
 	tex, srv uintptr
 	rtv      uintptr // of a texture drawn into
@@ -401,6 +423,7 @@ type Renderer struct {
 	passVS, downPS, blurPS, passCB uintptr
 	grab                           texture
 	backdrop                       [2]texture
+	pyramid                        [2]pyrTarget
 	// effects are the pixel shaders of the effects drawn, made as first
 	// drawn.
 	effects map[*scene.Effect]*effectShader
@@ -878,6 +901,9 @@ func (r *Renderer) Release() {
 		free(&t.rtv)
 		free(&t.srv)
 		free(&t.tex)
+	}
+	for i := range r.pyramid {
+		r.freePyramid(&r.pyramid[i])
 	}
 	// The target goes first: a window has one at most, which another
 	// renderer of it then makes.
@@ -1397,8 +1423,13 @@ func (r *Renderer) drawBuilt(s *scene.Scene, b *gpu.Builder, rtv uintptr, part *
 		}
 		if bt.Backdrop != 0 {
 			// The effect shows what is drawn so far.
-			r.readBackdrop(b.Backdrops[bt.Backdrop-1])
-			r.bindState(s, r.backdrop[0].srv)
+			bk := b.Backdrops[bt.Backdrop-1]
+			r.readBackdrop(bk)
+			srv := r.backdrop[0].srv
+			if bk.Pyramid > 0 {
+				srv = r.pyramid[0].srv
+			}
+			r.bindState(s, srv)
 			bound, vs, ps, blend, mask, scissor = 0, r.vs, r.ps, r.blend, ^uintptr(0), gpu.Scissor{}
 		}
 		if wantVS != vs {
@@ -1688,8 +1719,8 @@ func (r *Renderer) blurImage(img *scene.Image, bk scene.Backdrop) uintptr {
 }
 
 // readBackdrop computes the backdrop bk of what the target drawn holds,
-// into r.backdrop[0]: it copies the area into grab, averages its squares
-// and blurs them.
+// into r.backdrop[0] or r.pyramid[0]: it copies the area into grab, averages its
+// squares and blurs them (or builds the mip pyramid when bk.Pyramid > 0).
 func (r *Renderer) readBackdrop(bk scene.Backdrop) {
 	ctx := r.ctx
 	// No texture drawn into may be bound for reading.
@@ -1705,6 +1736,21 @@ func (r *Renderer) readBackdrop(bk scene.Backdrop) {
 	call(ctx, ctxVSSetShader, r.passVS, 0, 0)
 	call(ctx, ctxPSSetConstantBuffers, 1, 1, uintptr(unsafe.Pointer(&r.passCB)))
 	w, h := bk.Size()
+	if bk.Pyramid > 0 {
+		dp := gpu.DownPass(bk, [2]int32{int32(bk.Area.Min.X), int32(bk.Area.Min.Y)})
+		r.passTarget(r.downPS, r.grab.srv, r.pyramid[0].mipRTV[0], r.pyramid[0].w, r.pyramid[0].h, w, h, dp)
+		levels := min(bk.Pyramid, scene.MaxPyramidLevels)
+		pw, ph := w, h
+		for k := 1; k < levels; k++ {
+			wk, hk := max((pw+1)>>1, 1), max((ph+1)>>1, 1)
+			mw, mh := max(r.pyramid[0].w>>k, 1), max(r.pyramid[0].h>>k, 1)
+			r.passTarget(r.downPS, r.pyramid[0].mipSRV[k-1], r.pyramid[0].mipRTV[k], mw, mh, wk, hk, gpu.PyramidDownPass(pw, ph))
+			r.passTarget(r.blurPS, r.pyramid[0].mipSRV[k], r.pyramid[1].mipRTV[k], mw, mh, wk, hk, gpu.PyramidBlurPass(wk, hk, [2]int32{1, 0}))
+			r.passTarget(r.blurPS, r.pyramid[1].mipSRV[k], r.pyramid[0].mipRTV[k], mw, mh, wk, hk, gpu.PyramidBlurPass(wk, hk, [2]int32{0, 1}))
+			pw, ph = wk, hk
+		}
+		return
+	}
 	r.pass(r.downPS, r.grab.srv, &r.backdrop[0], w, h, gpu.DownPass(bk, [2]int32{int32(bk.Area.Min.X), int32(bk.Area.Min.Y)}))
 	if bk.Radius > 0 {
 		r.pass(r.blurPS, r.backdrop[0].srv, &r.backdrop[1], w, h, gpu.BlurPass(bk, [2]int32{1, 0}))
@@ -1714,10 +1760,14 @@ func (r *Renderer) readBackdrop(bk scene.Backdrop) {
 
 // pass draws ps into the w×h texels at the start of dst, reading src.
 func (r *Renderer) pass(ps, src uintptr, dst *texture, w, h int, p gpu.Pass) {
+	r.passTarget(ps, src, dst.rtv, dst.w, dst.h, w, h, p)
+}
+
+func (r *Renderer) passTarget(ps, src, rtv uintptr, tw, th, w, h int, p gpu.Pass) {
 	ctx := r.ctx
 	call(ctx, ctxUpdateSubresource, r.passCB, 0, 0, uintptr(unsafe.Pointer(&p)), 0, 0)
-	call(ctx, ctxOMSetRenderTargets, 1, uintptr(unsafe.Pointer(&dst.rtv)), 0)
-	vp := viewport{W: float32(dst.w), H: float32(dst.h), MaxDepth: 1}
+	call(ctx, ctxOMSetRenderTargets, 1, uintptr(unsafe.Pointer(&rtv)), 0)
+	vp := viewport{W: float32(tw), H: float32(th), MaxDepth: 1}
 	call(ctx, ctxRSSetViewports, 1, uintptr(unsafe.Pointer(&vp)))
 	sc := gpu.Scissor{Right: int32(w), Bottom: int32(h)}
 	call(ctx, ctxRSSetScissorRects, 1, uintptr(unsafe.Pointer(&sc)))
@@ -1736,21 +1786,70 @@ func (r *Renderer) fitBackdrop(b *gpu.Builder) error {
 	for _, bk := range b.Backdrops {
 		aw, ah = max(aw, bk.Area.Dx()), max(ah, bk.Area.Dy())
 	}
-	// Somewhat larger, so that a pane growing does not make them again
-	// every frame.
+	// Rounded to 64 texels with headroom so growing avoids churn.
 	if aw > r.grab.w || ah > r.grab.h {
-		if err := r.newTarget(&r.grab, max(aw+aw/4, r.grab.w), max(ah+ah/4, r.grab.h), false); err != nil {
+		naw := max(((aw+aw/4+63)/64)*64, r.grab.w)
+		nah := max(((ah+ah/4+63)/64)*64, r.grab.h)
+		if err := r.newTarget(&r.grab, naw, nah, false); err != nil {
 			return err
 		}
 	}
 	if w > r.backdrop[0].w || h > r.backdrop[0].h {
-		w, h = max(w+w/4, r.backdrop[0].w), max(h+h/4, r.backdrop[0].h)
+		nw := max(((w+w/4+63)/64)*64, r.backdrop[0].w)
+		nh := max(((h+h/4+63)/64)*64, r.backdrop[0].h)
 		for i := range r.backdrop {
-			if err := r.newTarget(&r.backdrop[i], w, h, true); err != nil {
+			if err := r.newTarget(&r.backdrop[i], nw, nh, true); err != nil {
 				return err
 			}
 		}
 	}
+	pw, ph := b.PyramidBackdropSize()
+	if pw > 0 && (pw > r.pyramid[0].w || ph > r.pyramid[0].h) {
+		nw := max(((pw+pw/4+63)/64)*64, 128, r.pyramid[0].w)
+		nh := max(((ph+ph/4+63)/64)*64, 128, r.pyramid[0].h)
+		for i := range r.pyramid {
+			if err := r.newPyramidTarget(&r.pyramid[i], nw, nh); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func (r *Renderer) freePyramid(t *pyrTarget) {
+	for k := range t.mipRTV {
+		free(&t.mipRTV[k])
+		free(&t.mipSRV[k])
+	}
+	free(&t.srv)
+	free(&t.tex)
+	*t = pyrTarget{}
+}
+
+func (r *Renderer) newPyramidTarget(t *pyrTarget, w, h int) error {
+	r.freePyramid(t)
+	desc := texture2DDesc{Width: uint32(w), Height: uint32(h), MipLevels: scene.MaxPyramidLevels, ArraySize: 1,
+		Format: formatB8G8R8A8Unorm, SampleCount: 1, Usage: usageDefault, BindFlags: bindShaderResource | bindRenderTarget}
+	if hr := call(r.device, devCreateTexture2D, uintptr(unsafe.Pointer(&desc)), 0, uintptr(unsafe.Pointer(&t.tex))); failed(hr) {
+		return fmt.Errorf("d3d11: cannot create a %dx%d pyramid texture: %#x", w, h, uint32(hr))
+	}
+	if hr := call(r.device, devCreateShaderResourceView, t.tex, 0, uintptr(unsafe.Pointer(&t.srv))); failed(hr) {
+		r.freePyramid(t)
+		return fmt.Errorf("d3d11: cannot create a pyramid texture view: %#x", uint32(hr))
+	}
+	for k := range scene.MaxPyramidLevels {
+		sdesc := shaderResourceViewDesc{Format: formatB8G8R8A8Unorm, ViewDimension: srvDimTexture2D, Params: [4]uint32{uint32(k), 1, 0, 0}}
+		if hr := call(r.device, devCreateShaderResourceView, t.tex, uintptr(unsafe.Pointer(&sdesc)), uintptr(unsafe.Pointer(&t.mipSRV[k]))); failed(hr) {
+			r.freePyramid(t)
+			return fmt.Errorf("d3d11: cannot create a pyramid mip SRV: %#x", uint32(hr))
+		}
+		rdesc := renderTargetViewDesc{Format: formatB8G8R8A8Unorm, ViewDimension: rtvDimTexture2D, Params: [3]uint32{uint32(k), 0, 0}}
+		if hr := call(r.device, devCreateRenderTargetView, t.tex, uintptr(unsafe.Pointer(&rdesc)), uintptr(unsafe.Pointer(&t.mipRTV[k]))); failed(hr) {
+			r.freePyramid(t)
+			return fmt.Errorf("d3d11: cannot create a pyramid mip RTV: %#x", uint32(hr))
+		}
+	}
+	t.w, t.h = w, h
 	return nil
 }
 

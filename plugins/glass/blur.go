@@ -112,31 +112,29 @@ func paintBlur(p *ui.Painter, box ui.Rect, radii [4]float32, b Blur) {
 	})
 }
 
-// blurOps calls op with the rectangle and the effect of each level
-// (blurLevels) of a blur of most pixels over r, in pixels, along mask: a
-// level after another, each where the blur is more than its lo when r is
-// square, which it then reads only what is under.
+// blurOps calls op with the rectangle and the effect of a blur of most
+// pixels over r, in pixels, along mask: a single-pass mip-pyramid
+// progressive blur when the blur varies along mask, or a single uniform
+// blur when constant.
 func blurOps(r scene.Rect, square bool, most float32, mask *ui.LinearGradient, op func(r scene.Rect, fx scene.EffectOp)) {
 	if r.W <= 0 || r.H <= 0 || most <= 0 {
 		return
 	}
-	// The blur at the mask's start and end, along its line.
 	var line [4]float32
 	at0, at1 := most, most
 	if mask != nil {
 		line = maskLine(r, *mask)
 		at0, at1 = most*float32(mask.From.A)/255, most*float32(mask.To.A)/255
 	}
-	for _, l := range blurLevels(min(at0, at1), max(at0, at1)) {
-		lr := r
-		if square && l.lo >= 0 {
-			var ok bool
-			if lr, ok = blurWanted(r, line, at0, at1, l.lo); !ok {
-				continue
-			}
+	if at0 == at1 {
+		if at0 <= 0 {
+			return
 		}
-		op(lr, scene.EffectOp{Effect: blurEffect, Blur: l.blur, Params: [5][4]float32{line, {at0, at1, l.lo, l.hi}}})
+		op(r, scene.EffectOp{Effect: blurEffect, Blur: at0, Params: [5][4]float32{line, {at0, at1, -1, 0}}})
+		return
 	}
+	// Single-pass mip-pyramid progressive blur covering the whole rectangle.
+	op(r, scene.EffectOp{Effect: progBlurEffect, Blur: max(at0, at1), Params: [5][4]float32{line, {at0, at1, 0, 0}}})
 }
 
 // maskLine returns where the mask's From and To are, in pixels, as package
@@ -262,6 +260,68 @@ func (px *blurPixels) weight(x, y float32) float32 {
 	}
 	blur := band[0]*(1-t) + band[1]*t
 	return min(max((blur-band[2])/(band[3]-band[2]), 0), 1)
+}
+
+// progBlurPixels draws a progressive blur over the backdrop's mip pyramid
+// on the CPU, matching prog.metal / prog.hlsl / prog.glsl.
+type progBlurPixels struct {
+	line, blur [4]float32
+}
+
+func (px *progBlurPixels) Begin(op *scene.EffectOp, _ scene.Rect, _ [4]float32) {
+	px.line, px.blur = op.Params[0], op.Params[1]
+}
+
+func (px *progBlurPixels) Color(x, y float32, b *scene.BackdropImage) [4]float32 {
+	if b == nil || len(b.Levels) == 0 {
+		return [4]float32{}
+	}
+	l := &px.line
+	dx, dy := l[2]-l[0], l[3]-l[1]
+	t := float32(0)
+	if d := dx*dx + dy*dy; d > 0 {
+		t = min(max(((x-l[0])*dx+(y-l[1])*dy)/max(d, 0.0001), 0), 1)
+	}
+	blur := px.blur[0]*(1-t) + px.blur[1]*t
+	maxLevel := len(b.Levels) - 1
+	lod := pyrLOD(blur, maxLevel)
+	c := b.SampleLevel(x, y, lod)
+	if lod > 0 && c[3] > 0 {
+		d := pyrIGN(x, y)
+		a := c[3]
+		if a < 1 {
+			a = min(max(a+d, 0), 1)
+		}
+		c[0] = min(max(c[0]+d, 0), a)
+		c[1] = min(max(c[1]+d, 0), a)
+		c[2] = min(max(c[2]+d, 0), a)
+		c[3] = a
+	}
+	return c
+}
+
+func pyrLOD(blur float32, maxLevel int) float32 {
+	if blur <= 0 || maxLevel <= 0 {
+		return 0
+	}
+	for k := 1; k < scene.MaxPyramidLevels; k++ {
+		s0, s1 := scene.PyramidSigma(k-1), scene.PyramidSigma(k)
+		if blur <= s1 || k == maxLevel {
+			f := min(max((blur-s0)/(s1-s0), 0), 1)
+			return min(float32(k-1)+f, float32(maxLevel))
+		}
+	}
+	return float32(maxLevel)
+}
+
+func pyrIGN(px, py float32) float32 {
+	x := math.Floor(float64(px))
+	y := math.Floor(float64(py))
+	f1 := x*0.06711056 + y*0.00583715
+	f1 -= math.Floor(f1)
+	v := 52.9829189 * f1
+	v -= math.Floor(v)
+	return float32((v - 0.5) / 255.0)
 }
 
 // sampleRGBA returns the backdrop at (x, y) with its alpha, premultiplied,
