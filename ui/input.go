@@ -143,6 +143,9 @@ func (rt *engine) event(ev platform.SurfaceEvent) (taken bool) {
 	case platform.PointerZoom:
 		rt.pointerMove(x, y)
 		rt.zoom(float32(ev.Scale), float32(ev.Rotation), Modifiers(ev.Mods))
+	case platform.PointerLookUp:
+		rt.pointerMove(x, y)
+		taken = rt.lookUp(Modifiers(ev.Mods))
 	case platform.KeyPressed:
 		rt.modsChanged(Modifiers(ev.Mods))
 		rt.holdKey(Modifiers(ev.Mods), Key(ev.Key), Key(ev.PhysicalKey))
@@ -1019,6 +1022,21 @@ func (rt *engine) zoom(scale, rotation float32, mods Modifiers) {
 			return
 		}
 	}
+}
+
+// lookUp gives a look up to the innermost element under the pointer that
+// takes it; one whose handler leaves it passes it on to the handlers
+// around it, as zoom does. It reports whether one took it.
+func (rt *engine) lookUp(mods Modifiers) bool {
+	chain := rt.appendHitChain(rt.chain[:0], rt.pointerX, rt.pointerY)
+	rt.chain = chain[:0]
+	ev := InputEvent{Kind: InputLookUp, Mods: mods}
+	for _, id := range chain {
+		if s := rt.states[id]; s != nil && s.input != nil && s.flags&flagDisabled == 0 && rt.deliver(s, ev) {
+			return true
+		}
+	}
+	return false
 }
 
 // dragTo returns the offset of content whose thumb moved by moved DIPs

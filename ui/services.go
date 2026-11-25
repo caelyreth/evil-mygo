@@ -69,6 +69,26 @@ func (s Services) WriteClipboardData(data transfer.Data) {
 	}
 }
 
+// ShowDefinition shows what text means, from the system's dictionaries,
+// as macOS's Look Up does: text drawn over where the view drew it, in
+// font, from its baseline's start at, in window DIPs, and its meaning
+// beside it. It reports whether the window could (CanShowDefinition).
+func (s Services) ShowDefinition(text string, at Point, font Font) bool {
+	if rt := s.owner.Value(); rt != nil && !rt.closed && text != "" {
+		return rt.host.showDefinition(text, at, font)
+	}
+	return false
+}
+
+// CanShowDefinition reports whether the window can look up what text
+// means (ShowDefinition): on macOS.
+func (s Services) CanShowDefinition() bool {
+	if rt := s.owner.Value(); rt != nil && !rt.closed {
+		return rt.host.canShowDefinition()
+	}
+	return false
+}
+
 func (s Services) OpenURL(url string) {
 	if rt := s.owner.Value(); rt != nil && !rt.closed {
 		rt.host.openURL(url, nil)

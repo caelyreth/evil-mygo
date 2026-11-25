@@ -478,7 +478,10 @@ func (s *surface) frameSoon() {
 // (platform.FirstFrameSurface).
 func (s *surface) FirstFrame() { s.drawn = true }
 
-var _ platform.FirstFrameSurface = (*surface)(nil)
+var (
+	_ platform.FirstFrameSurface = (*surface)(nil)
+	_ platform.DefinitionSurface = (*surface)(nil)
+)
 
 // drawSoon draws a frame in this pass of the run loop, from the backend's
 // queue, before Core Animation commits the pass's transaction, rather than
@@ -1390,6 +1393,19 @@ func registerSurfaceClass() {
 			// its last event, as a fraction of its size then.
 			x, y := s.location(ev)
 			s.send(platform.SurfaceEvent{Kind: platform.PointerZoom, X: x, Y: y, Scale: 1 + msgFloat(ev, sel("magnification")), Mods: eventMods(ev)})
+		}),
+		// A force click, or a tap of three fingers, looks up what is under
+		// the pointer: the content shows it (ShowDefinition), or AppKit
+		// goes on with it.
+		method("quickLookWithEvent:", func(self id, _ objc.SEL, ev id) {
+			s := b().surfaceOf(self)
+			if s == nil {
+				return
+			}
+			x, y := s.location(ev)
+			if !s.send(platform.SurfaceEvent{Kind: platform.PointerLookUp, X: x, Y: y, Mods: eventMods(ev)}) {
+				sendSuper(self, "MyGoSurfaceView", sel("quickLookWithEvent:"), uintptr(ev))
+			}
 		}),
 		method("swipeWithEvent:", func(self id, _ objc.SEL, ev id) {
 			s := b().surfaceOf(self)

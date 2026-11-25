@@ -70,26 +70,7 @@ func accessFont(run platform.AccessTextRun) id {
 	if size <= 0 {
 		size = 14
 	}
-	var font id
-	if run.Family == "monospace" {
-		font = msgFloat2ID(class("NSFont"), sel("monospacedSystemFontOfSize:weight:"), size, nsFontWeight(run.Weight))
-	} else if run.Family != "" && run.Family != "system-ui" {
-		var traits uint
-		if run.Weight >= 600 {
-			traits |= 2 // NSBoldFontMask
-		}
-		if run.Italic {
-			traits |= 1 // NSItalicFontMask
-		}
-		font = msgFontFamily(send(class("NSFontManager"), "sharedFontManager"), sel("fontWithFamily:traits:weight:size:"),
-			nsString(run.Family), traits, 5, size)
-	}
-	if font == 0 {
-		font = msgFloat2ID(class("NSFont"), sel("systemFontOfSize:weight:"), size, nsFontWeight(run.Weight))
-		if run.Italic && font != 0 {
-			font = send(send(class("NSFontManager"), "sharedFontManager"), "convertFont:toHaveTrait:", uintptr(font), 1)
-		}
-	}
+	font := nsFont(run.Family, size, run.Weight, run.Italic)
 	d := send(class("NSMutableDictionary"), "dictionary")
 	if font != 0 {
 		name := send(font, "fontName")
@@ -99,6 +80,33 @@ func accessFont(run platform.AccessTextRun) id {
 	}
 	send(d, "setObject:forKey:", uintptr(msgFloatID(class("NSNumber"), sel("numberWithDouble:"), size)), uintptr(nsString("AXFontSize")))
 	return d
+}
+
+// nsFont returns the NSFont AppKit finds for a family, size, CSS weight
+// and italics: the system's for "system-ui", "" or a family it has not,
+// its monospaced one for "monospace".
+func nsFont(family string, size float64, weight int, italic bool) id {
+	var font id
+	if family == "monospace" {
+		font = msgFloat2ID(class("NSFont"), sel("monospacedSystemFontOfSize:weight:"), size, nsFontWeight(weight))
+	} else if family != "" && family != "system-ui" {
+		var traits uint
+		if weight >= 600 {
+			traits |= 2 // NSBoldFontMask
+		}
+		if italic {
+			traits |= 1 // NSItalicFontMask
+		}
+		font = msgFontFamily(send(class("NSFontManager"), "sharedFontManager"), sel("fontWithFamily:traits:weight:size:"),
+			nsString(family), traits, 5, size)
+	}
+	if font == 0 {
+		font = msgFloat2ID(class("NSFont"), sel("systemFontOfSize:weight:"), size, nsFontWeight(weight))
+		if italic && font != 0 {
+			font = send(send(class("NSFontManager"), "sharedFontManager"), "convertFont:toHaveTrait:", uintptr(font), 1)
+		}
+	}
+	return font
 }
 
 // nsFontWeight returns the NSFontWeight of a CSS weight.

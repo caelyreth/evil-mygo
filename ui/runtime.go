@@ -57,6 +57,11 @@ type host interface {
 	cancelDataDrag()
 	setDropFormats([]transfer.Format)
 	titleBarDoubleClicked()
+	// showDefinition shows what text means, drawn in font from its
+	// baseline's start at, in window DIPs (Services.ShowDefinition);
+	// canShowDefinition reports whether the window can.
+	showDefinition(text string, at Point, font Font) bool
+	canShowDefinition() bool
 	// setMaximizeButton tells where the view shows the window's maximize
 	// button (MaximizeButton), the zero Rect for nowhere.
 	setMaximizeButton(r Rect)

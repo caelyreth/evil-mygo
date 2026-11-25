@@ -55,7 +55,9 @@ type headless struct {
 	// titleDoubles counts the double clicks a DragWindow handle left to
 	// the window.
 	titleDoubles int
-	openErr      error
+	// definitions are what the view asked to be looked up.
+	definitions []Definition
+	openErr     error
 	// clipboardErr fails the writes of text to the clipboard
 	// (FailClipboard).
 	clipboardErr error
@@ -473,7 +475,7 @@ func (t *Tester) send(ev platform.SurfaceEvent) {
 			ev.Pointer = platform.PointerTouch // TouchDown
 		}
 		ev.Mods |= t.mods
-	case platform.PointerScroll, platform.PointerZoom, platform.PointerLeave, platform.ViewPress:
+	case platform.PointerScroll, platform.PointerZoom, platform.PointerLookUp, platform.PointerLeave, platform.ViewPress:
 		ev.Mods |= t.mods
 	case platform.SurfaceBlur:
 		t.mods = 0
@@ -1221,6 +1223,30 @@ func (t *Tester) Cursor() Cursor { return t.h.cursor }
 
 // OpenedURLs returns the links the view opened.
 func (t *Tester) OpenedURLs() []string { return t.h.opened }
+
+func (h *headless) canShowDefinition() bool { return true }
+
+func (h *headless) showDefinition(text string, at Point, font Font) bool {
+	h.definitions = append(h.definitions, Definition{Text: text, At: at, Font: font})
+	return true
+}
+
+// Definition is what a view asked to be looked up (Services.ShowDefinition).
+type Definition struct {
+	Text string
+	At   Point
+	Font Font
+}
+
+// Definitions are what the view asked to be looked up, in order; a
+// Tester's window shows each.
+func (t *Tester) Definitions() []Definition { return t.h.definitions }
+
+// LookUp asks for what is at (x, y) to be looked up, as a force click
+// does on macOS (InputLookUp).
+func (t *Tester) LookUp(x, y float32) {
+	t.send(platform.SurfaceEvent{Kind: platform.PointerLookUp, X: float64(x), Y: float64(y)})
+}
 
 // FailClipboard makes the view's writes of text to the clipboard from now
 // on fail with err, copying nothing, as a browser refuses them without

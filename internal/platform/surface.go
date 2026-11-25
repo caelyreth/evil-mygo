@@ -124,6 +124,24 @@ type MaterialSurface interface {
 	ShowsMaterial() bool
 }
 
+// DefinitionSurface is a Surface that shows what a word or a phrase
+// means, from the system's dictionaries, as macOS's Look Up does.
+type DefinitionSurface interface {
+	// ShowDefinition shows what text means beside it, text drawn over
+	// where the content drew it, in font, from its baseline's start at X,
+	// Y, in DIPs from the content's top left. It reports whether it could.
+	ShowDefinition(text string, x, y float64, font DefinitionFont) bool
+}
+
+// DefinitionFont is the font text to be looked up is drawn in: Weight as
+// CSS has it, 400 regular and 700 bold.
+type DefinitionFont struct {
+	Family string
+	Size   float64
+	Weight int
+	Italic bool
+}
+
 // PacedSurface is a Surface whose frames following each other come at the
 // display's refreshes, marked Paced: a renderer that waits for the display
 // lets such a frame draw once the display can take it, with FrameNow.
@@ -576,6 +594,10 @@ const (
 	// lands, and leaves one that does to the system's mouse, whose press
 	// moves the window (Windows).
 	DragRegionAt
+	// PointerLookUp asks for what is at X, Y to be looked up, as a force
+	// click or a tap of three fingers does on macOS: the content shows
+	// what it means (DefinitionSurface), or leaves it.
+	PointerLookUp
 )
 
 // EditCommands are the menu roles of edit commands, which native UI takes as

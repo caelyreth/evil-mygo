@@ -230,3 +230,25 @@ func typedChars(chars string) string {
 		return r
 	}, chars)
 }
+
+// ShowDefinition shows what text means beside it, as Look Up does: text
+// drawn in font over where the content drew it, its baseline's start at
+// (x, y) in the view, which is flipped.
+func (s *surface) ShowDefinition(text string, x, y float64, font platform.DefinitionFont) bool {
+	if text == "" || s.w.closed {
+		return false
+	}
+	withPool(func() {
+		size := font.Size
+		if size <= 0 {
+			size = 14
+		}
+		attrs := send(class("NSMutableDictionary"), "dictionary")
+		if f := nsFont(font.Family, size, font.Weight, font.Italic); f != 0 {
+			send(attrs, "setObject:forKey:", uintptr(f), uintptr(nsString("NSFont")))
+		}
+		str := autorelease(send(send(class("NSAttributedString"), "alloc"), "initWithString:attributes:", uintptr(nsString(text)), uintptr(attrs)))
+		msgInitIDPoint(s.view, sel("showDefinitionForAttributedString:atPoint:"), str, NSPoint{X: x, Y: y})
+	})
+	return true
+}

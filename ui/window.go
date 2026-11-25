@@ -1026,6 +1026,23 @@ func (h *windowHost) titleBarDoubleClicked() {
 	}
 }
 
+func (h *windowHost) definitionSurface() (platform.DefinitionSurface, bool) {
+	s, ok := h.conn.Surface.(platform.DefinitionSurface)
+	return s, ok
+}
+
+func (h *windowHost) canShowDefinition() bool {
+	_, ok := h.definitionSurface()
+	return ok
+}
+
+func (h *windowHost) showDefinition(text string, at Point, font Font) bool {
+	s, ok := h.definitionSurface()
+	return ok && s.ShowDefinition(text, float64(at.X), float64(at.Y), platform.DefinitionFont{
+		Family: font.Family, Size: float64(font.Size), Weight: font.Weight, Italic: font.Italic,
+	})
+}
+
 func (h *windowHost) setMaximizeButton(r Rect) {
 	if placeMaximizeButton != nil {
 		placeMaximizeButton(h, r)

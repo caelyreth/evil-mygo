@@ -68,6 +68,11 @@ const (
 	// as InputScroll with Ctrl in Mods. One the element leaves goes to the
 	// handlers around it, as InputScroll does.
 	InputZoom
+	// InputLookUp asks for what is at X, Y to be looked up, as a force
+	// click or a tap of three fingers does on macOS: the element shows
+	// what it means (Services.ShowDefinition) and takes it. One the
+	// element leaves goes to the handlers around it, as InputZoom does.
+	InputLookUp
 )
 
 // InputEvent is input an element takes as it comes (HandleInput).
