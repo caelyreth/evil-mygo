@@ -451,6 +451,8 @@ type coreText struct {
 	// typesetters are those of text wrapped lately (shape), owned, and frame
 	// counts the frames.
 	typesetters map[typesetterKey]*keptTypesetter
+	// long are the long texts last typeset (long_darwin.go).
+	long []*longText
 	// textSeed seeds the hashes of their keys.
 	textSeed maphash.Seed
 
@@ -1094,7 +1096,9 @@ func (e *coreText) shapeText(text []rune, style Style, spans []Span, width float
 		}
 	}
 	if long {
-		return e.typesetWindows(attributed, n, width, breaks, wholeWords, keepWords, index, style.Italic)
+		key := longKey{font: font, rtl: rtl, italic: style.Italic, noKern: noKerning(style.Features), lang: lang, features: style.Features,
+			spacing: style.LetterSpacing, tabStop: style.tabStop, width: width, wholeWords: wholeWords, keepWords: keepWords}
+		return e.typesetWindows(key, text, spans, attributed, n, width, breaks, wholeWords, keepWords, index, style.Italic)
 	}
 	return e.typesetLines(typesetter, n, width, breaks, wholeWords, keepWords, index, style.Italic)
 }
@@ -1113,12 +1117,29 @@ const (
 // typesetWindows typesets a long text's lines as typesetLines does, in
 // windows of typesetWindow from where a line starts: each window's lines but
 // the one it cuts are kept, and the next window starts where they end. A
-// line longer than a window takes a window twice as long.
-func (e *coreText) typesetWindows(attributed uintptr, n int, width float32, breaks []bool, wholeWords, keepWords bool, index []int, italic bool) []shapedLine {
-	var lines []shapedLine
+// line longer than a window takes a window twice as long. What of the
+// lines last typeset under key the change leaves is taken (long_darwin.go).
+func (e *coreText) typesetWindows(key longKey, text []rune, spans []Span, attributed uintptr, n int, width float32, breaks []bool, wholeWords, keepWords bool, index []int, italic bool) []shapedLine {
+	var lines, head, laid, tail []shapedLine
 	mark := len(e.shapeScratch.lines)
+	base := 0
+	var rest func(int) []shapedLine
+	delta := 0
+	if last := e.lastLong(key); last != nil {
+		var from int
+		delta = len(text) - len(last.text)
+		head, from, rest = last.reuse(text, spans)
+		lines = e.scratchLines(mark, head)
+		base = from
+		for _, r := range text[:from] {
+			if r >= 0x10000 {
+				base++
+			}
+		}
+	}
 	size := typesetWindow
-	for base := 0; base < n; {
+windows:
+	for base < n {
 		end := min(n, base+size)
 		sub := ct.attributedSubstring(0, attributed, cfRange{base, end - base})
 		typesetter := ct.typesetterCreate(sub)
@@ -1138,9 +1159,19 @@ func (e *coreText) typesetWindows(attributed uintptr, n int, width float32, brea
 				ct.release(typesetter)
 				return lines
 			}
-			lines = e.addLine(mark, e.line(line, index[base:], n-base, italic))
+			sl := e.line(line, index[base:], n-base, italic)
 			ct.release(line)
+			lines = e.addLine(mark, sl)
+			laid = append(laid, sl)
 			start += count
+			if rest != nil {
+				if was := rest(sl.end); was != nil {
+					tail = ownLines(was, delta)
+					lines = e.scratchLines(mark, tail)
+					ct.release(typesetter)
+					break windows
+				}
+			}
 		}
 		ct.release(typesetter)
 		if start == base {
@@ -1149,6 +1180,9 @@ func (e *coreText) typesetWindows(attributed uintptr, n int, width float32, brea
 		}
 		base, size = start, typesetWindow
 	}
+	kept := make([]shapedLine, 0, len(head)+len(laid)+len(tail))
+	kept = append(append(append(kept, head...), ownLines(laid, 0)...), tail...)
+	e.keepLong(&longText{key: key, text: slices.Clone(text), spans: slices.Clone(spans), lines: kept})
 	return lines
 }
 
@@ -1303,6 +1337,7 @@ const keptTypesetterFrames = 8
 // endFrame lets go of the typesetters of text that stopped wrapping again.
 func (e *coreText) endFrame() {
 	e.frame++
+	e.long = slices.DeleteFunc(e.long, func(l *longText) bool { return e.frame-l.used > keptTypesetterFrames })
 	for k, t := range e.typesetters {
 		if e.frame-t.used > keptTypesetterFrames {
 			e.dropTypesetter(k, t)
@@ -1312,6 +1347,7 @@ func (e *coreText) endFrame() {
 
 // releaseShaping lets go of all typesetters kept, as windows go idle.
 func (e *coreText) releaseShaping() {
+	e.long = nil
 	for k, t := range e.typesetters {
 		e.dropTypesetter(k, t)
 	}
@@ -1984,6 +2020,7 @@ func (e *coreText) forgetFonts() {
 	clear(e.bands)
 	clear(e.numbers)
 	clear(e.wrapFonts)
+	e.long = nil
 	e.dropScratch()
 	if e.maskCtx != 0 {
 		ct.contextRelease(e.maskCtx)

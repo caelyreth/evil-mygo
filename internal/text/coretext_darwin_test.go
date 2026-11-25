@@ -602,3 +602,54 @@ func TestCoreTextLongTextTypesetsByWindow(t *testing.T) {
 		}
 	}
 }
+
+// A long text changed a little is typeset into the lines it would be from
+// nothing, though only the lines about the change are typeset again.
+func TestCoreTextLongTextChangedTypesetsAsAnew(t *testing.T) {
+	s := newSystem()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	e := s.engine().(*coreText)
+	words := []string{"a", "the", "window", "layout", "office", "well-known", "e.g.", "café", "(paren)", "end.", "verylongwordthatdoesnotfitalineandhastobrokenbycoretext"}
+	rng := rand.New(rand.NewPCG(5, 6))
+	var b strings.Builder
+	for b.Len() < 20000 {
+		b.WriteString(words[rng.IntN(len(words))])
+		b.WriteString(" ")
+	}
+	text := []rune(b.String())
+	spans := []Span{{End: 5000}, {End: 5100, Italic: true}, {End: len(text)}}
+	style := Style{Size: 15}
+	shape := func(text []rune, spans []Span, fresh bool) []shapedLine {
+		if fresh {
+			e.long = nil
+		}
+		e.resetScratch()
+		lines := e.shapeText(text, style, spans, 600, false, false)
+		if len(spans) > 0 {
+			e.delegates.done()
+		}
+		return ownLines(lines, 0)
+	}
+	shape(text, spans, true)
+	for step := range 60 {
+		at := rng.IntN(len(text))
+		switch step % 3 {
+		case 0:
+			text = slices.Insert(text, at, []rune(words[rng.IntN(len(words))]+" ")...)
+		case 1:
+			text = slices.Delete(text, at, min(len(text), at+1+rng.IntN(40)))
+		case 2:
+			// A span made bold, the text as it was.
+			spans = []Span{{End: at}, {End: min(len(text), at+30), Weight: 700}, {End: len(text)}}
+		}
+		if spans[len(spans)-1].End != len(text) {
+			spans = []Span{{End: len(text)}}
+		}
+		got := shape(text, spans, false)
+		want := shape(text, spans, true)
+		if !sameLines(got, want) {
+			report(t, text, style, 600, got, want)
+		}
+	}
+}
