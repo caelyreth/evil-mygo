@@ -210,3 +210,146 @@ func TestPartialFramesApart(t *testing.T) {
 		t.Errorf("redrew rectangles %v, want [2 2 2 2]", rects)
 	}
 }
+
+// TestPartialFramesIncrementalCaret checks that triple-buffered partial redraws
+// with Scene.Partial, incremental GPU Builder, and Part.Compact match full-frame
+// rendering byte-for-byte over >240 frames while keeping prefix images alive.
+func TestPartialFramesIncrementalCaret(t *testing.T) {
+	r, err := newRenderer()
+	if err != nil {
+		unavailable(t, err)
+	}
+	defer r.Release()
+	ref, err := newRenderer()
+	if err != nil {
+		unavailable(t, err)
+	}
+	defer ref.Release()
+
+	atlas := scene.NewAtlas(1, 256, 256)
+	mx, my, _ := atlas.Alloc(8, 12)
+	glyphPix := make([]byte, 96)
+	for i := range glyphPix {
+		glyphPix[i] = 200
+	}
+	atlas.Put(mx, my, 8, 12, glyphPix, 8)
+	imgPix := make([]byte, 24*24*4)
+	for i := range imgPix {
+		imgPix[i] = byte((i * 13) | 0x80)
+	}
+	img := scene.NewImageRGBA(24, 24, imgPix)
+
+	s := &scene.Scene{
+		Width: 640, Height: 480, MaskAtlas: atlas, ID: 1,
+		Stops: []scene.Stop{{Color: scene.Color{R: 250, G: 250, B: 250, A: 255}, At: 0}, {Color: scene.Color{R: 250, G: 250, B: 250, A: 0}, At: 1}},
+	}
+	s.Ops = append(s.Ops, scene.Op{Kind: scene.OpFill, Rect: scene.Rect{W: 640, H: 480}, Color: scene.Color{R: 250, G: 250, B: 250, A: 255}})
+	s.Ops = append(s.Ops, scene.Op{Kind: scene.OpImage, Rect: scene.Rect{X: 20, Y: 20, W: 24, H: 24}, Image: img, Src: scene.Rect{W: 24, H: 24}})
+	s.Ops = append(s.Ops, scene.Op{Kind: scene.OpPushClip, Rect: scene.Rect{X: 60, Y: 40, W: 500, H: 380}})
+	for row := range 16 {
+		start := int32(len(s.Glyphs))
+		for col := range 30 {
+			s.Glyphs = append(s.Glyphs, scene.Glyph{
+				X: float32(70 + col*10), Y: float32(60 + row*20),
+				W: 8, H: 12, U: uint16(mx), V: uint16(my), UW: 8, VH: 12,
+				Color: scene.Color{R: 25, G: 25, B: 30, A: 255},
+			})
+		}
+		s.Ops = append(s.Ops, scene.Op{Kind: scene.OpGlyphs, Start: start, End: int32(len(s.Glyphs))})
+	}
+	opStart := len(s.Ops)
+	caretIdx := len(s.Ops)
+	s.Ops = append(s.Ops, scene.Op{Kind: scene.OpFill, Rect: scene.Rect{X: 180, Y: 160, W: 2, H: 18}, Radii: scene.Uniform(1), Color: scene.Color{R: 15, G: 110, B: 240, A: 255}})
+	s.Ops = append(s.Ops, scene.Op{Kind: scene.OpFill, Rect: scene.Rect{X: 60, Y: 40, W: 500, H: 20}, Paint: scene.PaintLinearStops, Gradient: [4]float32{60, 40, 60, 60}, Stops: [2]int32{0, 2}})
+	opEnd := len(s.Ops)
+	s.Ops = append(s.Ops, scene.Op{Kind: scene.OpPopClip})
+	s.Ops = append(s.Ops, scene.Op{Kind: scene.OpFill, Rect: scene.Rect{X: 570, Y: 20, W: 50, H: 20}, Radii: scene.Uniform(4), Color: scene.Color{R: 80, G: 90, B: 110, A: 255}})
+
+	edit := scene.PartEdit{
+		OpStart: opStart, OldOpEnd: opEnd, NewOpEnd: opEnd,
+		GlyphMark: len(s.Glyphs), StopMark: len(s.Stops),
+	}
+
+	r.cur, r.wide = &r.formats[0], false
+	var targets [3]id
+	pool(func() {
+		for i := range targets {
+			targets[i] = r.newTexture(s.Width, s.Height, pixelFormatBGRA8Unorm, usageRenderTarget|usageShaderRead, nil, 0)
+		}
+	})
+	defer pool(func() {
+		r.waitLast()
+		for i := range targets {
+			release(&targets[i])
+		}
+	})
+
+	readTex := func(tex id) []byte {
+		cb := send(r.queue, "commandBuffer")
+		blit := send(cb, "blitCommandEncoder")
+		send(blit, "synchronizeResource:", tex)
+		send(blit, "endEncoding")
+		send(cb, "commit")
+		send(cb, "waitUntilCompleted")
+		raw := make([]byte, s.Width*s.Height*4)
+		msgGetBytes(tex, sel("getBytes:bytesPerRow:fromRegion:mipmapLevel:"), unsafe.Pointer(&raw[0]), uint(s.Width*4),
+			mtlRegion{W: uint(s.Width), H: uint(s.Height), D: 1}, 0)
+		return raw
+	}
+
+	const totalFrames = 260 // > sweep() 240-frame threshold
+	partial := 0
+	for step := range totalFrames {
+		if step > 0 {
+			s.Ops[caretIdx].Color.A = byte(1 + (step*17)%254)
+			edit.BaseID = s.ID
+			s.ID = uint64(step + 2)
+			s.Partial = edit
+		}
+		var got []byte
+		var err error
+		pool(func() {
+			r.waitLast()
+			r.cur = &r.formats[0]
+			tex := targets[step%len(targets)]
+			damage, known := r.diff.Diff(s)
+			cb, e := r.drawFrame(s, damage, known, func() id { return tex })
+			if e != nil {
+				err = e
+				return
+			}
+			send(cb, "commit")
+			send(cb, "waitUntilCompleted")
+			got = readTex(tex)
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if step > 0 && r.drawState.b.IncrementalBatch() == 0 {
+			t.Fatalf("step %d: expected incremental build", step)
+		}
+		if step >= 3 {
+			if r.redrew != redrewPart {
+				t.Fatalf("step %d: redrew = %v, want partial", step, r.redrew)
+			}
+			partial++
+			if len(r.part.Instances) >= len(r.drawState.b.Instances)/10 {
+				t.Fatalf("step %d: compacted %d / %d instances", step, len(r.part.Instances), len(r.drawState.b.Instances))
+			}
+		}
+		// Spot-check byte-for-byte equality across all buffers early, mid-way, and past sweep().
+		if step < 10 || step%50 == 0 || step == totalFrames-1 {
+			want := renderRaw(t, ref, s, false)
+			if n := differing(got, want); n != 0 {
+				t.Fatalf("step %d: %d bytes differ from whole render (bounds=%v)", step, n, r.part.Bounds())
+			}
+		}
+	}
+	if partial != totalFrames-3 {
+		t.Fatalf("partial = %d, want %d", partial, totalFrames-3)
+	}
+	r.sweep()
+	if len(r.images) == 0 {
+		t.Fatal("prefix image was incorrectly evicted by sweep()")
+	}
+}

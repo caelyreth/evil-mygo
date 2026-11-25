@@ -3,6 +3,7 @@ package gpu
 import (
 	"fmt"
 	"image"
+	"math"
 	"slices"
 
 	"github.com/egoist/mygo/internal/scene"
@@ -151,10 +152,20 @@ func addRect(rects []image.Rectangle, r image.Rectangle) []image.Rectangle {
 
 func pixels(r image.Rectangle) int { return r.Dx() * r.Dy() }
 
+// PartBatch is a non-empty slice of compacted Part.Instances corresponding to
+// Builder.Batches[Batch].
+type PartBatch struct {
+	Batch, Start, Count int
+}
+
 // Part is the part of a frame to redraw: rectangles apart from each other,
 // none when nothing changed.
 type Part struct {
 	Rects []Scissor
+	// Instances and Batches hold the subset of a frame's instances that
+	// intersect Rects, built by Compact and reused across frames.
+	Instances []Instance
+	Batches   []PartBatch
 	// rects, grown and next are Partial's.
 	rects, grown, next []image.Rectangle
 }
@@ -238,6 +249,81 @@ func (a *Ages) Has(id uintptr) bool {
 	return false
 }
 
+// Compact populates p.Instances and p.Batches with only those instances of b
+// whose ops (via opBound) and individual bounds intersect p.Rects. Batches whose
+// scissor misses p.Rects, or ops whose bounds miss p.Rects, are omitted entirely.
+func (p *Part) Compact(b *Builder, opBound func(int) image.Rectangle) {
+	p.Instances = p.Instances[:0]
+	p.Batches = p.Batches[:0]
+	if len(p.Rects) == 0 || len(b.Batches) == 0 {
+		return
+	}
+	nOps := len(b.OpStart) - 1
+	opIdx := 0
+	for bi := range b.Batches {
+		bt := &b.Batches[bi]
+		if bt.Count == 0 || !meetsScissor(bt.Scissor, p.Rects) {
+			continue
+		}
+		lo, hi := bt.Start, bt.Start+bt.Count
+		outStart := len(p.Instances)
+		if bt.Effect != nil || bt.Hole || bt.Backdrop != 0 || opBound == nil || nOps <= 0 {
+			p.Instances = append(p.Instances, b.Instances[lo:hi]...)
+			p.Batches = append(p.Batches, PartBatch{Batch: bi, Start: outStart, Count: bt.Count})
+			continue
+		}
+		for opIdx < nOps && int(b.OpStart[opIdx+1]) <= lo {
+			opIdx++
+		}
+		for k := opIdx; k < nOps && int(b.OpStart[k]) < hi; k++ {
+			a := max(lo, int(b.OpStart[k]))
+			e := min(hi, int(b.OpStart[k+1]))
+			if a >= e || !rectMeetsScissor(opBound(k), p.Rects) {
+				continue
+			}
+			if e-a <= 4 {
+				p.Instances = append(p.Instances, b.Instances[a:e]...)
+				continue
+			}
+			for _, in := range b.Instances[a:e] {
+				if in.Transform0[3] != 0 || in.Params[0] == 1 || instanceMeetsScissor(in, p.Rects) {
+					p.Instances = append(p.Instances, in)
+				}
+			}
+		}
+		if count := len(p.Instances) - outStart; count > 0 {
+			p.Batches = append(p.Batches, PartBatch{Batch: bi, Start: outStart, Count: count})
+		}
+	}
+}
+
+func meetsScissor(sc Scissor, areas []Scissor) bool {
+	for _, a := range areas {
+		if !sc.intersect(a).Empty() {
+			return true
+		}
+	}
+	return false
+}
+
+func rectMeetsScissor(r image.Rectangle, areas []Scissor) bool {
+	if r.Empty() {
+		return false
+	}
+	sc := Scissor{int32(r.Min.X), int32(r.Min.Y), int32(r.Max.X), int32(r.Max.Y)}
+	return meetsScissor(sc, areas)
+}
+
+func instanceMeetsScissor(in Instance, areas []Scissor) bool {
+	sc := Scissor{
+		Left:   int32(math.Floor(float64(in.Rect[0]))) - 2,
+		Top:    int32(math.Floor(float64(in.Rect[1]))) - 2,
+		Right:  int32(math.Ceil(float64(in.Rect[0]+in.Rect[2]))) + 2,
+		Bottom: int32(math.Ceil(float64(in.Rect[1]+in.Rect[3]))) + 2,
+	}
+	return meetsScissor(sc, areas)
+}
+
 // Pipelines keeps, for each op of the frames a renderer builds, a hash of
 // the pipelines (shaders, blending) its instances draw with. An op drawn
 // with others than in the last frame (a batch specialized for other
@@ -246,7 +332,8 @@ func (a *Ages) Has(id uintptr) bool {
 // there, which a frame drawn whole would change too: its bounds count as
 // changed.
 type Pipelines struct {
-	keys, last []uint64
+	keys, last          []uint64
+	batchKeys, curBatch []uint64
 }
 
 // Damage hashes the pipelines of the ops b built, pipe(i) being batch i's,
@@ -256,14 +343,35 @@ type Pipelines struct {
 func (p *Pipelines) Damage(b *Builder, pipe func(i int) uint64, d *scene.Differ, damage []image.Rectangle, known bool) []image.Rectangle {
 	n := len(b.OpStart) - 1
 	p.keys = slices.Grow(p.keys[:0], n)[:n]
-	clear(p.keys)
-	op := 0
-	for i, bt := range b.Batches {
+	nb := len(b.Batches)
+	p.curBatch = slices.Grow(p.curBatch[:0], nb)[:nb]
+	cutOp, cutBatch := b.IncrementalCut()
+	startOp, startBatch := 0, 0
+	if known && cutOp > 0 && cutBatch > 0 && cutBatch <= len(p.batchKeys) && cutOp <= len(p.last) && cutOp <= n {
+		prefixMatch := true
+		for i := range cutBatch {
+			pk := pipe(i)
+			p.curBatch[i] = pk
+			if pk != p.batchKeys[i] {
+				prefixMatch = false
+				break
+			}
+		}
+		if prefixMatch {
+			copy(p.keys[:cutOp], p.last[:cutOp])
+			startOp, startBatch = cutOp, cutBatch
+		}
+	}
+	clear(p.keys[startOp:])
+	op := startOp
+	for i := startBatch; i < nb; i++ {
+		bt := &b.Batches[i]
 		lo, hi := int32(bt.Start), int32(bt.Start+bt.Count)
 		for op < n && b.OpStart[op+1] <= lo {
 			op++
 		}
 		key := pipe(i)
+		p.curBatch[i] = key
 		for k := op; k < n && b.OpStart[k] < hi; k++ {
 			if b.OpStart[k+1] > b.OpStart[k] {
 				p.keys[k] = (p.keys[k] ^ key) * 1099511628211
@@ -273,10 +381,9 @@ func (p *Pipelines) Damage(b *Builder, pipe func(i int) uint64, d *scene.Differ,
 	if !known {
 		return damage
 	}
-	bounds := d.Bounds()
-	for j, key := range p.keys {
-		if i, ok := d.Match(j); ok && i < len(p.last) && p.last[i] != key {
-			damage = append(damage, bounds[j])
+	for j := startOp; j < n; j++ {
+		if i, ok := d.Match(j); ok && i < len(p.last) && p.last[i] != p.keys[j] {
+			damage = append(damage, d.OpBound(j))
 		}
 	}
 	return damage
@@ -284,4 +391,7 @@ func (p *Pipelines) Damage(b *Builder, pipe func(i int) uint64, d *scene.Differ,
 
 // Remember keeps the hashes of the frame Damage was given last, drawn, to
 // compare the next with.
-func (p *Pipelines) Remember() { p.keys, p.last = p.last, p.keys }
+func (p *Pipelines) Remember() {
+	p.keys, p.last = p.last, p.keys
+	p.curBatch, p.batchKeys = p.batchKeys, p.curBatch
+}

@@ -333,6 +333,60 @@ type Builder struct {
 	// chroma is the chroma texture of the image an instance being added
 	// draws, for its batch.
 	chroma uintptr
+
+	// Incremental build state for Scene.Partial updates.
+	lastSceneID      uint64
+	lastOpCount      int
+	lastW, lastH     int
+	lastText         scene.TextParams
+	lastMaskAtlas    *scene.Atlas
+	lastColorAtlas   *scene.Atlas
+	lastMaskSize     [2]int
+	lastColorSize    [2]int
+	lastFlags        builderFlags
+	lastFolded       bool
+	lastHasPlan      bool
+	lastHaveOccluder bool
+	curOp            int
+	clipOps          []int
+	reshapedOps      []int
+	cullOps          []int
+	stopOps          []opMark
+	backdropOps      []opMark
+	maskOps          []opMark
+	opaqueOps        []opMark
+	imgRefs          []imgRef
+	fxImgRefs        []fxImgRef
+	incCutOp         int
+	incCutBatch      int
+	incCheckBatch    int
+	incCutInst       int
+	incStack         []clip
+	tmpOp            scene.Op
+}
+
+type builderFlags struct {
+	wide, noFold, noCull, classes, noClasses, opaque, clipSkip bool
+	noJoin, noShadowSplit, noRingSplit, noCornerSplit          bool
+	generalFill, noClipSkip, contClips                         bool
+	generalClasses                                             uint32
+}
+
+type opMark struct {
+	op, count int
+}
+
+type imgRef struct {
+	op           int
+	img          *scene.Image
+	tex          uintptr
+	blurred, yuv bool
+}
+
+type fxImgRef struct {
+	op  int
+	img *scene.Image
+	tex uintptr
 }
 
 // ImageYUV is the code an image instance's Params[1] holds for a frame of
@@ -459,6 +513,56 @@ func (b *Builder) pushed(s *scene.Scene, top *clip, op *scene.Op, i int) clip {
 	return c
 }
 
+// IncrementalCut returns the starting op and batch indices from which the last
+// Build incremented, or (0, 0) when it ran a full build.
+func (b *Builder) IncrementalCut() (cutOp, cutBatch int) {
+	return b.incCutOp, b.incCheckBatch
+}
+
+// IncrementalBatch returns the starting batch index rebuilt by the last
+// incremental Build, or 0 after a full build.
+func (b *Builder) IncrementalBatch() int { return b.incCutBatch }
+
+// IncrementalInst returns the starting instance index emitted by the last
+// incremental Build, or 0 after a full build.
+func (b *Builder) IncrementalInst() int { return b.incCutInst }
+
+// ReuseUnchanged updates the tracked scene identity after a renderer skips a
+// frame whose partial diff reported zero damage.
+func (b *Builder) ReuseUnchanged(s *scene.Scene) {
+	pe := s.Partial
+	if pe.BaseID != 0 && pe.BaseID == b.lastSceneID && len(s.Ops) == b.lastOpCount && pe.OldOpEnd == pe.NewOpEnd {
+		b.lastSceneID = s.ID
+	}
+}
+
+func (b *Builder) currentFlags() builderFlags {
+	return builderFlags{
+		wide: b.Wide, noFold: b.NoFold, noCull: b.NoCull, classes: b.Classes, noClasses: b.NoClasses,
+		opaque: b.Opaque, clipSkip: b.ClipSkip, noJoin: b.NoJoin, noShadowSplit: b.NoShadowSplit,
+		noRingSplit: b.NoRingSplit, noCornerSplit: b.NoCornerSplit, generalFill: b.GeneralFill,
+		noClipSkip: b.NoClipSkip, contClips: b.contClips, generalClasses: b.GeneralClasses,
+	}
+}
+
+func atlasDims(a *scene.Atlas) [2]int {
+	if a == nil {
+		return [2]int{}
+	}
+	return [2]int{a.W, a.H}
+}
+
+func (b *Builder) rememberBuildMeta(s *scene.Scene, folded bool) {
+	b.lastSceneID = s.ID
+	b.lastOpCount = len(s.Ops)
+	b.lastW, b.lastH = s.Width, s.Height
+	b.lastText = s.Text
+	b.lastMaskAtlas, b.lastColorAtlas = s.MaskAtlas, s.ColorAtlas
+	b.lastMaskSize, b.lastColorSize = atlasDims(s.MaskAtlas), atlasDims(s.ColorAtlas)
+	b.lastFlags = b.currentFlags()
+	b.lastFolded = folded
+}
+
 // Build turns a scene directly into GPU instances, retaining local geometry
 // and composing transforms in the vertex shader. Nested affine clips use
 // cached masks; stationary clipping never rasterizes again as content moves.
@@ -468,6 +572,11 @@ func (b *Builder) pushed(s *scene.Scene, top *clip, op *scene.Op, i int) clip {
 // corners of a clip around it: the others, and those holding content
 // only moved, cut in the shader as in a scene without transforms.
 func (b *Builder) Build(s *scene.Scene, image func(*scene.Image) uintptr) *scene.Scene {
+	b.incCutOp, b.incCutBatch, b.incCheckBatch, b.incCutInst = 0, 0, 0, 0
+	if out, ok := b.tryIncrementalBuild(s, image); ok {
+		return out
+	}
+	orig := s
 	if !b.NoFold {
 		s = b.fold.Fold(s)
 	}
@@ -482,210 +591,561 @@ func (b *Builder) Build(s *scene.Scene, image func(*scene.Image) uintptr) *scene
 	b.Stops = b.Stops[:0]
 	b.OpaqueCores = 0
 	b.joinSmall = false
+	b.clipOps = b.clipOps[:0]
+	b.cullOps = b.cullOps[:0]
+	b.stopOps = b.stopOps[:0]
+	b.backdropOps = b.backdropOps[:0]
+	b.maskOps = b.maskOps[:0]
+	b.opaqueOps = b.opaqueOps[:0]
+	b.imgRefs = b.imgRefs[:0]
+	b.fxImgRefs = b.fxImgRefs[:0]
 	everything := scene.Rect{X: -1e6, Y: -1e6, W: 2e6, H: 2e6}
 	b.stack = append(b.stack[:0], clip{rect: everything, bounds: scene.Rect{W: float32(s.Width), H: float32(s.Height)},
 		scissor: Scissor{0, 0, int32(s.Width), int32(s.Height)}})
 	b.planCull(s)
 	b.OpStart = b.OpStart[:0]
 	for i := range s.Ops {
-		op := &s.Ops[i]
 		b.OpStart = append(b.OpStart, int32(len(b.Instances)))
 		if b.culled[i] {
+			b.cullOps = append(b.cullOps, i)
 			continue
 		}
-		switch op.Kind {
-		case scene.OpPushClip:
-			c := b.pushed(s, &b.stack[len(b.stack)-1], op, i)
-			if c.masked {
-				c.maskSlot = b.maskUsed
-				b.maskUsed++
-			}
-			b.clipShapes = append(b.clipShapes, c.shape)
-			b.stack = append(b.stack, c)
-		case scene.OpPopClip:
-			if len(b.stack) > 1 {
-				b.stack = b.stack[:len(b.stack)-1]
-				b.clipShapes = b.clipShapes[:len(b.clipShapes)-1]
-			}
-		case scene.OpFill:
-			if op.Rect.Empty() {
-				continue
-			}
-			bw := op.Border
-			if op.BorderColor.A == 0 {
-				bw = [4]float32{}
-			}
-			radii := scene.Corners(op.Rect, op.Radii, op.Continuous)
-			var inner [4]float32
-			if scene.HasBorder(bw) {
-				_, inner = scene.InnerRadii(op.Rect, radii, bw)
-			}
-			dashed := float32(0)
-			if op.Dashed {
-				dashed = 1
-			}
-			if op.BorderPaint {
-				// Its gradient paints the border.
-				dashed += 2
-			}
-			w := b.wideOf(s, op.Wide)
-			c2 := wideColor(w, scene.WideColor2, op.Color2)
-			if op.Paint.HasStops() {
-				c2 = b.addStops(s, op)
-			}
-			b.addFill(s, Instance{
-				Rect: rect(op.Rect), Radii: radii, Inner: inner,
-				Color: wideColor(w, scene.WideColor, op.Color), Color2: c2, Border: wideColor(w, scene.WideBorder, op.BorderColor), Grad: op.Gradient,
-				UV:     bw,
-				Params: [4]float32{0, dashed, float32(op.Paint), opacity(op.Opacity)},
-			}, op)
-		case scene.OpShadow:
-			if op.Inset {
-				// The box in Rect, the hole in UV and Inner, which an
-				// inner shadow's 1 in Params[1] tells.
-				if op.Cast.Empty() {
-					continue
-				}
-				sigma := op.Blur / 2
-				if sigma < 0.5 {
-					sigma = 0
-				}
-				in := Instance{
-					Rect: rect(op.Cast), Radii: scene.Corners(op.Cast, op.CastRadii, op.Continuous),
-					Color: wideColor(b.wideOf(s, op.Wide), scene.WideColor, op.Color), Params: [4]float32{1, 1, sigma, opacity(op.Opacity)},
-				}
-				if !op.Rect.Empty() {
-					in.UV, in.Inner = rect(op.Rect), scene.Corners(op.Rect, op.Radii, op.Continuous)
-				}
-				b.add(in, 0, op.Transform)
-				continue
-			}
-			if op.Rect.Empty() {
-				continue
-			}
-			sigma := op.Blur / 2
-			if sigma < 0.5 {
-				sigma = 0
-			}
-			in := Instance{
-				Rect: rect(op.Rect), Radii: scene.Corners(op.Rect, op.Radii, op.Continuous),
-				Color: wideColor(b.wideOf(s, op.Wide), scene.WideColor, op.Color), Params: [4]float32{1, 0, sigma, opacity(op.Opacity)},
-			}
-			if !op.Cast.Empty() {
-				in.UV, in.Inner = rect(op.Cast), scene.Corners(op.Cast, op.CastRadii, op.Continuous)
-			}
-			b.addShadow(in, op, sigma)
-		case scene.OpGlyphs:
-			grad := op.Paint == scene.PaintLinear || op.Paint == scene.PaintOklab || op.Paint.HasStops()
-			var c1, c2 [4]float32
-			if grad {
-				w := b.wideOf(s, op.Wide)
-				c1, c2 = wideColor(w, scene.WideColor, op.Color), wideColor(w, scene.WideColor2, op.Color2)
-				if op.Paint.HasStops() {
-					c2 = b.addStops(s, op)
-				}
-			}
-			for _, g := range s.Glyphs[op.Start:op.End] {
-				a, kind, contrast := s.MaskAtlas, float32(2), s.Text.Contrast
-				switch {
-				case g.Colored:
-					a, kind = s.ColorAtlas, 3
-				case g.Subpixel:
-					a, kind, contrast = s.ColorAtlas, 5, s.Text.SubpixelContrast
-				}
-				if a == nil {
-					continue
-				}
-				boost := float32(0)
-				if g.Thin {
-					boost = scene.ThinBoost
-				}
-				aw, ah := float32(a.W), float32(a.H)
-				in := Instance{
-					Rect:   [4]float32{float32(math.Round(float64(g.X))), float32(math.Round(float64(g.Y))), float32(g.UW), float32(g.VH)},
-					Radii:  s.Text.GammaRatios,
-					Inner:  [4]float32{contrast, boost},
-					UV:     [4]float32{float32(g.U) / aw, float32(g.V) / ah, float32(g.U+g.UW) / aw, float32(g.V+g.VH) / ah},
-					Color:  straight(g.Color),
-					Params: [4]float32{kind, 0, 0, 1},
-				}
-				if w := b.wideOf(s, g.Wide); w != nil {
-					in.Color = w.Color
-				}
-				if grad && !g.Colored {
-					in.Color, in.Color2, in.Grad = c1, c2, op.Gradient
-					in.Params[2], in.Params[3] = float32(op.Paint), opacity(op.Opacity)
-				}
-				b.add(in, 0, op.Transform.Mul(g.Transform))
-			}
-		case scene.OpEffect:
-			if !op.Rect.Empty() && int(op.Start) < len(s.Effects) && s.Effects[op.Start].Effect != nil {
-				b.addEffect(s, op)
-			}
-		case scene.OpHole:
-			if !op.Rect.Empty() {
-				b.addHole(op)
-			}
-		case scene.OpImage:
-			img := op.Image
-			if img == nil || op.Rect.Empty() || img.W == 0 || img.H == 0 {
-				continue
-			}
-			src := op.Src
-			iw, ih := float32(img.W), float32(img.H)
-			var tex uintptr
-			// A video frame sampled as its planes draws unblurred: the
-			// passes blurring an image read its texture as RGBA.
-			yuv := img.Surface != nil && img.Surface.Format == scene.SurfaceNV12 && b.Chroma != nil
-			if op.Blur > 0 && b.BlurredImage != nil && !yuv {
-				// The image's area blurred, which the op samples.
-				bk := scene.ImageBlur(scene.ImageArea(op.Src, img.W, img.H), op.Blur)
-				w, h := bk.Size()
-				if w <= 0 || h <= 0 {
-					continue
-				}
-				tex = b.BlurredImage(img, bk)
-				src, iw, ih = bk.ImageSrc(op.Src), float32(w), float32(h)
-			} else {
-				tex = image(img)
-			}
-			if tex == 0 {
-				continue
-			}
-			gray, nearest := float32(0), float32(0)
-			if op.Grayscale {
-				gray = 1
-			}
-			b.chroma = 0
-			if yuv {
-				if b.chroma = b.Chroma(img); b.chroma != 0 {
-					gray = ImageYUV + float32(img.Surface.Matrix) + ImageYUVGray*gray
-				}
-			}
-			if op.Pixelated {
-				nearest = 1
-			}
-			tint := [4]float32{1, 1, 1, 1}
-			if op.Color != (scene.Color{}) {
-				tint = straight(op.Color)
-			}
-			in := Instance{
-				Rect:   rect(op.Rect),
-				Radii:  scene.Corners(op.Rect, op.Radii, op.Continuous),
-				Color:  tint,
-				UV:     [4]float32{src.X / iw, src.Y / ih, (src.X + src.W) / iw, (src.Y + src.H) / ih},
-				Params: [4]float32{4, gray, nearest, opacity(op.Opacity)},
-			}
-			b.addCut(in, tex, op.Transform)
-			b.chroma = 0
-		}
+		b.emitOp(s, &s.Ops[i], i, image)
 	}
 
 	b.OpStart = append(b.OpStart, int32(len(b.Instances)))
 	b.joinLast()
 	b.dropIdleMasks(idleMaskBytes)
 	b.imageTexture = nil
+	b.rememberBuildMeta(orig, s != orig)
 	return s
+}
+
+func truncOps(s []int, cut int) []int {
+	i := len(s)
+	for i > 0 && s[i-1] >= cut {
+		i--
+	}
+	return s[:i]
+}
+
+func truncMarks(marks []opMark, cutOp int) ([]opMark, int) {
+	i := len(marks)
+	for i > 0 && marks[i-1].op >= cutOp {
+		i--
+	}
+	marks = marks[:i]
+	if i == 0 {
+		return marks, 0
+	}
+	return marks, marks[i-1].count
+}
+
+func truncImgRefs(refs []imgRef, cutOp int) []imgRef {
+	i := len(refs)
+	for i > 0 && refs[i-1].op >= cutOp {
+		i--
+	}
+	refs = refs[:i]
+	clear(refs[i:cap(refs)])
+	return refs
+}
+
+func truncFxImgRefs(refs []fxImgRef, cutOp int) []fxImgRef {
+	i := len(refs)
+	for i > 0 && refs[i-1].op >= cutOp {
+		i--
+	}
+	refs = refs[:i]
+	clear(refs[i:cap(refs)])
+	return refs
+}
+
+func hasOpBetween(ops []int, lo, hi int) bool {
+	for _, idx := range ops {
+		if idx >= hi {
+			return false
+		}
+		if idx >= lo {
+			return true
+		}
+	}
+	return false
+}
+
+func (b *Builder) tryIncrementalBuild(s *scene.Scene, image func(*scene.Image) uintptr) (*scene.Scene, bool) {
+	pe := s.Partial
+	if pe.BaseID == 0 || pe.BaseID != b.lastSceneID || len(b.OpStart) != b.lastOpCount+1 {
+		return nil, false
+	}
+	if s.Width != b.lastW || s.Height != b.lastH || s.Text != b.lastText ||
+		s.MaskAtlas != b.lastMaskAtlas || s.ColorAtlas != b.lastColorAtlas ||
+		atlasDims(s.MaskAtlas) != b.lastMaskSize || atlasDims(s.ColorAtlas) != b.lastColorSize ||
+		b.currentFlags() != b.lastFlags {
+		return nil, false
+	}
+	nNew, nOld := len(s.Ops), b.lastOpCount
+	if pe.OpStart <= 0 || pe.OpStart > pe.OldOpEnd || pe.OldOpEnd > nOld ||
+		pe.NewOpEnd < pe.OpStart || pe.NewOpEnd > nNew || nNew-pe.NewOpEnd != nOld-pe.OldOpEnd {
+		return nil, false
+	}
+	if hasOpBetween(b.clipOps, pe.OpStart, pe.OldOpEnd) || hasOpBetween(b.reshapedOps, pe.OpStart, pe.OldOpEnd) {
+		return nil, false
+	}
+	for _, m := range b.backdropOps {
+		if m.op >= pe.OpStart && m.op < pe.OldOpEnd {
+			return nil, false
+		}
+	}
+	if b.lastHasPlan {
+		for i := pe.OpStart; i < pe.OldOpEnd; i++ {
+			if b.plan[i].barrier || !b.plan[i].occ.Empty() {
+				return nil, false
+			}
+		}
+	}
+	// Choose a clean op+batch cut at or before pe.OpStart such that the
+	// surviving batch Batches[cutBatch-1] cannot be merged by joinLast.
+	cutOp := pe.OpStart
+	cutInst := int(b.OpStart[cutOp])
+	bi := len(b.Batches) - 1
+	cutBatch := -1
+	for cutOp > 0 {
+		for bi >= 0 && (b.Batches[bi].Start+b.Batches[bi].Count > cutInst || b.mayJoinBatch(&b.Batches[bi])) {
+			bi--
+		}
+		if bi < 0 {
+			return nil, false
+		}
+		endInst := b.Batches[bi].Start + b.Batches[bi].Count
+		for cutOp > 0 && int(b.OpStart[cutOp]) > endInst {
+			cutOp--
+		}
+		if int(b.OpStart[cutOp]) == endInst {
+			cutBatch = bi + 1
+			cutInst = endInst
+			break
+		}
+		cutInst = int(b.OpStart[cutOp])
+		bi--
+	}
+	if cutOp <= 0 || cutBatch <= 0 {
+		return nil, false
+	}
+	// Check prefix images (< cutOp) cannot require blurs/YUV state and still
+	// map to their previously resolved textures; check before mutating Builder.
+	for _, ref := range b.imgRefs {
+		if ref.op >= cutOp {
+			break
+		}
+		if ref.blurred || ref.yuv || image == nil {
+			return nil, false
+		}
+		if tex := image(ref.img); tex == 0 || tex != ref.tex {
+			return nil, false
+		}
+	}
+	for _, ref := range b.fxImgRefs {
+		if ref.op >= cutOp {
+			break
+		}
+		if image == nil {
+			return nil, false
+		}
+		if tex := image(ref.img); tex == 0 || tex != ref.tex {
+			return nil, false
+		}
+	}
+	// Check tail folding & new-range invariants before mutating anything.
+	foldActive := !b.NoFold && scene.FoldActive()
+	if b.lastFolded && !foldActive {
+		return nil, false
+	}
+	// Reconstruct the clip stack active at cutOp.
+	everything := scene.Rect{X: -1e6, Y: -1e6, W: 2e6, H: 2e6}
+	b.incStack = append(b.incStack[:0], clip{rect: everything, bounds: scene.Rect{W: float32(s.Width), H: float32(s.Height)},
+		scissor: Scissor{0, 0, int32(s.Width), int32(s.Height)}})
+	b.clipShapes = b.clipShapes[:0]
+	nextMask := 0
+	for _, idx := range b.clipOps {
+		if idx >= cutOp {
+			break
+		}
+		op := &s.Ops[idx]
+		if op.Kind == scene.OpPushClip {
+			if foldActive && op.Transform.Set {
+				b.tmpOp = *op
+				op = &b.tmpOp
+				scene.FoldOp(s, op)
+			}
+			c := b.pushed(s, &b.incStack[len(b.incStack)-1], op, idx)
+			if c.masked {
+				c.maskSlot = nextMask
+				nextMask++
+			}
+			b.clipShapes = append(b.clipShapes, c.shape)
+			b.incStack = append(b.incStack, c)
+		} else if len(b.incStack) > 1 {
+			b.incStack = b.incStack[:len(b.incStack)-1]
+			b.clipShapes = b.clipShapes[:len(b.clipShapes)-1]
+		}
+	}
+	for k := range b.incStack {
+		if b.incStack[k].masked {
+			return nil, false
+		}
+	}
+	// Check new ops in [cutOp:len(s.Ops)) for folding OpGlyphs, and check
+	// [pe.OpStart:pe.NewOpEnd) for clips, reshaped ops, blurs, backdrops, or
+	// potential occluders.
+	activeClip := &b.incStack[len(b.incStack)-1]
+	inClip := 0
+	for j := cutOp; j < nNew; j++ {
+		op := &s.Ops[j]
+		if foldActive && op.Transform.Set {
+			b.tmpOp = *op
+			op = &b.tmpOp
+			if !scene.FoldOp(s, op) {
+				return nil, false
+			}
+		}
+		if j < pe.OpStart {
+			if op.Kind == scene.OpPushClip {
+				inClip++
+			} else if op.Kind == scene.OpPopClip && inClip > 0 {
+				inClip--
+			}
+			continue
+		}
+		if j >= pe.NewOpEnd {
+			continue
+		}
+		if op.Kind == scene.OpPushClip || op.Kind == scene.OpPopClip || scene.Reshaped(s, op) {
+			return nil, false
+		}
+		if op.Kind == scene.OpEffect && int(op.Start) < len(s.Effects) && s.Effects[op.Start].Effect != nil && s.Effects[op.Start].Effect.Backdrop {
+			return nil, false
+		}
+		if op.Kind == scene.OpImage && op.Blur > 0 && b.BlurredImage != nil {
+			return nil, false
+		}
+		if op.Kind == scene.OpFill && op.Paint == scene.PaintSolid && op.Color.A == 255 &&
+			!op.Transform.Set && (op.Opacity == 0 || op.Opacity == 1) && inClip == 0 {
+			if !b.occluderOf(s, op, activeClip).Empty() {
+				return nil, false
+			}
+		} else if op.Kind == scene.OpFill && op.Paint == scene.PaintSolid && op.Color.A == 255 &&
+			!op.Transform.Set && (op.Opacity == 0 || op.Opacity == 1) && inClip > 0 {
+			radii := scene.Corners(op.Rect, op.Radii, op.Continuous)
+			if !shadowCore(op.Rect, radii, op.Continuous).Empty() {
+				return nil, false
+			}
+		}
+	}
+	_, maskCount := truncMarks(b.maskOps, cutOp)
+	// Verify any prefix mask slot textures before mutating frame state.
+	for i := range b.maskSlots {
+		m := &b.maskSlots[i]
+		if m.frame == b.frame && m.slot < maskCount && m.image != nil {
+			if image == nil || image(m.image) == 0 {
+				return nil, false
+			}
+		}
+	}
+
+	// All preconditions verified: commit incremental state updates.
+	b.frame++
+	if maskCount > 0 {
+		for i := range b.maskSlots {
+			m := &b.maskSlots[i]
+			if m.frame == b.frame-1 && m.slot < maskCount {
+				m.frame = b.frame
+			}
+		}
+	}
+	b.imageTexture = image
+	b.stack = append(b.stack[:0], b.incStack...)
+	b.Instances = b.Instances[:cutInst]
+	prevTail := b.Batches[cutBatch-1]
+	b.Batches = b.Batches[:cutBatch]
+	b.OpStart = b.OpStart[:cutOp]
+
+	var stopCount, bdCount int
+	b.stopOps, stopCount = truncMarks(b.stopOps, cutOp)
+	b.Stops = b.Stops[:stopCount]
+	b.backdropOps, bdCount = truncMarks(b.backdropOps, cutOp)
+	b.Backdrops = b.Backdrops[:bdCount]
+	b.maskOps, b.maskUsed = truncMarks(b.maskOps, cutOp)
+	b.opaqueOps, b.OpaqueCores = truncMarks(b.opaqueOps, cutOp)
+	b.clipOps = truncOps(b.clipOps, cutOp)
+	b.reshapedOps = truncOps(b.reshapedOps, cutOp)
+	b.cullOps = truncOps(b.cullOps, cutOp)
+	b.Culled = len(b.cullOps)
+	b.imgRefs = truncImgRefs(b.imgRefs, cutOp)
+	b.fxImgRefs = truncFxImgRefs(b.fxImgRefs, cutOp)
+	b.joinSmall = false
+
+	// Shift encloses, cuts, and tail culled/plan arrays from OldOpEnd -> NewOpEnd.
+	delta := pe.NewOpEnd - pe.OldOpEnd
+	if delta > 0 {
+		b.encloses = slices.Grow(b.encloses, delta)
+		b.cuts = slices.Grow(b.cuts, delta)
+	}
+	b.encloses = b.encloses[:nNew]
+	b.cuts = b.cuts[:nNew]
+	if delta != 0 {
+		copy(b.encloses[pe.NewOpEnd:nNew], b.encloses[pe.OldOpEnd:nOld])
+		copy(b.cuts[pe.NewOpEnd:nNew], b.cuts[pe.OldOpEnd:nOld])
+	}
+	clear(b.encloses[pe.OpStart:pe.NewOpEnd])
+	clear(b.cuts[pe.OpStart:pe.NewOpEnd])
+	if delta != 0 {
+		for k := range b.reshapedOps {
+			if b.reshapedOps[k] >= pe.OldOpEnd {
+				b.reshapedOps[k] += delta
+			}
+		}
+	}
+	b.planCullTail(s, cutOp, b.stack, foldActive)
+
+	foldedTail := b.lastFolded
+	for i := cutOp; i < nNew; i++ {
+		b.OpStart = append(b.OpStart, int32(len(b.Instances)))
+		if b.culled[i] {
+			b.cullOps = append(b.cullOps, i)
+			continue
+		}
+		op := &s.Ops[i]
+		if foldActive && op.Transform.Set {
+			b.tmpOp = *op
+			op = &b.tmpOp
+			before := op.Transform
+			scene.FoldOp(s, op)
+			if op.Transform != before {
+				foldedTail = true
+			}
+		}
+		if scene.Reshaped(s, op) {
+			b.reshapedOps = append(b.reshapedOps, i)
+		}
+		b.emitOp(s, op, i, image)
+	}
+	b.OpStart = append(b.OpStart, int32(len(b.Instances)))
+	b.joinLast()
+	b.dropIdleMasks(idleMaskBytes)
+	b.imageTexture = nil
+	b.rememberBuildMeta(s, foldedTail)
+
+	b.incCutInst = cutInst
+	b.incCutBatch = cutBatch
+	if tail := b.Batches[cutBatch-1]; tail.Count != prevTail.Count || tail.Continuous != prevTail.Continuous || tail.Image != prevTail.Image {
+		firstOp := cutOp
+		for firstOp > 0 && int(b.OpStart[firstOp]) > prevTail.Start {
+			firstOp--
+		}
+		b.incCheckBatch = cutBatch - 1
+		b.incCutOp = firstOp
+	} else {
+		b.incCheckBatch = cutBatch
+		b.incCutOp = cutOp
+	}
+	return s, true
+}
+
+func (b *Builder) emitOp(s *scene.Scene, op *scene.Op, i int, image func(*scene.Image) uintptr) {
+	b.curOp = i
+	switch op.Kind {
+	case scene.OpPushClip:
+		b.clipOps = append(b.clipOps, i)
+		c := b.pushed(s, &b.stack[len(b.stack)-1], op, i)
+		if c.masked {
+			c.maskSlot = b.maskUsed
+			b.maskUsed++
+			b.maskOps = append(b.maskOps, opMark{i, b.maskUsed})
+		}
+		b.clipShapes = append(b.clipShapes, c.shape)
+		b.stack = append(b.stack, c)
+	case scene.OpPopClip:
+		b.clipOps = append(b.clipOps, i)
+		if len(b.stack) > 1 {
+			b.stack = b.stack[:len(b.stack)-1]
+			b.clipShapes = b.clipShapes[:len(b.clipShapes)-1]
+		}
+	case scene.OpFill:
+		if op.Rect.Empty() {
+			return
+		}
+		bw := op.Border
+		if op.BorderColor.A == 0 {
+			bw = [4]float32{}
+		}
+		radii := scene.Corners(op.Rect, op.Radii, op.Continuous)
+		var inner [4]float32
+		if scene.HasBorder(bw) {
+			_, inner = scene.InnerRadii(op.Rect, radii, bw)
+		}
+		dashed := float32(0)
+		if op.Dashed {
+			dashed = 1
+		}
+		if op.BorderPaint {
+			// Its gradient paints the border.
+			dashed += 2
+		}
+		w := b.wideOf(s, op.Wide)
+		c2 := wideColor(w, scene.WideColor2, op.Color2)
+		if op.Paint.HasStops() {
+			c2 = b.addStops(s, op)
+		}
+		b.addFill(s, Instance{
+			Rect: rect(op.Rect), Radii: radii, Inner: inner,
+			Color: wideColor(w, scene.WideColor, op.Color), Color2: c2, Border: wideColor(w, scene.WideBorder, op.BorderColor), Grad: op.Gradient,
+			UV:     bw,
+			Params: [4]float32{0, dashed, float32(op.Paint), opacity(op.Opacity)},
+		}, op)
+	case scene.OpShadow:
+		if op.Inset {
+			// The box in Rect, the hole in UV and Inner, which an
+			// inner shadow's 1 in Params[1] tells.
+			if op.Cast.Empty() {
+				return
+			}
+			sigma := op.Blur / 2
+			if sigma < 0.5 {
+				sigma = 0
+			}
+			in := Instance{
+				Rect: rect(op.Cast), Radii: scene.Corners(op.Cast, op.CastRadii, op.Continuous),
+				Color: wideColor(b.wideOf(s, op.Wide), scene.WideColor, op.Color), Params: [4]float32{1, 1, sigma, opacity(op.Opacity)},
+			}
+			if !op.Rect.Empty() {
+				in.UV, in.Inner = rect(op.Rect), scene.Corners(op.Rect, op.Radii, op.Continuous)
+			}
+			b.add(in, 0, op.Transform)
+			return
+		}
+		if op.Rect.Empty() {
+			return
+		}
+		sigma := op.Blur / 2
+		if sigma < 0.5 {
+			sigma = 0
+		}
+		in := Instance{
+			Rect: rect(op.Rect), Radii: scene.Corners(op.Rect, op.Radii, op.Continuous),
+			Color: wideColor(b.wideOf(s, op.Wide), scene.WideColor, op.Color), Params: [4]float32{1, 0, sigma, opacity(op.Opacity)},
+		}
+		if !op.Cast.Empty() {
+			in.UV, in.Inner = rect(op.Cast), scene.Corners(op.Cast, op.CastRadii, op.Continuous)
+		}
+		b.addShadow(in, op, sigma)
+	case scene.OpGlyphs:
+		grad := op.Paint == scene.PaintLinear || op.Paint == scene.PaintOklab || op.Paint.HasStops()
+		var c1, c2 [4]float32
+		if grad {
+			w := b.wideOf(s, op.Wide)
+			c1, c2 = wideColor(w, scene.WideColor, op.Color), wideColor(w, scene.WideColor2, op.Color2)
+			if op.Paint.HasStops() {
+				c2 = b.addStops(s, op)
+			}
+		}
+		for _, g := range s.Glyphs[op.Start:op.End] {
+			a, kind, contrast := s.MaskAtlas, float32(2), s.Text.Contrast
+			switch {
+			case g.Colored:
+				a, kind = s.ColorAtlas, 3
+			case g.Subpixel:
+				a, kind, contrast = s.ColorAtlas, 5, s.Text.SubpixelContrast
+			}
+			if a == nil {
+				continue
+			}
+			boost := float32(0)
+			if g.Thin {
+				boost = scene.ThinBoost
+			}
+			aw, ah := float32(a.W), float32(a.H)
+			in := Instance{
+				Rect:   [4]float32{float32(math.Round(float64(g.X))), float32(math.Round(float64(g.Y))), float32(g.UW), float32(g.VH)},
+				Radii:  s.Text.GammaRatios,
+				Inner:  [4]float32{contrast, boost},
+				UV:     [4]float32{float32(g.U) / aw, float32(g.V) / ah, float32(g.U+g.UW) / aw, float32(g.V+g.VH) / ah},
+				Color:  straight(g.Color),
+				Params: [4]float32{kind, 0, 0, 1},
+			}
+			if w := b.wideOf(s, g.Wide); w != nil {
+				in.Color = w.Color
+			}
+			if grad && !g.Colored {
+				in.Color, in.Color2, in.Grad = c1, c2, op.Gradient
+				in.Params[2], in.Params[3] = float32(op.Paint), opacity(op.Opacity)
+			}
+			b.add(in, 0, op.Transform.Mul(g.Transform))
+		}
+	case scene.OpEffect:
+		if !op.Rect.Empty() && int(op.Start) < len(s.Effects) && s.Effects[op.Start].Effect != nil {
+			b.addEffect(s, op)
+		}
+	case scene.OpHole:
+		if !op.Rect.Empty() {
+			b.addHole(op)
+		}
+	case scene.OpImage:
+		img := op.Image
+		if img == nil || op.Rect.Empty() || img.W == 0 || img.H == 0 {
+			return
+		}
+		src := op.Src
+		iw, ih := float32(img.W), float32(img.H)
+		var tex uintptr
+		// A video frame sampled as its planes draws unblurred: the
+		// passes blurring an image read its texture as RGBA.
+		yuv := img.Surface != nil && img.Surface.Format == scene.SurfaceNV12 && b.Chroma != nil
+		blurred := false
+		if op.Blur > 0 && b.BlurredImage != nil && !yuv {
+			// The image's area blurred, which the op samples.
+			bk := scene.ImageBlur(scene.ImageArea(op.Src, img.W, img.H), op.Blur)
+			w, h := bk.Size()
+			if w <= 0 || h <= 0 {
+				return
+			}
+			blurred = true
+			tex = b.BlurredImage(img, bk)
+			src, iw, ih = bk.ImageSrc(op.Src), float32(w), float32(h)
+		} else {
+			tex = image(img)
+		}
+		if tex == 0 {
+			return
+		}
+		b.imgRefs = append(b.imgRefs, imgRef{op: i, img: img, tex: tex, blurred: blurred, yuv: yuv})
+		gray, nearest := float32(0), float32(0)
+		if op.Grayscale {
+			gray = 1
+		}
+		b.chroma = 0
+		if yuv {
+			if b.chroma = b.Chroma(img); b.chroma != 0 {
+				gray = ImageYUV + float32(img.Surface.Matrix) + ImageYUVGray*gray
+			}
+		}
+		if op.Pixelated {
+			nearest = 1
+		}
+		tint := [4]float32{1, 1, 1, 1}
+		if op.Color != (scene.Color{}) {
+			tint = straight(op.Color)
+		}
+		in := Instance{
+			Rect:   rect(op.Rect),
+			Radii:  scene.Corners(op.Rect, op.Radii, op.Continuous),
+			Color:  tint,
+			UV:     [4]float32{src.X / iw, src.Y / ih, (src.X + src.W) / iw, (src.Y + src.H) / ih},
+			Params: [4]float32{4, gray, nearest, opacity(op.Opacity)},
+		}
+		b.addCut(in, tex, op.Transform)
+		b.chroma = 0
+	}
 }
 
 // joinArea is the most pixels a batch may cover for joinLast to join it
@@ -695,6 +1155,24 @@ func (b *Builder) Build(s *scene.Scene, image func(*scene.Image) uintptr) *scene
 // 0.04 with other fills and 0.075 with the general shader: at this many
 // pixels, the worst of them costs what the call it saves does.
 const joinArea = 128 * 128
+
+func (b *Builder) batchFitsJoin(bt *Batch) bool {
+	area := float32(0)
+	for _, in := range b.Instances[bt.Start : bt.Start+bt.Count] {
+		e := float32(1)
+		if in.Params[0] == 1 {
+			e += 3 * in.Params[2]
+		}
+		if area += (in.Rect[2] + 2*e) * (in.Rect[3] + 2*e); area > joinArea {
+			return false
+		}
+	}
+	return true
+}
+
+func (b *Builder) mayJoinBatch(bt *Batch) bool {
+	return b.Classes && !b.NoClasses && !b.NoJoin && bt.Effect == nil && !bt.Hole && (bt.Joined != 0 || b.batchFitsJoin(bt))
+}
 
 // joinLast joins the last batch, which no instance joins any more, into the
 // one before it when they differ only in their class and each batch they
@@ -710,18 +1188,7 @@ func (b *Builder) joinLast() {
 		return
 	}
 	bt := &b.Batches[n-1]
-	// The pixels of its quads (as the vertex shader grows them), at most.
-	area := float32(0)
-	for _, in := range b.Instances[bt.Start : bt.Start+bt.Count] {
-		e := float32(1)
-		if in.Params[0] == 1 {
-			e += 3 * in.Params[2]
-		}
-		if area += (in.Rect[2] + 2*e) * (in.Rect[3] + 2*e); area > joinArea {
-			break
-		}
-	}
-	fits := area <= joinArea
+	fits := b.batchFitsJoin(bt)
 	if last := &b.Batches[max(n-2, 0)]; n > 1 && b.joinSmall && fits && last.Scissor == bt.Scissor &&
 		last.ClipMask == bt.ClipMask && last.Opaque == bt.Opaque && last.Effect == nil && bt.Effect == nil && !last.Hole && !bt.Hole &&
 		(last.Image == 0 || bt.Image == 0 || last.Image == bt.Image) {
@@ -765,6 +1232,7 @@ func (b *Builder) addStops(s *scene.Scene, op *scene.Op) [4]float32 {
 		b.Stops = append(b.Stops, float32(c.R)/255, float32(c.G)/255, float32(c.B)/255, float32(c.A)/255,
 			st.At, lab[0], lab[1], lab[2])
 	}
+	b.stopOps = append(b.stopOps, opMark{b.curOp, len(b.Stops)})
 	return [4]float32{float32(first), float32(e - a), 0, 0}
 }
 
@@ -784,6 +1252,7 @@ func (b *Builder) markEnclosing(s *scene.Scene) {
 	clear(b.encloses)
 	b.cuts = slices.Grow(b.cuts[:0], len(s.Ops))[:len(s.Ops)]
 	clear(b.cuts)
+	b.reshapedOps = b.reshapedOps[:0]
 	b.pushes = b.pushes[:0]
 	b.corners.Reset()
 	for i := range s.Ops {
@@ -803,6 +1272,9 @@ func (b *Builder) markEnclosing(s *scene.Scene) {
 		// as a label by a fraction of a pixel, which glyphs are not folded
 		// by, is cut as drawing that is not: no mask around it (#1002).
 		transformed := scene.Reshaped(s, op)
+		if transformed {
+			b.reshapedOps = append(b.reshapedOps, i)
+		}
 		// Every clip open around it encloses it, from the innermost out to
 		// the first already marked, whose own are.
 		for j := len(b.pushes) - 1; transformed && j >= 0 && !b.encloses[b.pushes[j]]; j-- {
@@ -1024,6 +1496,7 @@ func (b *Builder) addOpaque(in Instance, m scene.Affine, core Scissor) {
 	b.scissorBatches(Scissor{}, false)
 	b.opaque = false
 	b.OpaqueCores++
+	b.opaqueOps = append(b.opaqueOps, opMark{b.curOp, b.OpaqueCores})
 	b.addAround(in, m, core)
 }
 
@@ -1106,6 +1579,18 @@ func (b *Builder) addFill(s *scene.Scene, in Instance, op *scene.Op) {
 	b.addAround(in, op.Transform, core)
 }
 
+func (b *Builder) fxImages(fx *scene.EffectOp, batch *Batch) {
+	for i, img := range fx.Images {
+		if img != nil && img.W > 0 && img.H > 0 && b.imageTexture != nil {
+			tex := b.imageTexture(img)
+			batch.Textures[i] = tex
+			if tex != 0 {
+				b.fxImgRefs = append(b.fxImgRefs, fxImgRef{op: b.curOp, img: img, tex: tex})
+			}
+		}
+	}
+}
+
 // addEffect appends the instance of an effect within the current clip, in
 // a batch of its own, which reads its backdrop first when it reads one.
 func (b *Builder) addEffect(s *scene.Scene, op *scene.Op) {
@@ -1137,11 +1622,7 @@ func (b *Builder) addEffect(s *scene.Scene, op *scene.Op) {
 	batch := Batch{Start: len(b.Instances), Count: 1, Scissor: cur.scissor, Effect: fx.Effect, ClipMask: b.preparedMask}
 	if fx.Effect.Shader != nil {
 		batch.Shader, batch.Uniforms = fx, b.uniformsOf(fx)
-		for i, img := range fx.Images {
-			if img != nil && img.W > 0 && img.H > 0 && b.imageTexture != nil {
-				batch.Textures[i] = b.imageTexture(img)
-			}
-		}
+		b.fxImages(fx, &batch)
 	}
 	if fx.Effect.Backdrop {
 		bk := s.BackdropOf(op.Transform.Bounds(op.Rect), fx.Blur, s.Width, s.Height)
@@ -1149,6 +1630,7 @@ func (b *Builder) addEffect(s *scene.Scene, op *scene.Op) {
 			return
 		}
 		b.Backdrops = append(b.Backdrops, bk)
+		b.backdropOps = append(b.backdropOps, opMark{b.curOp, len(b.Backdrops)})
 		batch.Backdrop = len(b.Backdrops)
 		tw, th := bk.Size()
 		in.UV = [4]float32{float32(bk.Area.Min.X), float32(bk.Area.Min.Y), float32(tw), float32(th)}
@@ -1168,11 +1650,7 @@ func (b *Builder) addMaskedEffect(s *scene.Scene, op *scene.Op, fx *scene.Effect
 		return
 	}
 	batch := Batch{Start: len(b.Instances), Scissor: cur.scissor, Effect: fx.Effect, Shader: fx, Uniforms: b.uniformsOf(fx)}
-	for i, img := range fx.Images {
-		if img != nil && img.W > 0 && img.H > 0 && b.imageTexture != nil {
-			batch.Textures[i] = b.imageTexture(img)
-		}
-	}
+	b.fxImages(fx, &batch)
 	aw, ah := float32(a.W), float32(a.H)
 	first := true
 	for _, g := range s.Glyphs[fx.Glyphs[0]:fx.Glyphs[1]] {
@@ -1235,11 +1713,7 @@ func (b *Builder) addInstances(op *scene.Op, fx *scene.EffectOp, cur *clip) {
 		return
 	}
 	batch := Batch{Start: len(b.Instances), Scissor: cur.scissor, Effect: fx.Effect, ClipMask: b.preparedMask, Shader: fx, Uniforms: b.uniformsOf(fx)}
-	for i, img := range fx.Images {
-		if img != nil && img.W > 0 && img.H > 0 && b.imageTexture != nil {
-			batch.Textures[i] = b.imageTexture(img)
-		}
-	}
+	b.fxImages(fx, &batch)
 	for k := range fx.InstanceCount() {
 		quad, size := fx.InstanceRect(k)
 		if quad.Empty() {

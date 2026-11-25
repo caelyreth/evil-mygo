@@ -1396,7 +1396,7 @@ func (r *Renderer) encode(s *scene.Scene, target id) (id, error) {
 	if err != nil {
 		return 0, err
 	}
-	return cb, r.drawBuilt(cb, built, target, &r.drawState, nil)
+	return cb, r.drawBuilt(cb, built, target, &r.drawState, nil, nil)
 }
 
 // prepare starts the command buffer of a frame of s, with its canvases,
@@ -1537,13 +1537,34 @@ func (r *Renderer) drawInto(cb id, s *scene.Scene, target id, d *drawState) erro
 	if err != nil {
 		return err
 	}
-	return r.drawBuilt(cb, built, target, d, nil)
+	return r.drawBuilt(cb, built, target, d, nil, nil)
+}
+
+func (r *Renderer) uploadInstances(d *drawState, inst []gpu.Instance) error {
+	n := len(inst)
+	if n == 0 {
+		return nil
+	}
+	instBuf := &d.instBufs[r.inUse]
+	instCap := &d.instCaps[r.inUse]
+	if n > *instCap {
+		release(instBuf)
+		capacity := max(n*3/2, 1024)
+		*instBuf = send(r.device, "newBufferWithLength:options:", uintptr(capacity*gpu.InstanceSize), 0) // shared storage
+		if *instBuf == 0 {
+			*instCap = 0
+			return errors.New("metal: cannot create the instance buffer")
+		}
+		*instCap = capacity
+	}
+	dst := unsafe.Slice((*gpu.Instance)(ptr(send(*instBuf, "contents"))), n)
+	copy(dst, inst)
+	return nil
 }
 
 // build builds the instances of s with d's builder, in the format r.cur
-// is, into the instance buffer of the frame's slot, with the textures they
-// read, and finds the pipeline of each batch (d.pipes), returning the scene
-// built.
+// is, with the textures they read, and finds the pipeline of each batch
+// (d.pipes), returning the scene built.
 func (r *Renderer) build(cb id, s *scene.Scene, d *drawState) (*scene.Scene, error) {
 	d.b.ClipSkip = true
 	d.b.SplitCorners() // only Metal's shader draws continuous corners
@@ -1553,22 +1574,6 @@ func (r *Renderer) build(cb id, s *scene.Scene, d *drawState) (*scene.Scene, err
 	d.b.BlurredImage, d.b.Chroma = nil, nil
 	if err := r.syncStops(d); err != nil {
 		return nil, err
-	}
-	instBuf := &d.instBufs[r.inUse]
-	instCap := &d.instCaps[r.inUse]
-	if n := len(d.b.Instances); n > *instCap {
-		release(instBuf)
-		capacity := max(n*3/2, 1024)
-		*instBuf = send(r.device, "newBufferWithLength:options:", uintptr(capacity*gpu.InstanceSize), 0) // shared storage
-		if *instBuf == 0 {
-			*instCap = 0
-			return nil, errors.New("metal: cannot create the instance buffer")
-		}
-		*instCap = capacity
-	}
-	if n := len(d.b.Instances); n > 0 {
-		dst := unsafe.Slice((*gpu.Instance)(ptr(send(*instBuf, "contents"))), n)
-		copy(dst, d.b.Instances)
 	}
 	if err := r.fitBackdrop(&d.b); err != nil {
 		return nil, err
@@ -1610,7 +1615,15 @@ func (r *Renderer) batchPipe(b gpu.Batch) id {
 // drawBuilt encodes drawing s, built with d (build), into target, whole or,
 // unless part is nil, in its rectangles: what target holds elsewhere is
 // kept.
-func (r *Renderer) drawBuilt(cb id, s *scene.Scene, target id, d *drawState, part *gpu.Part) error {
+func (r *Renderer) drawBuilt(cb id, s *scene.Scene, target id, d *drawState, part *gpu.Part, opBound func(int) image.Rectangle) error {
+	inst := d.b.Instances
+	if part != nil {
+		part.Compact(&d.b, opBound)
+		inst = part.Instances
+	}
+	if err := r.uploadInstances(d, inst); err != nil {
+		return err
+	}
 	instBuf := d.instBufs[r.inUse]
 	load := uintptr(loadActionClear)
 	if part != nil {
@@ -1627,7 +1640,9 @@ func (r *Renderer) drawBuilt(cb id, s *scene.Scene, target id, d *drawState, par
 	// with the index of its first as the base instance, which
 	// [[instance_id]] includes. What a batch binds, it binds only when it
 	// changed since the last.
-	bindInstances(enc, instBuf)
+	if instBuf != 0 {
+		bindInstances(enc, instBuf)
+	}
 	st := passState{pipe: r.cur.pipeline, image: r.empty, scissor: noScissor}
 	if part != nil && len(part.Rects) > 0 {
 		for _, a := range part.Rects {
@@ -1635,17 +1650,29 @@ func (r *Renderer) drawBuilt(cb id, s *scene.Scene, target id, d *drawState, par
 			st.scissor = a
 		}
 		st.pipe = r.cur.downPipe
-		send(enc, "setFragmentBuffer:offset:atIndex:", instBuf, 0, 0) // clearArea's bytes took its place
+		if instBuf != 0 {
+			send(enc, "setFragmentBuffer:offset:atIndex:", instBuf, 0, 0) // clearArea's bytes took its place
+		}
 	}
 	whole := []gpu.Scissor{{Right: int32(s.Width), Bottom: int32(s.Height)}}
 	areas := whole
+	nb := len(d.b.Batches)
 	if part != nil {
 		areas = part.Rects
+		nb = len(part.Batches)
 	}
-	for i, b := range d.b.Batches {
+	for k := range nb {
+		i, start, count := k, 0, 0
+		if part != nil {
+			pb := part.Batches[k]
+			i, start, count = pb.Batch, pb.Start, pb.Count
+		} else {
+			start, count = d.b.Batches[i].Start, d.b.Batches[i].Count
+		}
+		b := d.b.Batches[i]
 		sc := frameScissor(b.Scissor, s)
 		want := d.pipes[i]
-		if b.Count == 0 || sc.Empty() || want == 0 || !meets(sc, areas) {
+		if count == 0 || sc.Empty() || want == 0 || !meets(sc, areas) {
 			continue
 		}
 		if b.Backdrop != 0 {
@@ -1656,7 +1683,9 @@ func (r *Renderer) drawBuilt(cb id, s *scene.Scene, target id, d *drawState, par
 				return err
 			}
 			msg2(enc, selSetFragmentTexture, r.cur.backdrop[0].tex, 3)
-			bindInstances(enc, instBuf)
+			if instBuf != 0 {
+				bindInstances(enc, instBuf)
+			}
 			st = passState{pipe: r.cur.pipeline, image: r.empty, scissor: noScissor}
 		}
 		if want != st.pipe {
@@ -1688,7 +1717,7 @@ func (r *Renderer) drawBuilt(cb id, s *scene.Scene, target id, d *drawState, par
 				st.scissor = in
 				r.setScissor(enc, in)
 			}
-			msg5(enc, selDraw, primitiveTriStrip, 0, 4, uintptr(b.Count), uintptr(b.Start))
+			msg5(enc, selDraw, primitiveTriStrip, 0, 4, uintptr(count), uintptr(start))
 		}
 	}
 	send(enc, "endEncoding")
@@ -2074,6 +2103,8 @@ func (r *Renderer) render(s *scene.Scene) error {
 	r.diff.Wide = r.wide
 	damage, known := r.diff.Diff(s)
 	if known && len(damage) == 0 && !sync {
+		r.diff.ReuseUnchanged(s)
+		r.b.ReuseUnchanged(s)
 		r.redrew = redrewNothing
 		return nil
 	}
@@ -2161,7 +2192,7 @@ func (r *Renderer) drawFrame(s *scene.Scene, damage []image.Rectangle, known boo
 	if target == 0 {
 		return cb, nil
 	}
-	if err := r.drawBuilt(cb, built, target, &r.drawState, r.partOf(s, target)); err != nil {
+	if err := r.drawBuilt(cb, built, target, &r.drawState, r.partOf(s, target), r.diff.OpBound); err != nil {
 		r.forgetFrames()
 		return 0, err
 	}

@@ -775,6 +775,8 @@ func (r *Renderer) drawFrame(s *scene.Scene) error {
 	known = known && r.held
 	if known && len(damage) == 0 {
 		// The framebuffer holds the frame already.
+		r.diff.ReuseUnchanged(s)
+		r.b.ReuseUnchanged(s)
 		r.redrew = redrewNothing
 		return nil
 	}
@@ -926,11 +928,12 @@ func (r *Renderer) buildScene(s *scene.Scene, b *gpu.Builder) (*scene.Scene, err
 	// Canvases' rows go up, as GL's: images showing them sample them
 	// flipped, which their source rectangles may be (scene.OpImage).
 	if len(r.canvasTex) > 0 {
-		for _, bt := range b.Batches {
+		minInst := b.IncrementalInst()
+		for _, bt := range b.Batches[b.IncrementalBatch():] {
 			if bt.Image == 0 || !r.canvasTex[uint32(bt.Image)] {
 				continue
 			}
-			for i := bt.Start; i < bt.Start+bt.Count; i++ {
+			for i := max(bt.Start, minInst); i < bt.Start+bt.Count; i++ {
 				if in := &b.Instances[i]; in.Params[0] == 4 {
 					in.UV[1], in.UV[3] = 1-in.UV[1], 1-in.UV[3]
 				}
@@ -972,18 +975,36 @@ func (r *Renderer) drawBuilt(s *scene.Scene, b *gpu.Builder, part *gpu.Part) err
 		glClear(glColorBufferBit)
 	}
 	glDisable(glScissorTest)
-	if len(b.Instances) == 0 {
+	inst := b.Instances
+	if part != nil {
+		part.Compact(b, r.diff.OpBound)
+		inst = part.Instances
+	}
+	if len(inst) == 0 {
 		return nil
 	}
 	glBindBuffer(glArrayBuffer, r.buf)
-	glBufferData(glArrayBuffer, len(b.Instances)*gpu.InstanceSize, unsafe.Pointer(&b.Instances[0]), glStreamDraw)
+	glBufferData(glArrayBuffer, len(inst)*gpu.InstanceSize, unsafe.Pointer(&inst[0]), glStreamDraw)
 	r.bindState(s)
 	bound, program, hole := uintptr(r.empty), r.program, false
-	for _, bt := range b.Batches {
+	nb := len(b.Batches)
+	if part != nil {
+		nb = len(part.Batches)
+	}
+	for k := range nb {
+		var bt gpu.Batch
+		var start, count int
+		if part != nil {
+			pb := part.Batches[k]
+			bt, start, count = b.Batches[pb.Batch], pb.Start, pb.Count
+		} else {
+			bt = b.Batches[k]
+			start, count = bt.Start, bt.Count
+		}
 		sc := bt.Scissor
 		sc.Left, sc.Top = max(sc.Left, 0), max(sc.Top, 0)
 		sc.Right, sc.Bottom = min(sc.Right, int32(s.Width)), min(sc.Bottom, int32(s.Height))
-		if bt.Count == 0 || !meets(sc, areas) {
+		if count == 0 || !meets(sc, areas) {
 			continue
 		}
 		want := r.program
@@ -1033,7 +1054,7 @@ func (r *Renderer) drawBuilt(s *scene.Scene, b *gpu.Builder, part *gpu.Part) err
 		}
 		// Instances draw from the batch's first: without base instances in
 		// OpenGL ES 3.0, the attributes start there.
-		offset := uintptr(bt.Start * gpu.InstanceSize)
+		offset := uintptr(start * gpu.InstanceSize)
 		for i := range uint32(attributes) {
 			glVertexAttribPointer(i, 4, glFloat, false, int32(gpu.InstanceSize), offset+uintptr(i)*16)
 		}
@@ -1043,7 +1064,7 @@ func (r *Renderer) drawBuilt(s *scene.Scene, b *gpu.Builder, part *gpu.Part) err
 			if in := sc.Intersect(a); !in.Empty() {
 				// GL's scissor rectangles start at the bottom.
 				glScissor(in.Left, int32(s.Height)-in.Bottom, in.Right-in.Left, in.Bottom-in.Top)
-				glDrawArraysInstanced(glTriangleStrip, 0, 4, int32(bt.Count))
+				glDrawArraysInstanced(glTriangleStrip, 0, 4, int32(count))
 			}
 		}
 	}

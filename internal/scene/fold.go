@@ -50,6 +50,31 @@ func FoldTranslations() {
 	}
 }
 
+// FoldActive reports whether FoldTranslations has been enabled.
+func FoldActive() bool { return fold.Load() != nil }
+
+// FoldOp folds op of s in place when TranslationFolder would fold it, except
+// OpGlyphs whose glyphs slice cannot be mutated in place; it returns false
+// only when op is a folding OpGlyphs.
+func FoldOp(s *Scene, op *Op) bool {
+	if !folds(s, op) {
+		return true
+	}
+	if op.Kind == OpGlyphs {
+		return false
+	}
+	x, y := op.Transform.X, op.Transform.Y
+	op.Transform = Affine{}
+	op.Rect.X, op.Rect.Y = op.Rect.X+x, op.Rect.Y+y
+	if op.Kind == OpShadow && !op.Cast.Empty() {
+		op.Cast.X, op.Cast.Y = op.Cast.X+x, op.Cast.Y+y
+	}
+	if op.Kind == OpFill || op.Kind == OpPushClip {
+		op.moveGradient(x, y)
+	}
+	return true
+}
+
 // Fold returns s, or, when any of its ops only translates, a copy of it
 // with those folded: fills and shadows, and images and glyphs moved by
 // whole pixels, glyphs without transforms of their own (renderers round

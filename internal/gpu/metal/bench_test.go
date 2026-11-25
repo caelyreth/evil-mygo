@@ -3,6 +3,7 @@
 package metal
 
 import (
+	"image"
 	"testing"
 	"time"
 
@@ -249,4 +250,132 @@ func BenchmarkPipelinedUploads(b *testing.B) {
 			}
 		})
 	})
+}
+
+// BenchmarkRenderPartialCaret compares triple-buffered Metal rendering of a
+// breathing caret over a dense multi-line text document: full-scene rebuilds &
+// uploads vs Scene.Partial + incremental Builder + Part.Compact uploads.
+func BenchmarkRenderPartialCaret(b *testing.B) {
+	atlas := scene.NewAtlas(1, 512, 512)
+	mx, my, _ := atlas.Alloc(8, 12)
+	makeScene := func() (*scene.Scene, scene.PartEdit, int) {
+		s := &scene.Scene{
+			Width: 2560, Height: 1600, MaskAtlas: atlas, ID: 1,
+			Stops: []scene.Stop{{Color: scene.Color{A: 255}, At: 0}, {Color: scene.Color{A: 0}, At: 1}},
+		}
+		s.Ops = append(s.Ops, scene.Op{Kind: scene.OpFill, Rect: scene.Rect{W: 2560, H: 1600}, Color: scene.Color{R: 250, G: 250, B: 250, A: 255}})
+		s.Ops = append(s.Ops, scene.Op{Kind: scene.OpPushClip, Rect: scene.Rect{X: 200, Y: 80, W: 1600, H: 1440}})
+		for row := range 80 {
+			start := int32(len(s.Glyphs))
+			for col := range 60 {
+				s.Glyphs = append(s.Glyphs, scene.Glyph{
+					X: float32(220 + col*11), Y: float32(100 + row*18),
+					W: 8, H: 12, U: uint16(mx), V: uint16(my), UW: 8, VH: 12,
+					Color: scene.Color{R: 30, G: 30, B: 30, A: 255},
+				})
+			}
+			s.Ops = append(s.Ops, scene.Op{Kind: scene.OpGlyphs, Start: start, End: int32(len(s.Glyphs))})
+		}
+		opStart := len(s.Ops)
+		caretIdx := len(s.Ops)
+		s.Ops = append(s.Ops, scene.Op{Kind: scene.OpFill, Rect: scene.Rect{X: 300, Y: 300, W: 3, H: 22}, Radii: scene.Uniform(1), Color: scene.Color{R: 20, G: 100, B: 240, A: 255}})
+		s.Ops = append(s.Ops, scene.Op{Kind: scene.OpFill, Rect: scene.Rect{X: 200, Y: 80, W: 1600, H: 32}, Paint: scene.PaintLinearStops, Gradient: [4]float32{200, 80, 200, 112}, Stops: [2]int32{0, 2}})
+		s.Ops = append(s.Ops, scene.Op{Kind: scene.OpFill, Rect: scene.Rect{X: 200, Y: 1488, W: 1600, H: 32}, Paint: scene.PaintLinearStops, Gradient: [4]float32{200, 1488, 200, 1520}, Stops: [2]int32{0, 2}})
+		opEnd := len(s.Ops)
+		s.Ops = append(s.Ops, scene.Op{Kind: scene.OpPopClip})
+		s.Ops = append(s.Ops, scene.Op{Kind: scene.OpFill, Rect: scene.Rect{X: 1900, Y: 60, W: 120, H: 28}, Radii: scene.Uniform(6), Color: scene.Color{R: 80, G: 80, B: 90, A: 255}})
+		edit := scene.PartEdit{
+			OpStart: opStart, OldOpEnd: opEnd, NewOpEnd: opEnd,
+			GlyphMark: len(s.Glyphs), StopMark: len(s.Stops),
+		}
+		return s, edit, caretIdx
+	}
+
+	for _, partial := range []bool{false, true} {
+		name := "full"
+		if partial {
+			name = "partial"
+		}
+		b.Run(name, func(b *testing.B) {
+			r, err := newRenderer()
+			if err != nil {
+				b.Skip("no Metal:", err)
+			}
+			defer r.Release()
+			s, edit, caretIdx := makeScene()
+			r.cur, r.wide = &r.formats[0], false
+			var targets [3]id
+			pool(func() {
+				for i := range targets {
+					targets[i] = r.newTexture(s.Width, s.Height, pixelFormatBGRA8Unorm, usageRenderTarget|usageShaderRead, nil, 0)
+				}
+				// Prime all 3 targets so Ages tracks them.
+				for i := range targets {
+					r.waitLast()
+					r.cur = &r.formats[0]
+					damage, known := r.diff.Diff(s)
+					cb, err := r.drawFrame(s, damage, known, func() id { return targets[i] })
+					if err != nil {
+						b.Fatal(err)
+					}
+					send(cb, "commit")
+					r.track(cb)
+					send(cb, "waitUntilCompleted")
+				}
+			})
+			defer pool(func() {
+				r.waitLast()
+				for i := range targets {
+					release(&targets[i])
+				}
+			})
+
+			var encoded time.Duration
+			uploaded := 0
+			frame := 0
+			for b.Loop() {
+				s.Ops[caretIdx].Color.A = byte(1 + frame%250)
+				if partial {
+					edit.BaseID = s.ID
+					s.ID = uint64(frame + 2)
+					s.Partial = edit
+				} else {
+					s.ID = uint64(frame + 2)
+					s.Partial = scene.PartEdit{}
+				}
+				tex := targets[frame%len(targets)]
+				t0 := time.Now()
+				var encDur time.Duration
+				pool(func() {
+					r.waitLast()
+					r.cur = &r.formats[0]
+					var damage []image.Rectangle
+					var known bool
+					if partial {
+						damage, known = r.diff.Diff(s)
+					} else {
+						r.forgetFrames()
+						damage, known = r.diff.Diff(s)
+					}
+					cb, err := r.drawFrame(s, damage, known, func() id { return tex })
+					if err != nil {
+						b.Fatal(err)
+					}
+					send(cb, "commit")
+					r.track(cb)
+					encDur = time.Since(t0)
+					send(cb, "waitUntilCompleted")
+				})
+				encoded += encDur
+				if r.redrew == redrewPart {
+					uploaded += len(r.part.Instances)
+				} else {
+					uploaded += len(r.drawState.b.Instances)
+				}
+				frame++
+			}
+			b.ReportMetric(encoded.Seconds()*1000/float64(b.N), "encode-ms")
+			b.ReportMetric(float64(uploaded)/float64(b.N), "instances/op")
+		})
+	}
 }

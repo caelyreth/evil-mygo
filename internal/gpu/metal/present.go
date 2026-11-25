@@ -250,7 +250,7 @@ func (r *Renderer) finishPending(prefetch bool) error {
 	if p.whole {
 		backdrops = nil
 	}
-	if err := r.drawBuilt(p.cb, &p.size, tex, &r.drawState, r.partIn(p.size.Width, p.size.Height, tex, backdrops)); err != nil {
+	if err := r.drawBuilt(p.cb, &p.size, tex, &r.drawState, r.partIn(p.size.Width, p.size.Height, tex, backdrops), r.diff.RememberedBound); err != nil {
 		r.forgetFrames()
 		release(&p.cb)
 		return err

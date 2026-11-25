@@ -1160,6 +1160,8 @@ func (r *Renderer) drawFrame(s *scene.Scene) (bool, error) {
 		known = known && r.held
 		if known && len(damage) == 0 {
 			// The swap chain shows the frame already.
+			r.diff.ReuseUnchanged(s)
+			r.b.ReuseUnchanged(s)
 			r.redrew = redrewNothing
 			return false, nil
 		}
@@ -1323,8 +1325,14 @@ func (r *Renderer) drawBuilt(s *scene.Scene, b *gpu.Builder, rtv uintptr, part *
 		return nil
 	}
 
+	inst := b.Instances
+	if part != nil {
+		part.Compact(b, r.diff.OpBound)
+		inst = part.Instances
+	}
+
 	// Upload the instances, growing the buffer as needed.
-	if n := len(b.Instances); n > 0 {
+	if n := len(inst); n > 0 {
 		if n > r.instCap {
 			free(&r.instBuf)
 			capacity := max(n*3/2, 1024)
@@ -1340,7 +1348,7 @@ func (r *Renderer) drawBuilt(s *scene.Scene, b *gpu.Builder, rtv uintptr, part *
 			return fmt.Errorf("d3d11: cannot map the instance buffer: %#x", uint32(hr))
 		}
 		dst := unsafe.Slice((*gpu.Instance)(ptr(m.Data)), n)
-		copy(dst, b.Instances)
+		copy(dst, inst)
 		call(r.ctx, ctxUnmap, r.instBuf, 0)
 	}
 	globals := [4]float32{float32(s.Width), float32(s.Height), 0, 0}
@@ -1366,9 +1374,21 @@ func (r *Renderer) drawBuilt(s *scene.Scene, b *gpu.Builder, rtv uintptr, part *
 	r.bindState(s, 0)
 	bound, vs, ps, blend, shaders := uintptr(0), r.vs, r.ps, r.blend, false
 	mask, scissor := ^uintptr(0), gpu.Scissor{} // what no batch has, to bind the first's
-	for i := range b.Batches {
-		bt := &b.Batches[i]
-		if bt.Count == 0 || !meets(bt.Scissor, areas) {
+	nb := len(b.Batches)
+	if part != nil {
+		nb = len(part.Batches)
+	}
+	for k := range nb {
+		var bt *gpu.Batch
+		var start, count int
+		if part != nil {
+			pb := part.Batches[k]
+			bt, start, count = &b.Batches[pb.Batch], pb.Start, pb.Count
+		} else {
+			bt = &b.Batches[k]
+			start, count = bt.Start, bt.Count
+		}
+		if count == 0 || !meets(bt.Scissor, areas) {
 			continue
 		}
 		wantVS, want, wantBlend := r.pipeline(bt)
@@ -1422,7 +1442,7 @@ func (r *Renderer) drawBuilt(s *scene.Scene, b *gpu.Builder, rtv uintptr, part *
 				scissor = sc
 				call(ctx, ctxRSSetScissorRects, 1, uintptr(unsafe.Pointer(&sc)))
 			}
-			call(ctx, ctxDrawInstanced, 4, uintptr(bt.Count), 0, uintptr(bt.Start))
+			call(ctx, ctxDrawInstanced, 4, uintptr(count), 0, uintptr(start))
 		}
 	}
 	if shaders {

@@ -2,6 +2,7 @@ package gpu
 
 import (
 	"math"
+	"slices"
 
 	"github.com/egoist/mygo/internal/scene"
 )
@@ -76,6 +77,7 @@ func (b *Builder) planCull(s *scene.Scene) {
 	b.culled = b.culled[:n]
 	clear(b.culled)
 	b.Culled = 0
+	b.lastHasPlan, b.lastHaveOccluder = false, false
 	if b.NoCull || n < 2 {
 		return
 	}
@@ -143,6 +145,7 @@ func (b *Builder) planCull(s *scene.Scene) {
 		}
 	}
 	b.planStack = stack[:0]
+	b.lastHasPlan, b.lastHaveOccluder = true, haveOccluder
 	if !haveOccluder {
 		return
 	}
@@ -152,6 +155,117 @@ func (b *Builder) planCull(s *scene.Scene) {
 	var area [cullOccluders]int64
 	count := 0
 	for i := n - 1; i >= 0; i-- {
+		op := &s.Ops[i]
+		pi := &plan[i]
+		if pi.barrier {
+			count = 0
+			continue
+		}
+		if count > 0 {
+			vis := pi.vis
+			if op.Kind == scene.OpGlyphs {
+				vis = glyphsVisible(s, op, pi.vis)
+			}
+			if !vis.Empty() {
+				for k := 0; k < count; k++ {
+					if occ[k].contains(vis) {
+						b.culled[i] = true
+						b.Culled++
+						break
+					}
+				}
+			}
+		}
+		if pi.occ.Empty() {
+			continue
+		}
+		a := pi.occ.area()
+		if count < cullOccluders {
+			occ[count], area[count] = pi.occ, a
+			count++
+			continue
+		}
+		small := 0
+		for k := 1; k < count; k++ {
+			if area[k] < area[small] {
+				small = k
+			}
+		}
+		if a > area[small] {
+			occ[small], area[small] = pi.occ, a
+		}
+	}
+}
+
+// planCullTail plans visibility and occlusion culling for ops[cutOp:] during
+// an incremental build using the clip stack active at cutOp, keeping
+// culled[:cutOp] from the prior frame intact.
+func (b *Builder) planCullTail(s *scene.Scene, cutOp int, stackAtCut []clip, foldActive bool) {
+	n := len(s.Ops)
+	if n > len(b.culled) {
+		b.culled = slices.Grow(b.culled, n-len(b.culled))
+	}
+	b.culled = b.culled[:n]
+	clear(b.culled[cutOp:])
+	if b.NoCull || n < 2 || cutOp >= n {
+		return
+	}
+	if n > len(b.plan) {
+		b.plan = slices.Grow(b.plan, n-len(b.plan))
+	}
+	b.plan = b.plan[:n]
+	plan := b.plan
+	clear(plan[cutOp:])
+
+	stack := append(b.planStack[:0], stackAtCut...)
+	haveTailOccluder := false
+	for i := cutOp; i < n; i++ {
+		op := s.Ops[i]
+		if foldActive {
+			scene.FoldOp(s, &op)
+		}
+		cur := &stack[len(stack)-1]
+		switch op.Kind {
+		case scene.OpPushClip:
+			stack = append(stack, b.pushed(s, cur, &op, i))
+		case scene.OpPopClip:
+			if len(stack) > 1 {
+				stack = stack[:len(stack)-1]
+			}
+		case scene.OpEffect:
+			if int(op.Start) < len(s.Effects) && s.Effects[op.Start].Effect != nil && s.Effects[op.Start].Effect.Backdrop {
+				plan[i].barrier = true
+			}
+		case scene.OpFill:
+			if op.Rect.Empty() {
+				continue
+			}
+			plan[i].vis = visibleOf(cur.scissor, op.Transform.Bounds(op.Rect), cullMargin(op.Transform))
+			plan[i].occ = b.occluderOf(s, &op, cur)
+			haveTailOccluder = haveTailOccluder || !plan[i].occ.Empty()
+		case scene.OpShadow:
+			if op.Rect.Empty() && !(op.Inset && !op.Cast.Empty()) {
+				continue
+			}
+			plan[i].vis = visibleOf(cur.scissor, op.Transform.Bounds(shadowSupport(&op)), cullMargin(op.Transform))
+		case scene.OpHole, scene.OpImage:
+			if !op.Rect.Empty() {
+				plan[i].vis = visibleOf(cur.scissor, op.Transform.Bounds(op.Rect), cullMargin(op.Transform))
+			}
+		case scene.OpGlyphs:
+			plan[i].vis = cur.scissor
+		}
+	}
+	b.planStack = stack[:0]
+	b.lastHaveOccluder = b.lastHaveOccluder || haveTailOccluder
+	if !haveTailOccluder {
+		return
+	}
+
+	var occ [cullOccluders]Scissor
+	var area [cullOccluders]int64
+	count := 0
+	for i := n - 1; i >= cutOp; i-- {
 		op := &s.Ops[i]
 		pi := &plan[i]
 		if pi.barrier {
