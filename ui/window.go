@@ -834,11 +834,13 @@ func (h *windowHost) waitsOutOfSight() bool {
 // fit builds the frame that waits for the window to show, if one does,
 // for a window that takes its content's size to measure what it shows
 // now before it shows (surface.Conn.Fit), as capture does; the surface's
-// next frame draws it. It builds none within a frame, nor before the
-// first: the view runs as the window first draws, not within NewWindow.
+// next frame draws it. It builds none within a frame. It builds the
+// first too: Show calls it only for a window created hidden, after
+// NewWindow, so a flyout opened and shown at once, as a menu's, shows at
+// its content's size rather than at the size it was made with.
 func (h *windowHost) fit() bool {
 	rt := h.rt
-	if h.detached || rt.inFrame || h.last == nil || !h.frameAsked && !rt.held {
+	if h.detached || rt.inFrame || !h.frameAsked && !rt.held {
 		return false
 	}
 	rt.runFrame()

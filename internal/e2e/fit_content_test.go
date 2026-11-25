@@ -134,3 +134,30 @@ func TestFlyoutFitNativeContentHidden(t *testing.T) {
 	resize(150, 60)
 	showAt("changed while hidden", fl.ShowInactive, 150, 60)
 }
+
+// A flyout of native UI made hidden and shown at once, as a menu's is,
+// before its first frame drew, shows at its content's size, never at the
+// size it was made with first.
+func TestFlyoutFitNativeContentShownAtOnce(t *testing.T) {
+	work := mygo.Screen.PrimaryDisplay().WorkArea
+	parent := newWindow(t, mygo.WindowOptions{Width: 300, Height: 200, X: work.X + 100, Y: work.Y + 100})
+	var shownW, shownH int
+	var fl *mygo.Window
+	mygo.RunOnMain(func() {
+		fl = mygo.NewFlyout(mygo.FlyoutOptions{
+			Parent:     parent,
+			Anchor:     mygo.Rectangle{X: 10, Y: 10},
+			FitContent: true,
+			Hidden:     true,
+			Content: ui.View(func(c *ui.Context) {
+				ui.Box(c).Size(130, 70).Background(ui.RGB(255, 204, 0))
+			}),
+		})
+		fl.OnShow(func() { b := fl.Bounds(); shownW, shownH = b.Width, b.Height })
+		fl.Show()
+	})
+	defer fl.Destroy()
+	if shownW != 130 || shownH != 70 {
+		t.Fatalf("shown at %dx%d, want 130x70", shownW, shownH)
+	}
+}
