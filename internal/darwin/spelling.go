@@ -207,6 +207,14 @@ func (b *Backend) Predict(text string, at int, cb func(string)) {
 		cb("")
 		return
 	}
+	if b.running.Load() && !b.IsMainThread() {
+		b.post(func() { b.predictNow(text, at, cb) })
+		return
+	}
+	b.predictNow(text, at, cb)
+}
+
+func (b *Backend) predictNow(text string, at int, cb func(string)) {
 	var (
 		early   []rawCandidate
 		hasData bool

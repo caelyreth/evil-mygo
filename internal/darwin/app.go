@@ -4,6 +4,7 @@ package darwin
 
 import (
 	"strings"
+	"sync/atomic"
 	"unsafe"
 
 	"github.com/ebitengine/purego"
@@ -56,6 +57,7 @@ type Backend struct {
 
 	stepping       int
 	quitAfterModal bool
+	running        atomic.Bool
 
 	// orderingChildren tells that child windows are being ordered above
 	// their parent, or out with it (child_window.go): what AppKit tells
@@ -185,6 +187,8 @@ var dispatchCallback = purego.NewCallback(func(info uintptr) {
 })
 
 func (b *Backend) Run() error {
+	b.running.Store(true)
+	defer b.running.Store(false)
 	send(b.app, "run")
 	return nil
 }
