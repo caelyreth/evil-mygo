@@ -88,6 +88,12 @@ type PopoverMenuOptions struct {
 	// lines between groups of items, as PopoverMenuButtonOptions'.
 	Radius    float32
 	Separator Color
+	// OverMaterial is how much of the panels' background stands over the
+	// system's material where their flyouts show it (FlyoutMenus), from 0
+	// to 1; 0 is menuMaterialShows. More keeps the menu's own tone over
+	// what the material blurs behind it, as a dark page of text, which
+	// would show through as a grey of its own, streaked with the lines.
+	OverMaterial float32
 }
 
 // MenuHighlight is how a drawn menu shows the row the pointer or the keys
@@ -1266,8 +1272,12 @@ func (b *drawnRows) style(panel *node, width float32, shadow bool) {
 		f(wrapElement(panel))
 	}
 	if b.material {
+		shows := float32(menuMaterialShows)
+		if o := b.d.style.OverMaterial; o > 0 {
+			shows = min(o, 1)
+		}
 		bg := panel.bg
-		panel.Background(bg.Alpha(menuMaterialShows * float32(bg.A) / 255))
+		panel.Background(bg.Alpha(shows * float32(bg.A) / 255))
 	}
 }
 
