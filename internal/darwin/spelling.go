@@ -3,6 +3,8 @@
 package darwin
 
 import (
+	"strings"
+	"sync"
 	"unicode/utf16"
 	"unsafe"
 
@@ -13,8 +15,9 @@ import (
 
 // The checking types of NSTextCheckingResult.
 const (
-	nsTextCheckingTypeSpelling = 1 << 1
-	nsTextCheckingTypeGrammar  = 1 << 2
+	nsTextCheckingTypeSpelling   = 1 << 1
+	nsTextCheckingTypeGrammar    = 1 << 2
+	nsTextCheckingTypeCorrection = 1 << 9
 )
 
 // spellChecker is the application's shared NSSpellChecker.
@@ -131,6 +134,137 @@ func (b *Backend) CorrectsAutomatically() bool {
 	var ok bool
 	checking(func() { ok = sendBool(class("NSSpellChecker"), "isAutomaticSpellingCorrectionEnabled") })
 	return ok
+}
+
+// PredictsInline reports whether the system's keyboard settings enable
+// inline predictive text (macOS 14+).
+func (b *Backend) PredictsInline() bool {
+	var ok bool
+	checking(func() {
+		sc := class("NSSpellChecker")
+		if sendBool(sc, "respondsToSelector:", uintptr(sel("isAutomaticInlinePredictionEnabled"))) {
+			ok = sendBool(sc, "isAutomaticInlinePredictionEnabled")
+		}
+	})
+	return ok
+}
+
+type rawCandidate struct {
+	loc, length uint
+	repl        string
+}
+
+type predictReq struct {
+	text     string
+	caretU16 int
+	offs     []offset
+	cb       func(string)
+}
+
+var (
+	predictOnce    sync.Once
+	predictBlk     objc.Block
+	predictMu      sync.Mutex
+	predictPending = map[int]predictReq{}
+	predictEarly   = map[int][]rawCandidate{}
+)
+
+func initPredictBlock() {
+	predictOnce.Do(func() {
+		predictBlk = newBlock(func(_ objc.Block, seq int, candidates id) {
+			var cands []rawCandidate
+			withPool(func() {
+				items := arrayItems(candidates)
+				cands = make([]rawCandidate, 0, len(items))
+				for _, r := range items {
+					rg := objc.Send[nsRange](r, sel("range"))
+					repl := goString(send(r, "replacementString"))
+					cands = append(cands, rawCandidate{loc: rg.Location, length: rg.Length, repl: repl})
+				}
+			})
+			predictMu.Lock()
+			req, ok := predictPending[seq]
+			if ok {
+				delete(predictPending, seq)
+			} else {
+				predictEarly[seq] = cands
+			}
+			predictMu.Unlock()
+			if ok {
+				req.cb(pickPrediction(req, cands))
+			}
+		})
+	})
+}
+
+// Predict requests inline text prediction candidates asynchronously at byte
+// offset at of text and invokes cb with the predicted suffix, or "".
+func (b *Backend) Predict(text string, at int, cb func(string)) {
+	if cb == nil {
+		return
+	}
+	if text == "" || at < 0 || at > len(text) {
+		cb("")
+		return
+	}
+	var (
+		early   []rawCandidate
+		hasData bool
+		req     predictReq
+	)
+	checking(func() {
+		key := appKitString("NSTextCheckingGenerateInlinePredictionsKey")
+		if key == 0 {
+			early = nil
+			hasData = true
+			return
+		}
+		initPredictBlock()
+		offs := utf16Offsets(text)
+		caretU16 := unitAt(offs, at)
+		req = predictReq{text: text, caretU16: caretU16, offs: offs, cb: cb}
+		opts := send(class("NSDictionary"), "dictionaryWithObject:forKey:", uintptr(nsBool(true)), uintptr(key))
+		seq := sendInt(spellChecker(), "requestCandidatesForSelectedRange:inString:types:options:inSpellDocumentWithTag:completionHandler:",
+			uintptr(caretU16), 0, uintptr(nsString(text)), uintptr(nsTextCheckingTypeCorrection), uintptr(opts), 0, uintptr(predictBlk))
+		predictMu.Lock()
+		if cands, ok := predictEarly[seq]; ok {
+			delete(predictEarly, seq)
+			early, hasData = cands, true
+		} else {
+			predictPending[seq] = req
+		}
+		predictMu.Unlock()
+	})
+	if hasData {
+		if req.cb == nil {
+			cb("")
+			return
+		}
+		cb(pickPrediction(req, early))
+	}
+}
+
+func pickPrediction(req predictReq, cands []rawCandidate) string {
+	for _, c := range cands {
+		if c.loc+c.length != uint(req.caretU16) {
+			continue
+		}
+		fromByte := byteAt(req.offs, c.loc)
+		toByte := byteAt(req.offs, c.loc+c.length)
+		if fromByte < 0 || fromByte > toByte || toByte > len(req.text) {
+			continue
+		}
+		prefix := req.text[fromByte:toByte]
+		trimmed := strings.TrimRight(c.repl, " ")
+		if trimmed == "" || strings.ContainsAny(trimmed, "\r\n") {
+			continue
+		}
+		if !strings.HasPrefix(trimmed, prefix) || len(trimmed) <= len(prefix) {
+			continue
+		}
+		return trimmed[len(prefix):]
+	}
+	return ""
 }
 
 // offset is where a rune of a string starts, in bytes and UTF-16 units.

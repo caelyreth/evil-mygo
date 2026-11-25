@@ -1186,6 +1186,12 @@ type SpellingBackend interface {
 	// CorrectsAutomatically reports whether the system's settings
 	// correct spelling as one types.
 	CorrectsAutomatically() bool
+	// Predict requests inline text prediction candidates asynchronously at
+	// byte offset at of text, calling cb once with the predicted suffix or "".
+	Predict(text string, at int, cb func(string))
+	// PredictsInline reports whether the system's settings enable inline
+	// predictive text.
+	PredictsInline() bool
 }
 
 // TextIssue is a misspelled word or a grammar issue: bytes From to To

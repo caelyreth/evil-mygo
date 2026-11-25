@@ -89,3 +89,24 @@ func (SpellingModule) CorrectsAutomatically() bool {
 	s, ok := spelling()
 	return ok && s.CorrectsAutomatically()
 }
+
+// Predict requests inline text prediction at byte offset at of text and
+// invokes cb asynchronously with the predicted suffix, or "" if unavailable.
+func (SpellingModule) Predict(text string, at int, cb func(string)) {
+	if cb == nil {
+		return
+	}
+	if s, ok := spelling(); ok && text != "" && 0 <= at && at <= len(text) {
+		s.Predict(text, at, cb)
+		return
+	}
+	cb("")
+}
+
+// PredictsInline reports whether the system's settings enable inline
+// predictive text (on macOS 14+, Keyboard › Text Input › Show inline
+// predictive text).
+func (SpellingModule) PredictsInline() bool {
+	s, ok := spelling()
+	return ok && s.PredictsInline()
+}
