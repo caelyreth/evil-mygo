@@ -556,3 +556,49 @@ func report(t *testing.T, text []rune, style Style, width float32, got, want []s
 	}
 	t.Fatalf("in %+v at %v, %d lines, Core Text's %d", style, width, len(got), len(want))
 }
+
+// A long text is typeset a window at a time, into the lines one typesetter
+// of the whole text breaks it into, shorter than where Core Text shapes a
+// long text apart; with spans, words kept whole, and a line longer than a
+// window.
+func TestCoreTextLongTextTypesetsByWindow(t *testing.T) {
+	s := newSystem()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	e := s.engine().(*coreText)
+	words := []string{"a", "the", "window", "layout", "office", "well-known", "e.g.", "1,234.56", "café", "Über", "(paren)", "end.", "verylongwordthatdoesnotfitalineandhastobrokenbycoretext"}
+	rng := rand.New(rand.NewPCG(3, 4))
+	var b strings.Builder
+	for b.Len() < 9000 {
+		b.WriteString(words[rng.IntN(len(words))])
+		b.WriteString(" ")
+	}
+	text := []rune(b.String())[:typesetLong+500]
+	spans := []Span{{End: 3000}, {End: 3100, Italic: true}, {End: 6000}, {End: 6200, Weight: 700}, {End: len(text)}}
+	style := Style{Size: 15}
+	for _, c := range []struct {
+		spans      []Span
+		width      float32
+		wholeWords bool
+	}{{nil, 600, false}, {spans, 600, false}, {spans, 120, true}, {nil, 1e6, false}} {
+		e.resetScratch()
+		got := e.shapeText(text, style, c.spans, c.width, false, c.wholeWords)
+		font := e.ctFont(style)
+		e.u16, e.index = appendUTF16(e.u16[:0], e.index[:0], text)
+		typesetter := e.newTypesetter(font, e.u16, text, style, c.spans, false, "")
+		var breaks []bool
+		keepWords := false
+		if c.wholeWords {
+			e.breaks = lineBreaks(&e.seg, e.breaks, text)
+			breaks = e.breaks
+		}
+		want := e.typesetLines(typesetter, len(e.u16), c.width, breaks, c.wholeWords, keepWords, e.index, false)
+		ct.release(typesetter)
+		if len(c.spans) > 0 {
+			e.delegates.done()
+		}
+		if !sameLines(got, want) {
+			report(t, text, style, c.width, got, want)
+		}
+	}
+}

@@ -94,6 +94,7 @@ var ct struct {
 	numberGetValue        func(n uintptr, typ int, value unsafe.Pointer) bool
 	attributedString      func(alloc, str, attrs uintptr) uintptr
 	attributedMutable     func(alloc uintptr, max int, attributed uintptr) uintptr
+	attributedSubstring   func(alloc, attributed uintptr, r cfRange) uintptr
 	attributedSet         func(attributed uintptr, r cfRange, name, value uintptr)
 	dataCreate            func(alloc uintptr, bytes *byte, n int) uintptr
 	keyCallbacks          uintptr
@@ -369,6 +370,11 @@ func bindDirect(cf, text uintptr, addr func(lib uintptr, name string) uintptr) {
 	ct.attributedMutable = func(alloc uintptr, max int, attributed uintptr) uintptr {
 		r, _, _ := purego.SyscallN(attributedMutable, alloc, uintptr(max), attributed)
 		return r
+	}
+	attributedSubstring := addr(cf, "CFAttributedStringCreateWithSubstring")
+	ct.attributedSubstring = func(alloc, attributed uintptr, r cfRange) uintptr {
+		s, _, _ := purego.SyscallN(attributedSubstring, alloc, attributed, uintptr(r.location), uintptr(r.length))
+		return s
 	}
 	ct.attributedSet = func(attributed uintptr, r cfRange, name, value uintptr) {
 		purego.SyscallN(attributedSet, attributed, uintptr(r.location), uintptr(r.length), name, value)
@@ -1029,7 +1035,11 @@ func (e *coreText) shapeText(text []rune, style Style, spans []Span, width float
 	// text wrapped again at another width needs only new line breaks.
 	// Keeping it is for text wrapping: a line that does not wrap has one
 	// layout, and the text of a list or a dashboard comes and goes.
-	keep := width > 0 && len(spans) == 0 && style.tabStop <= 0
+	//
+	// A long text is typeset a window at a time (typesetWindows), and not
+	// kept.
+	long := width > 0 && len(text) > typesetLong
+	keep := width > 0 && len(spans) == 0 && style.tabStop <= 0 && !long
 	var key typesetterKey
 	var kept *keptTypesetter
 	var typesetter uintptr
@@ -1045,7 +1055,14 @@ func (e *coreText) shapeText(text []rune, style Style, spans []Span, width float
 			}
 		}
 	}
-	if kept == nil {
+	var attributed uintptr
+	if long {
+		e.u16, e.index = appendUTF16(e.u16[:0], e.index[:0], text)
+		if attributed = e.newAttributed(font, e.u16, text, style, spans, rtl, lang); attributed == 0 {
+			return nil
+		}
+		defer ct.release(attributed)
+	} else if kept == nil {
 		e.u16, e.index = appendUTF16(e.u16[:0], e.index[:0], text)
 		typesetter = e.newTypesetter(font, e.u16, text, style, spans, rtl, lang)
 		if typesetter == 0 {
@@ -1076,7 +1093,95 @@ func (e *coreText) shapeText(text []rune, style Style, spans []Span, width float
 			breaks = e.breaks
 		}
 	}
+	if long {
+		return e.typesetWindows(attributed, n, width, breaks, wholeWords, keepWords, index, style.Italic)
+	}
 	return e.typesetLines(typesetter, n, width, breaks, wholeWords, keepWords, index, style.Italic)
+}
+
+const (
+	// typesetLong is how many runes a text holds before it is typeset a
+	// window at a time: Core Text finds a line break in time that grows with
+	// where the line starts, so a whole long text takes time growing with
+	// its square, and past about 10k UTF-16 units it shapes the text apart
+	// from how it shapes a shorter one.
+	typesetLong = 8192
+	// typesetWindow is how many UTF-16 units a window of a long text holds.
+	typesetWindow = 1024
+)
+
+// typesetWindows typesets a long text's lines as typesetLines does, in
+// windows of typesetWindow from where a line starts: each window's lines but
+// the one it cuts are kept, and the next window starts where they end. A
+// line longer than a window takes a window twice as long.
+func (e *coreText) typesetWindows(attributed uintptr, n int, width float32, breaks []bool, wholeWords, keepWords bool, index []int, italic bool) []shapedLine {
+	var lines []shapedLine
+	mark := len(e.shapeScratch.lines)
+	size := typesetWindow
+	for base := 0; base < n; {
+		end := min(n, base+size)
+		sub := ct.attributedSubstring(0, attributed, cfRange{base, end - base})
+		typesetter := ct.typesetterCreate(sub)
+		ct.release(sub)
+		if typesetter == 0 {
+			return lines
+		}
+		start := base
+		for start < end {
+			count := lineCount(typesetter, base, start, end, width, breaks, wholeWords, keepWords, index)
+			if end < n && start+count >= end {
+				// The window may cut the line: the next one lays it.
+				break
+			}
+			line := ct.typesetterCreateLine(typesetter, cfRange{start - base, count})
+			if line == 0 {
+				ct.release(typesetter)
+				return lines
+			}
+			lines = e.addLine(mark, e.line(line, index[base:], n-base, italic))
+			ct.release(line)
+			start += count
+		}
+		ct.release(typesetter)
+		if start == base {
+			size *= 2
+			continue
+		}
+		base, size = start, typesetWindow
+	}
+	return lines
+}
+
+// lineCount is how many of the n UTF-16 units of a text from start Core Text
+// puts on a line of width, with typesetter holding the text from base: as
+// typesetLines tells, moved to one of breaks when given.
+func lineCount(typesetter uintptr, base, start, n int, width float32, breaks []bool, wholeWords, keepWords bool, index []int) int {
+	count := n - start
+	if width > 0 {
+		// A width measured by Layout sums advances in float32, which
+		// may round below Core Text's own line width and wrap the
+		// last word; allow a 1/1024 point, as Pango's units do.
+		count = max(ct.suggestLineBreak(typesetter, start-base, float64(width)+1.0/1024), 1)
+		// Core Text breaks a Korean word, and a word that does not
+		// fit a line: the line ends at the last break before it, or
+		// a whole word carries on to the next break instead.
+		if end := min(start+count, n); breaks != nil && end < n && !breakAt(breaks, index, end) {
+			back := end
+			for keepWords && back > start && !breakAt(breaks, index, back) {
+				back--
+			}
+			switch {
+			case keepWords && back > start:
+				end = back
+			case wholeWords:
+				for end < n && !breakAt(breaks, index, end) {
+					end++
+				}
+			}
+			count = end - start
+		}
+	}
+	return count
 }
 
 // typesetLines has Core Text break a typesetter's text of n UTF-16 units into
@@ -1088,31 +1193,7 @@ func (e *coreText) typesetLines(typesetter uintptr, n int, width float32, breaks
 	var lines []shapedLine
 	mark := len(e.shapeScratch.lines)
 	for start := 0; start < n; {
-		count := n - start
-		if width > 0 {
-			// A width measured by Layout sums advances in float32, which
-			// may round below Core Text's own line width and wrap the
-			// last word; allow a 1/1024 point, as Pango's units do.
-			count = max(ct.suggestLineBreak(typesetter, start, float64(width)+1.0/1024), 1)
-			// Core Text breaks a Korean word, and a word that does not
-			// fit a line: the line ends at the last break before it, or
-			// a whole word carries on to the next break instead.
-			if end := min(start+count, n); breaks != nil && end < n && !breakAt(breaks, index, end) {
-				back := end
-				for keepWords && back > start && !breakAt(breaks, index, back) {
-					back--
-				}
-				switch {
-				case keepWords && back > start:
-					end = back
-				case wholeWords:
-					for end < n && !breakAt(breaks, index, end) {
-						end++
-					}
-				}
-				count = end - start
-			}
-		}
+		count := lineCount(typesetter, 0, start, n, width, breaks, wholeWords, keepWords, index)
 		line := ct.typesetterCreateLine(typesetter, cfRange{start, count})
 		if line == 0 {
 			break
@@ -1127,6 +1208,14 @@ func (e *coreText) typesetLines(typesetter uintptr, n int, width float32, breaks
 // newTypesetter shapes a text, without its line breaks, into a typesetter the
 // caller owns, or 0.
 func (e *coreText) newTypesetter(font uintptr, u16 []uint16, text []rune, style Style, spans []Span, rtl bool, lang string) uintptr {
+	attributed := e.newAttributed(font, u16, text, style, spans, rtl, lang)
+	defer ct.release(attributed)
+	return ct.typesetterCreate(attributed)
+}
+
+// newAttributed is a text with its font, paragraph style and spans, as a
+// typesetter is made of, which the caller owns.
+func (e *coreText) newAttributed(font uintptr, u16 []uint16, text []rune, style Style, spans []Span, rtl bool, lang string) uintptr {
 	str := ct.stringWithCharacters(0, &u16[0], len(u16))
 	defer ct.release(str)
 	paragraph := e.styles[0]
@@ -1172,13 +1261,12 @@ func (e *coreText) newTypesetter(font uintptr, u16 []uint16, text []rune, style 
 		e.attrs[key] = attrs
 	}
 	attributed := ct.attributedString(0, str, attrs)
-	defer ct.release(attributed)
 	if len(spans) > 0 {
 		styled := e.styleSpans(attributed, style, spans, text)
-		defer ct.release(styled)
+		ct.release(attributed)
 		attributed = styled
 	}
-	return ct.typesetterCreate(attributed)
+	return attributed
 }
 
 // typesetterKey is all that makes a typesetter of a text in a font, but for
