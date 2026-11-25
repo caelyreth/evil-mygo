@@ -21,3 +21,22 @@ func TestTheSystemCheckerFindsAMisspelledWordInBytes(t *testing.T) {
 		t.Fatalf("guesses %q", g)
 	}
 }
+
+func TestTheSystemCheckerOffersACorrectionForAMisspelledWord(t *testing.T) {
+	b := &Backend{}
+	if got := b.Correction("teh ", 0, 3); got != "the" {
+		t.Fatalf("Correction(\"teh \", 0, 3) = %q, want \"the\"", got)
+	}
+	if got := b.Correction("the ", 0, 3); got != "" {
+		t.Fatalf("Correction(\"the \", 0, 3) = %q, want \"\"", got)
+	}
+	if got := b.Correction("", 0, 0); got != "" {
+		t.Fatalf("Correction(\"\", 0, 0) = %q, want \"\"", got)
+	}
+	if got := b.Correction("teh", 2, 1); got != "" {
+		t.Fatalf("Correction(\"teh\", 2, 1) = %q, want \"\"", got)
+	}
+	if got := b.Correction("teh", 0, 10); got != "" {
+		t.Fatalf("Correction(\"teh\", 0, 10) = %q, want \"\"", got)
+	}
+}

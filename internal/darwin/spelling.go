@@ -88,6 +88,26 @@ func (b *Backend) Guesses(text string, from, to int) []string {
 	return out
 }
 
+// Correction returns the checker's single automatic correction for the
+// word from to to of text, in bytes, or "" when none is offered.
+func (b *Backend) Correction(text string, from, to int) string {
+	if from < 0 || from >= to || to > len(text) {
+		return ""
+	}
+	var out string
+	checking(func() {
+		offs := utf16Offsets(text)
+		lo, hi := unitAt(offs, from), unitAt(offs, to)
+		checker := spellChecker()
+		corr := send(checker, "correctionForWordRange:inString:language:inSpellDocumentWithTag:",
+			uintptr(lo), uintptr(hi-lo), uintptr(nsString(text)), uintptr(send(checker, "language")), 0)
+		if corr != 0 {
+			out = goString(corr)
+		}
+	})
+	return out
+}
+
 // LearnWord adds word to the user's dictionary, which every app shares.
 func (b *Backend) LearnWord(word string) {
 	checking(func() { send(spellChecker(), "learnWord:", uintptr(nsString(word))) })

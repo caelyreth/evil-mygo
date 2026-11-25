@@ -267,10 +267,17 @@ func TestFramePending(t *testing.T) {
 // Advance moves it.
 func TestTesterTime(t *testing.T) {
 	var now time.Time
-	tt := NewTester(func(c *Context) { now = c.Now() }, 100, 50)
+	var svc Services
+	tt := NewTester(func(c *Context) {
+		now = c.Now()
+		svc = c.Services()
+	}, 100, 50)
 	start := now
 	if !tt.Now().Equal(start) {
 		t.Fatalf("Now is %v, the frame's time %v", tt.Now(), start)
+	}
+	if !svc.Now().Equal(start) {
+		t.Fatalf("Services.Now is %v, want %v", svc.Now(), start)
 	}
 	tt.Frame()
 	if d := now.Sub(start); d != 0 {
@@ -280,6 +287,9 @@ func TestTesterTime(t *testing.T) {
 	tt.Frame()
 	if d := now.Sub(start); d != time.Hour {
 		t.Errorf("the time moved by %v with Advance(1h)", d)
+	}
+	if d := svc.Now().Sub(start); d != time.Hour {
+		t.Errorf("Services.Now moved by %v with Advance(1h)", d)
 	}
 }
 

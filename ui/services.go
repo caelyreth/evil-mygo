@@ -2,6 +2,7 @@ package ui
 
 import (
 	"strings"
+	"time"
 	"weak"
 
 	"github.com/egoist/mygo/transfer"
@@ -25,6 +26,15 @@ func (s Services) Invalidate() {
 	if rt := s.owner.Value(); rt != nil {
 		rt.host.invalidate()
 	}
+}
+
+// Now returns the current time of the window's runtime clock (virtual time
+// in a Tester), or time.Now() if unattached.
+func (s Services) Now() time.Time {
+	if rt := s.owner.Value(); rt != nil {
+		return rt.now()
+	}
+	return time.Now()
 }
 func (s Services) ReadClipboard() string {
 	if rt := s.owner.Value(); rt != nil && !rt.closed {

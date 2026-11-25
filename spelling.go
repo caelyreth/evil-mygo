@@ -52,6 +52,15 @@ func (SpellingModule) Guesses(text string, from, to int) []string {
 	return nil
 }
 
+// Correction returns a single automatic correction for the word from to to
+// of text, in bytes, or "" when the checker offers none.
+func (SpellingModule) Correction(text string, from, to int) string {
+	if s, ok := spelling(); ok && 0 <= from && from < to && to <= len(text) {
+		return s.Correction(text, from, to)
+	}
+	return ""
+}
+
 // Learn adds word to the user's dictionary, which every app shares, so it
 // is no longer misspelled.
 func (SpellingModule) Learn(word string) {

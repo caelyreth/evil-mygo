@@ -1177,6 +1177,9 @@ type SpellingBackend interface {
 	CheckText(text string, grammar bool) []TextIssue
 	// Guesses are the corrections for text's word from to to, best first.
 	Guesses(text string, from, to int) []string
+	// Correction returns a single automatic correction for text's word from
+	// to to, or "" when none is offered.
+	Correction(text string, from, to int) string
 	LearnWord(word string)
 	UnlearnWord(word string)
 	HasLearnedWord(word string) bool
