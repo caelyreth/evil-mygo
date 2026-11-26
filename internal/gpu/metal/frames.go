@@ -61,7 +61,7 @@ func (f *Frames) Draw(s *scene.Scene) (err error) {
 		if f.tex == 0 || f.w != s.Width || f.h != s.Height {
 			release(&f.tex)
 			f.r.cur = &f.r.formats[0]
-			if f.tex = f.r.newTexture(s.Width, s.Height, pixelFormatBGRA8Unorm, usageRenderTarget|usageShaderRead, nil, 0); f.tex == 0 {
+			if f.tex = f.r.newReadbackTexture(s.Width, s.Height, pixelFormatBGRA8Unorm, usageRenderTarget|usageShaderRead); f.tex == 0 {
 				err = errors.New("metal: cannot create a target")
 				return
 			}

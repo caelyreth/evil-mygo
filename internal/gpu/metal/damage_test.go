@@ -70,7 +70,7 @@ func partialFrames(t *testing.T, r *Renderer, s *scene.Scene, wide bool, frames 
 	var targets [3]id
 	pool(func() {
 		for i := range targets {
-			targets[i] = r.newTexture(s.Width, s.Height, format, usageRenderTarget|usageShaderRead, nil, 0)
+			targets[i] = r.newReadbackTexture(s.Width, s.Height, format, usageRenderTarget|usageShaderRead)
 		}
 	})
 	defer pool(func() {
@@ -274,7 +274,7 @@ func TestPartialFramesIncrementalCaret(t *testing.T) {
 	var targets [3]id
 	pool(func() {
 		for i := range targets {
-			targets[i] = r.newTexture(s.Width, s.Height, pixelFormatBGRA8Unorm, usageRenderTarget|usageShaderRead, nil, 0)
+			targets[i] = r.newReadbackTexture(s.Width, s.Height, pixelFormatBGRA8Unorm, usageRenderTarget|usageShaderRead)
 		}
 	})
 	defer pool(func() {

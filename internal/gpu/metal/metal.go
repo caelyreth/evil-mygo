@@ -100,6 +100,7 @@ const (
 	usageRenderTarget = 4
 	storageShared     = 0
 	storageManaged    = 1
+	storagePrivate    = 2
 
 	loadActionDontCare     = 0
 	loadActionLoad         = 1
@@ -1066,12 +1067,33 @@ func respondsTo(obj id, method string) bool {
 }
 
 // newTexture returns an owned w×h texture holding pix, rows of stride
-// bytes, when given.
+// bytes, when given. Render targets without initial CPU pixels use GPU-only
+// private storage so they do not duplicate a managed shadow copy on macOS.
 func (r *Renderer) newTexture(w, h int, format, usage uint, pix []byte, stride int) id {
 	return r.newTextureMip(w, h, format, usage, pix, stride, false)
 }
 
 func (r *Renderer) newTextureMip(w, h int, format, usage uint, pix []byte, stride int, mipmapped bool) id {
+	mode := uintptr(storageManaged)
+	if len(pix) == 0 {
+		mode = storagePrivate
+	} else if runtime.GOOS == "ios" {
+		mode = storageShared
+	}
+	return r.newTextureMode(w, h, format, usage, pix, stride, mipmapped, mode)
+}
+
+// newReadbackTexture returns an owned w×h render-target texture whose pixels
+// can be synchronized and read back by the CPU via getBytes.
+func (r *Renderer) newReadbackTexture(w, h int, format, usage uint) id {
+	mode := uintptr(storageManaged)
+	if runtime.GOOS == "ios" {
+		mode = storageShared
+	}
+	return r.newTextureMode(w, h, format, usage, nil, 0, false, mode)
+}
+
+func (r *Renderer) newTextureMode(w, h int, format, usage uint, pix []byte, stride int, mipmapped bool, storageMode uintptr) id {
 	mip := uintptr(0)
 	if mipmapped {
 		mip = 1
@@ -1082,13 +1104,7 @@ func (r *Renderer) newTextureMip(w, h int, format, usage uint, pix []byte, strid
 	}
 	send(desc, "setUsage:", uintptr(usage))
 	if usage&usageRenderTarget != 0 {
-		// iOS's GPUs share the memory with the CPU, and have no managed
-		// textures, which keep a copy on each side.
-		if runtime.GOOS == "ios" {
-			send(desc, "setStorageMode:", storageShared)
-		} else {
-			send(desc, "setStorageMode:", storageManaged)
-		}
+		send(desc, "setStorageMode:", storageMode)
 	}
 	tex := send(r.device, "newTextureWithDescriptor:", desc)
 	if tex != 0 && len(pix) > 0 {
@@ -2537,7 +2553,7 @@ func (r *Renderer) renderOffscreen(s *scene.Scene) (pix []byte, err error) {
 	pool(func() {
 		r.waitLast()
 		r.cur = &r.formats[0]
-		tex := r.newTexture(s.Width, s.Height, pixelFormatBGRA8Unorm, usageRenderTarget|usageShaderRead, nil, 0)
+		tex := r.newReadbackTexture(s.Width, s.Height, pixelFormatBGRA8Unorm, usageRenderTarget|usageShaderRead)
 		if tex == 0 {
 			err = errors.New("metal: cannot create a target")
 			return

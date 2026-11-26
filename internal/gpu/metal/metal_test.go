@@ -412,7 +412,7 @@ func TestWideColors(t *testing.T) {
 	pool(func() {
 		r.waitLast()
 		r.cur = &r.formats[1]
-		tex := r.newTexture(s.Width, s.Height, pixelFormatRGBA16Float, usageRenderTarget|usageShaderRead, nil, 0)
+		tex := r.newReadbackTexture(s.Width, s.Height, pixelFormatRGBA16Float, usageRenderTarget|usageShaderRead)
 		if tex == 0 {
 			err = errors.New("no target")
 			return
@@ -531,7 +531,7 @@ func renderRaw(t *testing.T, r *Renderer, s *scene.Scene, wide bool) (raw []byte
 		if wide {
 			r.cur, format, bpp = &r.formats[1], pixelFormatRGBA16Float, 8
 		}
-		tex := r.newTexture(s.Width, s.Height, format, usageRenderTarget|usageShaderRead, nil, 0)
+		tex := r.newReadbackTexture(s.Width, s.Height, format, usageRenderTarget|usageShaderRead)
 		if tex == 0 {
 			err = errors.New("no target")
 			return
@@ -1217,7 +1217,7 @@ func TestFramesInFlight(t *testing.T) {
 		r2.cur = &r2.formats[0]
 		for i := range targets {
 			step(i)
-			targets[i] = r2.newTexture(w, h, pixelFormatBGRA8Unorm, usageRenderTarget|usageShaderRead, nil, 0)
+			targets[i] = r2.newReadbackTexture(w, h, pixelFormatBGRA8Unorm, usageRenderTarget|usageShaderRead)
 			cb, err := r2.encode(s, targets[i])
 			if err != nil {
 				t.Error(err)
@@ -1616,5 +1616,61 @@ func TestImageVRAMCapEvictsLRU(t *testing.T) {
 	pool(r.releaseTextures)
 	if r.imageBytes != 0 {
 		t.Fatalf("after releaseTextures imageBytes = %d, want 0", r.imageBytes)
+	}
+}
+
+func TestRenderTargetStoragePrivate(t *testing.T) {
+	r, err := newRenderer()
+	if err != nil {
+		unavailable(t, err)
+	}
+	defer r.Release()
+
+	layer := scene.NewCanvas(128, 128)
+	layer.Scene.Ops = []scene.Op{
+		{Kind: scene.OpFill, Rect: scene.Rect{W: 128, H: 128}, Color: scene.Color{R: 40, G: 90, B: 220, A: 255}},
+	}
+	s := &scene.Scene{
+		Width:    128,
+		Height:   128,
+		Clear:    scene.Color{A: 255},
+		Canvases: []*scene.Image{layer},
+		Ops: []scene.Op{
+			{Kind: scene.OpImage, Rect: scene.Rect{W: 128, H: 128}, Image: layer, Src: scene.Rect{W: 128, H: 128}, Blur: 8},
+		},
+	}
+
+	var canvasMode, blurMode, readbackMode uint
+	pool(func() {
+		readback := r.newReadbackTexture(s.Width, s.Height, pixelFormatBGRA8Unorm, usageRenderTarget|usageShaderRead)
+		if readback == 0 {
+			t.Fatal("newReadbackTexture returned 0")
+		}
+		defer release(&readback)
+		r.cur = &r.formats[0]
+		cb, err := r.encode(s, readback)
+		if err != nil {
+			t.Fatal(err)
+		}
+		send(cb, "commit")
+		r.track(cb)
+		r.waitLast()
+		if c := r.canvases[layer.ID()]; c != nil && c.tex != 0 {
+			canvasMode = uint(send(c.tex, "storageMode"))
+		}
+		if len(r.blurred) > 0 && r.blurred[0].tex != 0 {
+			blurMode = uint(send(r.blurred[0].tex, "storageMode"))
+		}
+		readbackMode = uint(send(readback, "storageMode"))
+	})
+
+	if canvasMode != storagePrivate {
+		t.Errorf("canvas render target storageMode = %d, want storagePrivate (%d)", canvasMode, storagePrivate)
+	}
+	if blurMode != storagePrivate {
+		t.Errorf("blur render target storageMode = %d, want storagePrivate (%d)", blurMode, storagePrivate)
+	}
+	if readbackMode != storageManaged {
+		t.Errorf("readback target storageMode = %d, want storageManaged (%d)", readbackMode, storageManaged)
 	}
 }

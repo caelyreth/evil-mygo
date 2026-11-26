@@ -379,3 +379,75 @@ func BenchmarkRenderPartialCaret(b *testing.B) {
 		})
 	}
 }
+
+// BenchmarkRenderTargetCanvas measures creating, drawing, and blurring a
+// window-sized transition canvas and its GPU-only scratch/backdrop targets.
+func BenchmarkRenderTargetCanvas(b *testing.B) {
+	const w, h = 2520, 1700
+	r, err := newRenderer()
+	if err != nil {
+		b.Skip("no Metal:", err)
+	}
+	defer r.Release()
+
+	target := id(0)
+	pool(func() {
+		target = r.newTexture(w, h, pixelFormatBGRA8Unorm, usageRenderTarget|usageShaderRead, nil, 0)
+	})
+	defer pool(func() {
+		r.waitLast()
+		release(&target)
+	})
+
+	layer := scene.NewCanvas(w, h)
+	layer.Scene.Ops = []scene.Op{
+		{Kind: scene.OpFill, Rect: scene.Rect{W: w, H: h}, Color: scene.Color{R: 245, G: 243, B: 238, A: 255}},
+		{Kind: scene.OpFill, Rect: scene.Rect{X: 120, Y: 120, W: w - 240, H: h - 240}, Radii: scene.Uniform(20), Color: scene.Color{R: 32, G: 80, B: 200, A: 220}},
+	}
+	s := &scene.Scene{
+		Width:    w,
+		Height:   h,
+		Clear:    scene.Color{A: 255},
+		Canvases: []*scene.Image{layer},
+		Ops: []scene.Op{
+			{Kind: scene.OpImage, Rect: scene.Rect{W: w, H: h}, Image: layer, Src: scene.Rect{W: w, H: h}, Blur: 16},
+		},
+	}
+
+	var mode, blurMode uint
+	var gpuBytes uint64
+	b.ReportAllocs()
+	for frame := 0; b.Loop(); frame++ {
+		if frame%2 == 0 {
+			layer.Resize(w, h)
+		} else {
+			layer.Resize(w/2, h/2)
+		}
+		layer.Scene.Reset(layer.W, layer.H, scene.Color{})
+		layer.Scene.Ops = append(layer.Scene.Ops,
+			scene.Op{Kind: scene.OpFill, Rect: scene.Rect{W: float32(layer.W), H: float32(layer.H)}, Color: scene.Color{R: 245, G: 243, B: 238, A: 255}},
+		)
+		s.Ops[0].Src = scene.Rect{W: float32(layer.W), H: float32(layer.H)}
+		pool(func() {
+			r.waitLast()
+			r.cur = &r.formats[0]
+			cb, err := r.encode(s, target)
+			if err != nil {
+				b.Fatal(err)
+			}
+			send(cb, "commit")
+			r.track(cb)
+			send(cb, "waitUntilCompleted")
+			if c := r.canvases[layer.ID()]; c != nil && c.tex != 0 {
+				mode = uint(send(c.tex, "storageMode"))
+			}
+			if len(r.blurred) > 0 && r.blurred[0].tex != 0 {
+				blurMode = uint(send(r.blurred[0].tex, "storageMode"))
+			}
+			gpuBytes = uint64(send(r.device, "currentAllocatedSize"))
+		})
+	}
+	b.ReportMetric(float64(gpuBytes)/(1024*1024), "gpu-MB")
+	b.ReportMetric(float64(mode), "canvas-mode")
+	b.ReportMetric(float64(blurMode), "blur-mode")
+}
