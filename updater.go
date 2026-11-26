@@ -4,9 +4,8 @@ package mygo
 
 import (
 	"context"
-	"crypto/ed25519"
 	"crypto/sha256"
-	"encoding/json/v2"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -29,66 +28,77 @@ import (
 	"github.com/egoist/mygo/netproxy"
 )
 
-// Set by `mygo build` with -ldflags -X when mygo.config.ts configures updates:
-// the manifest of this build's target, or with a tag prefix on GitHub its
-// feed in the newest tagged release (update.TaggedFeed), and the public key
-// updates must be signed with.
+// Set by `mygo build` with -ldflags -X when mygo.json configures updates.
 var (
-	packageUpdateFeed string
-	packageUpdateKey  string
+	packageUpdateFeed    string
+	packageUpdateKeys    string
+	packageUpdateTarget  string
+	packageUpdateChannel string
 )
 
 // startExe is the executable the app started from. On Linux, os.Executable
 // reports the old file once an update replaced it.
 var startExe, _ = os.Executable()
 
-// UpdaterModule installs new versions of the app, which `mygo build`
-// publishes when mygo.config.ts configures updates: signed archives and a
-// manifest per platform. Use the Updater singleton:
-//
-//	update, err := mygo.Updater.Check(ctx)
-//	if err == nil && update != nil {
-//		if err := update.Install(ctx, nil); err == nil {
-//			mygo.App.Relaunch()
-//		}
-//	}
+// UpdateAvailability describes whether the running build can self-update.
+type UpdateAvailability uint8
+
+const (
+	UpdateAvailable UpdateAvailability = iota + 1
+	UpdateUnavailableUnconfigured
+	UpdateUnavailableDev
+	UpdateUnavailableTranslocated
+	UpdateUnavailableNotBundle
+	UpdateUnavailableAppImage
+	UpdateUnavailableReadOnly
+)
+
+// UpdaterModule installs new versions of the app, built with `mygo build`.
 type UpdaterModule struct{}
 
 // Updater installs new versions of the app.
 var Updater = &UpdaterModule{}
 
-// prereleases is set while Check offers prereleases (SetPrereleases).
-var prereleases atomic.Bool
+var (
+	updateChannel atomic.Pointer[string]
+	updateSource  atomic.Pointer[UpdateSource]
+)
 
-// updateSource is the source of SetSource, nil for the feed of
-// mygo.config.ts.
-var updateSource atomic.Pointer[UpdateSource]
-
-// UpdateSource is where Updater gets updates from instead of the feed that
-// mygo.config.ts configures (SetSource): an update service the app already
-// has, an endpoint that needs the user's credentials, or a channel the app
-// chooses while it runs. It serves what `mygo build` publishes, from
-// wherever the app keeps it, and Updater checks it as it checks the feed's:
-// the archive and deltas must be signed with the key of updates.publicKey
-// that the app was built with, or they are not installed.
-type UpdateSource interface {
-	// Manifest returns the manifest of the running platform: the JSON that
-	// `mygo build` writes as update-<target>.json, such as
-	// update-darwin-arm64.json, of at most 1 MiB.
-	// prereleases reports whether the app offers them (SetPrereleases).
-	Manifest(ctx context.Context, prereleases bool) (io.ReadCloser, error)
-	// Open returns the file at url, which the manifest names: the archive
-	// of the update or one of its deltas. The URL is the manifest's, so it
-	// may be anything the source understands, such as an id of its own.
-	Open(ctx context.Context, url string) (io.ReadCloser, error)
+// ManifestQuery describes the manifest requested by Check / CheckWith.
+type ManifestQuery struct {
+	Target  string
+	Channel string
+	Current string
+	Locale  string
+	ETag    string
 }
 
-// SetSource makes Check read the manifest from s, and Install download the
-// files it names through s, instead of from the feed of mygo.config.ts; nil
-// restores the feed. Updates are still enabled only in builds with updates
-// in mygo.config.ts (Enabled), which give the key that updates are checked
-// with. An Update that Check returned keeps downloading from the source it
-// came from. It may be called from any goroutine.
+// ManifestResult is returned by UpdateSource.Manifest.
+type ManifestResult struct {
+	Body        io.ReadCloser
+	ETag        string
+	NotModified bool
+}
+
+// CheckOptions configures an update check via CheckWith.
+type CheckOptions struct {
+	Channel string
+	Locale  string
+}
+
+// UpdateSource supplies update manifests and asset streams to Updater.
+// Every manifest must still be signed by a trusted key in updates.publicKeys /
+// updates.publicKey, and every downloaded asset must match the signed SHA-256
+// and size in the manifest.
+type UpdateSource interface {
+	Manifest(ctx context.Context, q ManifestQuery) (ManifestResult, error)
+	// Open opens url starting at offset bytes (when offset > 0). partial must
+	// be true only when the stream begins at offset (e.g. HTTP 206); false
+	// means the stream starts at byte 0 and any partial file must be truncated.
+	Open(ctx context.Context, url string, offset int64) (body io.ReadCloser, partial bool, err error)
+}
+
+// SetSource replaces the default update feed with s, or restores it when nil.
 func (u *UpdaterModule) SetSource(s UpdateSource) {
 	if s == nil {
 		updateSource.Store(nil)
@@ -97,147 +107,347 @@ func (u *UpdaterModule) SetSource(s UpdateSource) {
 	updateSource.Store(&s)
 }
 
-// ErrUpdatesDisabled is returned by Check for builds without updates:
-// development builds, and builds of apps without updates in mygo.config.ts.
-var ErrUpdatesDisabled = errors.New("mygo: updates are not enabled for this build")
-
-// Update is a newer version of the app, found by Updater.Check.
-type Update struct {
-	// Version of the update, and its release notes in Markdown.
-	Version string
-	Notes   string
-	// Date is when the update was built.
-	Date time.Time
-
-	manifest update.Manifest
-	key      string
-	// source is where the manifest came from, which serves its files.
-	source UpdateSource
-	// current is the version that Check compared with, which delta updates
-	// update.
-	current string
+// Target returns the build's update target (e.g. "darwin-arm64" or "darwin-universal").
+func (u *UpdaterModule) Target() string {
+	if packageUpdateTarget != "" {
+		return packageUpdateTarget
+	}
+	return runtime.GOOS + "-" + runtime.GOARCH
 }
 
-// Enabled reports whether the app can update itself: it was built with
-// updates and can write where it is installed. Apps installed by a package
-// manager, such as a .deb in /opt, are updated by it instead.
-func (u *UpdaterModule) Enabled() bool {
-	if packageUpdateFeed == "" || packageUpdateKey == "" || IsDev() {
-		return false
+// DefaultChannel returns the release channel the binary was built for.
+func (u *UpdaterModule) DefaultChannel() string {
+	if packageUpdateChannel != "" {
+		return packageUpdateChannel
+	}
+	return update.DefaultChannel
+}
+
+// Channel returns the active update channel.
+func (u *UpdaterModule) Channel() string {
+	if ch := updateChannel.Load(); ch != nil && *ch != "" {
+		return *ch
+	}
+	return u.DefaultChannel()
+}
+
+// SetChannel sets the update channel (e.g. "stable", "beta"); empty restores DefaultChannel().
+func (u *UpdaterModule) SetChannel(channel string) {
+	if channel == "" {
+		updateChannel.Store(nil)
+		return
+	}
+	ch := channel
+	updateChannel.Store(&ch)
+}
+
+// SetPrereleases selects the "beta" channel when on is true, or "stable" when false.
+func (u *UpdaterModule) SetPrereleases(on bool) {
+	if on {
+		u.SetChannel(update.BetaChannel)
+		return
+	}
+	u.SetChannel(update.DefaultChannel)
+}
+
+// Prereleases reports whether the active channel is "beta".
+func (u *UpdaterModule) Prereleases() bool {
+	return u.Channel() == update.BetaChannel
+}
+
+var (
+	// ErrUpdatesDisabled is returned when self-updates are unavailable for this build.
+	ErrUpdatesDisabled = errors.New("mygo: updates are not enabled for this build")
+	// ErrManualUpdateRequired is returned by Install when the update declares a
+	// minimum version newer than the running build.
+	ErrManualUpdateRequired = errors.New("mygo: this update requires a manual reinstall")
+)
+
+// Update is a verified newer version returned by Updater.Check / CheckWith.
+type Update struct {
+	Version              string
+	Channel              string
+	Notes                string
+	Date                 time.Time
+	RequiresManualUpdate bool
+	Sources              []string
+
+	manifest update.Manifest
+	keyring  update.Keyring
+	source   UpdateSource
+	current  string
+}
+
+// NotesFor returns release notes best matching locale, falling back to Notes.
+func (up *Update) NotesFor(locale string) string {
+	if up == nil {
+		return ""
+	}
+	return up.manifest.ResolveNotes(locale)
+}
+
+// Availability reports whether this build can self-update and, if not, why.
+func (u *UpdaterModule) Availability() UpdateAvailability {
+	if IsDev() {
+		return UpdateUnavailableDev
+	}
+	if packageUpdateFeed == "" || packageUpdateKeys == "" {
+		return UpdateUnavailableUnconfigured
+	}
+	if _, err := update.ParseKeyring(packageUpdateKeys); err != nil {
+		return UpdateUnavailableUnconfigured
+	}
+	exe := startExe
+	if real, err := filepath.EvalSymlinks(exe); err == nil {
+		exe = real
+	}
+	if runtime.GOOS == "darwin" {
+		if strings.Contains(exe, "/AppTranslocation/") {
+			return UpdateUnavailableTranslocated
+		}
+		bundle := bundleFromExe(exe)
+		if !strings.HasSuffix(bundle, ".app") {
+			return UpdateUnavailableNotBundle
+		}
+	}
+	if runtime.GOOS == "linux" && os.Getenv("APPIMAGE") != "" {
+		return UpdateUnavailableAppImage
 	}
 	target, err := installTarget()
 	if err != nil {
-		return false
+		return UpdateUnavailableNotBundle
 	}
 	probe, err := os.MkdirTemp(filepath.Dir(target), ".mygo-update-")
 	if err != nil {
-		return false
+		return UpdateUnavailableReadOnly
 	}
 	os.Remove(probe)
-	return true
+	return UpdateAvailable
 }
 
-// Check asks the update feed, or the source of SetSource, for a version
-// newer than the running one and returns it, or nil when the app is up to
-// date.
+// Enabled reports whether the app can update itself.
+func (u *UpdaterModule) Enabled() bool {
+	return u.Availability() == UpdateAvailable
+}
+
+type etagEntry struct {
+	etag string
+	raw  []byte
+}
+
+var etagCache struct {
+	mu      sync.Mutex
+	entries map[string]etagEntry
+}
+
+func getETagEntry(key string) (etagEntry, bool) {
+	etagCache.mu.Lock()
+	defer etagCache.mu.Unlock()
+	e, ok := etagCache.entries[key]
+	return e, ok
+}
+
+func setETagEntry(key string, entry etagEntry) {
+	etagCache.mu.Lock()
+	defer etagCache.mu.Unlock()
+	if etagCache.entries == nil {
+		etagCache.entries = map[string]etagEntry{}
+	}
+	etagCache.entries[key] = entry
+}
+
+// Check checks the active feed/channel for a newer update.
 func (u *UpdaterModule) Check(ctx context.Context) (*Update, error) {
+	return u.CheckWith(ctx, CheckOptions{})
+}
+
+// CheckWith checks for a newer update with explicit channel and locale preferences.
+func (u *UpdaterModule) CheckWith(ctx context.Context, opts CheckOptions) (*Update, error) {
 	if !u.Enabled() {
 		return nil, ErrUpdatesDisabled
 	}
 	var src UpdateSource = feedSource(packageUpdateFeed)
+	srcKey := "feed:" + packageUpdateFeed
 	if s := updateSource.Load(); s != nil {
 		src = *s
+		srcKey = fmt.Sprintf("custom:%T", src)
 	}
-	return checkUpdate(ctx, src, packageUpdateKey, App.Version(), prereleases.Load())
+	ch := opts.Channel
+	if ch == "" {
+		ch = u.Channel()
+	}
+	return checkUpdateCached(ctx, src, srcKey, packageUpdateKeys, u.Target(), ch, App.Version(), opts.Locale)
 }
 
-// SetPrereleases makes Check offer prereleases too, such as 1.3.0-beta.1,
-// for the users of an app who chose its beta: with updates on GitHub,
-// Check then reads the release of the highest version that is not a
-// draft, through the GitHub API (usually one request a check), so that a
-// release newer than the prereleases is offered too. Check never offers a
-// version older than the running one, so turning it off waits for the
-// release after the prerelease the app runs. Updates of updates.url are
-// the manifest the server has, whichever is set. It is off at launch; the
-// app keeps the user's choice and sets it again. It may be called from
-// any goroutine.
-func (u *UpdaterModule) SetPrereleases(on bool) { prereleases.Store(on) }
-
-// Prereleases reports whether Check offers prereleases (SetPrereleases).
-func (u *UpdaterModule) Prereleases() bool { return prereleases.Load() }
-
-// feedSource is the update feed that mygo.config.ts configures, the URL of
-// a manifest or a feed that update.ResolveFeed resolves.
 type feedSource string
 
-func (f feedSource) Manifest(ctx context.Context, pre bool) (io.ReadCloser, error) {
-	resolve := update.ResolveFeed
-	if pre {
-		resolve = update.ResolvePrereleaseFeed
+func (f feedSource) Manifest(ctx context.Context, q ManifestQuery) (ManifestResult, error) {
+	feedURL, err := update.ResolveChannelFeed(ctx, string(f), q.Target, q.Channel, httpGetPlain)
+	if err != nil {
+		return ManifestResult{}, err
 	}
-	feed, err := resolve(ctx, string(f), httpGet)
+	u, err := parseHTTPSURL(feedURL)
+	if err != nil {
+		return ManifestResult{}, err
+	}
+	reqHeaders := http.Header{"Accept": {"application/json"}}
+	if q.ETag != "" {
+		reqHeaders.Set("If-None-Match", q.ETag)
+	}
+	if q.Current != "" {
+		reqHeaders.Set("X-Update-Current", q.Current)
+	}
+	if q.Target != "" {
+		reqHeaders.Set("X-Update-Target", q.Target)
+	}
+	if q.Channel != "" {
+		reqHeaders.Set("X-Update-Channel", q.Channel)
+	}
+	if q.Locale != "" {
+		reqHeaders.Set("X-Update-Locale", q.Locale)
+	}
+	resp, err := httpDoWithRetries(ctx, u.String(), reqHeaders)
+	if err != nil {
+		return ManifestResult{}, err
+	}
+	if resp.StatusCode == http.StatusNotModified {
+		resp.Body.Close()
+		return ManifestResult{NotModified: true, ETag: resp.Header.Get("ETag")}, nil
+	}
+	if resp.StatusCode != http.StatusOK {
+		resp.Body.Close()
+		return ManifestResult{}, fmt.Errorf("GET %s: %s", u.Redacted(), resp.Status)
+	}
+	return ManifestResult{Body: resp.Body, ETag: resp.Header.Get("ETag")}, nil
+}
+
+func (f feedSource) Open(ctx context.Context, rawURL string, offset int64) (io.ReadCloser, bool, error) {
+	return httpGetRange(ctx, rawURL, offset)
+}
+
+func checkUpdateCached(ctx context.Context, src UpdateSource, srcKey, keysRaw, target, channel, current, locale string) (*Update, error) {
+	cacheKey := srcKey + "|" + target + "|" + channel
+	cached, hasCached := getETagEntry(cacheKey)
+	q := ManifestQuery{Target: target, Channel: channel, Current: current, Locale: locale}
+	if hasCached {
+		q.ETag = cached.etag
+	}
+	res, err := src.Manifest(ctx, q)
+	if err != nil {
+		return nil, fmt.Errorf("mygo: checking for updates: %w", err)
+	}
+	var raw []byte
+	switch {
+	case res.NotModified && hasCached:
+		raw = cached.raw
+	case res.NotModified:
+		return nil, errors.New("mygo: checking for updates: server returned 304 without cached manifest")
+	default:
+		if res.Body == nil {
+			return nil, errors.New("mygo: checking for updates: empty manifest body")
+		}
+		raw, err = io.ReadAll(io.LimitReader(res.Body, update.MaxManifestSize+1))
+		res.Body.Close()
+		if err != nil {
+			return nil, fmt.Errorf("mygo: checking for updates: %w", err)
+		}
+		if len(raw) > update.MaxManifestSize {
+			return nil, errors.New("mygo: checking for updates: manifest too large")
+		}
+	}
+	up, err := verifyAndBuildUpdate(raw, keysRaw, target, current, locale, src)
+	if err != nil {
+		return nil, fmt.Errorf("mygo: checking for updates: %w", err)
+	}
+	if res.ETag != "" && !res.NotModified {
+		setETagEntry(cacheKey, etagEntry{etag: res.ETag, raw: raw})
+	}
+	return up, nil
+}
+
+func checkUpdate(ctx context.Context, src UpdateSource, keysRaw, target, channel, current, locale string) (*Update, error) {
+	res, err := src.Manifest(ctx, ManifestQuery{Target: target, Channel: channel, Current: current, Locale: locale})
+	if err != nil {
+		return nil, fmt.Errorf("mygo: checking for updates: %w", err)
+	}
+	if res.Body == nil {
+		return nil, errors.New("mygo: checking for updates: empty manifest body")
+	}
+	raw, err := io.ReadAll(io.LimitReader(res.Body, update.MaxManifestSize+1))
+	res.Body.Close()
+	if err != nil {
+		return nil, fmt.Errorf("mygo: checking for updates: %w", err)
+	}
+	if len(raw) > update.MaxManifestSize {
+		return nil, errors.New("mygo: checking for updates: manifest too large")
+	}
+	up, err := verifyAndBuildUpdate(raw, keysRaw, target, current, locale, src)
+	if err != nil {
+		return nil, fmt.Errorf("mygo: checking for updates: %w", err)
+	}
+	return up, nil
+}
+
+func verifyAndBuildUpdate(raw []byte, keysRaw, target, current, locale string, src UpdateSource) (*Update, error) {
+	ring, err := update.ParseKeyring(keysRaw)
 	if err != nil {
 		return nil, err
 	}
-	return httpGet(ctx, feed)
-}
-
-func (f feedSource) Open(ctx context.Context, url string) (io.ReadCloser, error) {
-	return httpGet(ctx, url)
-}
-
-func checkUpdate(ctx context.Context, src UpdateSource, key, current string, pre bool) (*Update, error) {
-	body, err := src.Manifest(ctx, pre)
+	m, err := update.VerifyManifest(ring, raw)
 	if err != nil {
-		return nil, fmt.Errorf("mygo: checking for updates: %w", err)
+		return nil, err
 	}
-	defer body.Close()
-	var m update.Manifest
-	if err := json.UnmarshalRead(io.LimitReader(body, update.MaxManifestSize), &m); err != nil {
-		return nil, fmt.Errorf("mygo: checking for updates: %w", err)
+	if target != "" && m.Target != target {
+		return nil, fmt.Errorf("manifest target %q does not match %q", m.Target, target)
 	}
-	if m.Version == "" || m.URL == "" || m.Signature == "" {
-		return nil, errors.New("mygo: checking for updates: incomplete manifest")
+	if !update.SystemSatisfied(m.MinSystem, currentOSVersion()) {
+		return nil, nil
 	}
 	if update.Compare(m.Version, current) <= 0 {
 		return nil, nil
 	}
-	up := &Update{Version: m.Version, Notes: m.Notes, manifest: m, key: key, current: current, source: src}
+	up := &Update{
+		Version:              m.Version,
+		Channel:              m.Channel,
+		Notes:                m.ResolveNotes(locale),
+		RequiresManualUpdate: m.MinVersion != "" && update.Compare(current, m.MinVersion) < 0,
+		Sources:              m.Artifact.CandidateURLs(m.Mirrors, m.Version),
+		manifest:             *m,
+		keyring:              ring,
+		source:               src,
+		current:              current,
+	}
 	up.Date, _ = time.Parse(time.RFC3339, m.Date)
 	return up, nil
 }
 
-// Install downloads the update, checks that it is signed with the app's
-// key and replaces the app with it; progress, when not nil, is called with
-// the bytes downloaded so far. When the update has a delta for the running
-// version, only the delta is downloaded, unless it fails to make the new
-// version: the whole update is downloaded then, and the progress starts
-// over. The running app is not affected: the new version runs after
-// App.Relaunch, or at the next launch.
-//
-// The app must be able to write where it is installed: a bundle in
-// /Applications of an administrator, or an app directory the user owns on
-// Linux and Windows. Apps installed by a package manager are updated by it.
+// Install downloads the delta or archive for up across its candidate mirrors
+// with Range resume, verifies its SHA-256 and size against the signed manifest,
+// and installs/stages it in place.
 func (up *Update) Install(ctx context.Context, progress func(downloaded, total int64)) error {
+	if up == nil {
+		return errors.New("mygo: nil update")
+	}
+	if up.RequiresManualUpdate {
+		return ErrManualUpdateRequired
+	}
 	target, err := installTarget()
 	if err != nil {
 		return err
 	}
-	get := httpGet
+	open := httpGetRange
 	if up.source != nil {
-		get = up.source.Open
+		open = up.source.Open
 	}
-	if err := installUpdate(ctx, get, up.manifest, up.key, up.current, target, progress); err != nil {
+	if err := installUpdate(ctx, open, up.manifest, up.keyring, up.current, target, progress); err != nil {
 		return fmt.Errorf("mygo: installing the update: %w", err)
 	}
 	switch runtime.GOOS {
 	case "linux":
-		// install.sh registered the desktop entry of the version it installed.
 		if err := update.RefreshDesktopEntry(target, filepath.Base(startExe)); err != nil {
 			log.Printf("mygo: registering the desktop entry of the update: %v", err)
 		}
 	case "windows":
-		// The installer registered the version it installed in Settings > Apps.
 		info, _ := packageInfo()
 		if err := update.RefreshUninstallEntry(target, info.Identifier, up.Version); err != nil {
 			log.Printf("mygo: registering the version of the update in Settings > Apps: %v", err)
@@ -246,15 +456,17 @@ func (up *Update) Install(ctx context.Context, progress func(downloaded, total i
 	return nil
 }
 
-// installTarget returns what an update replaces: the app bundle on macOS,
-// the directory of the executable elsewhere.
+func bundleFromExe(exe string) string {
+	return filepath.Dir(filepath.Dir(filepath.Dir(exe)))
+}
+
 func installTarget() (string, error) {
 	exe := startExe
 	if real, err := filepath.EvalSymlinks(exe); err == nil {
 		exe = real
 	}
 	if runtime.GOOS == "darwin" {
-		bundle := filepath.Dir(filepath.Dir(filepath.Dir(exe)))
+		bundle := bundleFromExe(exe)
 		if !strings.HasSuffix(bundle, ".app") {
 			return "", errors.New("mygo: only app bundles can update themselves")
 		}
@@ -266,15 +478,12 @@ func installTarget() (string, error) {
 	return filepath.Dir(exe), nil
 }
 
-// installUpdate installs the version of m in place of target, the app of
-// version current: from its delta for current when there is one, else, or
-// when the delta fails, from its archive, both downloaded with get.
-func installUpdate(ctx context.Context, get update.Getter, m update.Manifest, key, current, target string, progress func(downloaded, total int64)) error {
-	pub, err := update.ParsePublicKey(key)
-	if err != nil {
-		return err
+type mirrorOpener func(ctx context.Context, url string, offset int64) (io.ReadCloser, bool, error)
+
+func installUpdate(ctx context.Context, open mirrorOpener, m update.Manifest, ring update.Keyring, current, target string, progress func(downloaded, total int64)) error {
+	if len(ring) == 0 {
+		return errors.New("no trusted update keys")
 	}
-	// Next to the app, so that it can be renamed into place.
 	work, err := os.MkdirTemp(filepath.Dir(target), workPattern(target))
 	if err != nil {
 		return fmt.Errorf("cannot write next to the app: %w", err)
@@ -296,7 +505,7 @@ func installUpdate(ctx context.Context, get update.Getter, m update.Manifest, ke
 	}
 
 	if d := m.Delta(current); d != nil {
-		err := applyDelta(ctx, get, *d, pub, m.Version, target, work, unpacked, progress)
+		err := applyDelta(ctx, open, m, *d, ring, target, work, unpacked, progress)
 		if err == nil {
 			return swap(unpacked, target)
 		}
@@ -309,14 +518,12 @@ func installUpdate(ctx context.Context, get update.Getter, m update.Manifest, ke
 		}
 	}
 
-	if m.Size <= 0 || m.Size > update.MaxArchiveSize {
-		return fmt.Errorf("invalid size %d", m.Size)
-	}
-	archive := filepath.Join(work, "update.tar.gz")
-	if err := download(ctx, get, m.URL, m.Size, m.Signature, pub, archive, progress); err != nil {
+	archivePath := filepath.Join(work, "update.archive")
+	urls := m.Artifact.CandidateURLs(m.Mirrors, m.Version)
+	if err := downloadMirrors(ctx, open, urls, m.Artifact.Size, m.Artifact.SHA256, m.Artifact.Signature, ring, m.Target, archivePath, progress); err != nil {
 		return err
 	}
-	f, err := os.Open(archive)
+	f, err := os.Open(archivePath)
 	if err != nil {
 		return err
 	}
@@ -328,10 +535,6 @@ func installUpdate(ctx context.Context, get update.Getter, m update.Manifest, ke
 	return swap(unpacked, target)
 }
 
-// workPattern returns the pattern of the directory an update of the app
-// at target is unpacked in, next to it: named after the app, or after no
-// name where target is the root of a drive or share, as D:\ (#1529),
-// whose base name is a separator, which os.MkdirTemp rejects.
 func workPattern(target string) string {
 	name := filepath.Base(target)
 	if name == "." || strings.ContainsFunc(name, func(r rune) bool { return r < 0x80 && os.IsPathSeparator(uint8(r)) }) {
@@ -340,15 +543,10 @@ func workPattern(target string) string {
 	return "." + name + ".update-"
 }
 
-// applyDelta downloads the delta d into work and makes the new version of
-// the app at target from it, in dir: its bundle on macOS, in dir too, as
-// the bundle of an archive is.
-func applyDelta(ctx context.Context, get update.Getter, d update.Delta, pub ed25519.PublicKey, version, target, work, dir string, progress func(downloaded, total int64)) error {
-	if d.Size <= 0 || d.Size > update.MaxArchiveSize {
-		return fmt.Errorf("invalid size %d", d.Size)
-	}
+func applyDelta(ctx context.Context, open mirrorOpener, m update.Manifest, d update.Delta, ring update.Keyring, target, work, dir string, progress func(downloaded, total int64)) error {
 	path := filepath.Join(work, "update.delta")
-	if err := download(ctx, get, d.URL, d.Size, d.Signature, pub, path, progress); err != nil {
+	urls := d.CandidateURLs(m.Mirrors, m.Version)
+	if err := downloadMirrors(ctx, open, urls, d.Size, d.SHA256, d.Signature, ring, m.Target, path, progress); err != nil {
 		return err
 	}
 	f, err := os.Open(path)
@@ -362,56 +560,229 @@ func applyDelta(ctx context.Context, get update.Getter, d update.Delta, pub ed25
 		}
 		dir = filepath.Join(dir, filepath.Base(target))
 	}
-	return update.ApplyDelta(f, d.Size, d.From, version, target, dir)
+	return update.ApplyDelta(f, d.Size, d.From, m.Version, target, dir)
 }
 
-// download fetches url with get into the file path and checks its size and
-// signature.
-func download(ctx context.Context, get update.Getter, url string, size int64, signature string, pub ed25519.PublicKey, path string, progress func(downloaded, total int64)) error {
-	body, err := get(ctx, url)
-	if err != nil {
-		return err
+func updateCacheDir() string {
+	if base, err := App.Path(PathCache); err == nil && base != "" {
+		dir := filepath.Join(base, "updates")
+		if os.MkdirAll(dir, 0o755) == nil {
+			return dir
+		}
 	}
-	defer body.Close()
-	f, err := os.Create(path)
-	if err != nil {
-		return err
+	dir := filepath.Join(os.TempDir(), "mygo-updates")
+	_ = os.MkdirAll(dir, 0o755)
+	return dir
+}
+
+// downloadMirrors downloads from urls into a resumable .part cache file under
+// PathCache/updates, rotating across mirrors and resuming via HTTP Range on
+// transient stream failures, then verifies exact size and SHA-256 (and optional
+// standalone artifact signature) before placing the verified file at dstPath.
+func downloadMirrors(
+	ctx context.Context,
+	open mirrorOpener,
+	urls []string,
+	size int64,
+	wantSHA256, wantSig string,
+	ring update.Keyring,
+	target, dstPath string,
+	progress func(downloaded, total int64),
+) error {
+	if len(urls) == 0 {
+		return errors.New("no download URLs")
 	}
+	if size <= 0 || size > update.MaxArchiveSize {
+		return fmt.Errorf("invalid size %d", size)
+	}
+	if !update.ValidSHA256(wantSHA256) {
+		return errors.New("invalid expected sha256")
+	}
+	if target == "" {
+		target = "app"
+	}
+	partPath := filepath.Join(updateCacheDir(), fmt.Sprintf("%s-%s.part", target, wantSHA256[:min(16, len(wantSHA256))]))
+
+	verifyPart := func() error {
+		sum, err := verifyFileDigest(partPath, size, wantSHA256, wantSig, ring)
+		if err != nil {
+			return err
+		}
+		_ = sum
+		if err := moveVerifiedFile(partPath, dstPath); err != nil {
+			return err
+		}
+		if progress != nil {
+			progress(size, size)
+		}
+		return nil
+	}
+
+	// Already completely downloaded from an earlier run?
+	if info, err := os.Stat(partPath); err == nil && info.Size() == size {
+		if err := verifyPart(); err == nil {
+			return nil
+		}
+		_ = os.Remove(partPath)
+	} else if err == nil && info.Size() > size {
+		_ = os.Remove(partPath)
+	}
+
+	maxAttempts := max(len(urls)*2, 3)
+	var lastErr error
+	resetMismatch := false
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		if attempt > 0 {
+			wait := time.Duration(min(attempt, 3)) * 500 * time.Millisecond
+			if mirrorRetryWait != nil {
+				if !mirrorRetryWait(ctx, wait) {
+					return ctx.Err()
+				}
+			}
+		}
+		u := urls[attempt%len(urls)]
+		offset := int64(0)
+		if info, err := os.Stat(partPath); err == nil && info.Size() > 0 && info.Size() < size {
+			offset = info.Size()
+		}
+
+		body, partial, err := open(ctx, u, offset)
+		if err != nil {
+			lastErr = err
+			if ctx.Err() != nil || errors.Is(err, errRedirect) {
+				return err
+			}
+			continue
+		}
+
+		flag := os.O_CREATE | os.O_WRONLY | os.O_TRUNC
+		startOffset := int64(0)
+		if offset > 0 && partial {
+			flag = os.O_WRONLY | os.O_APPEND
+			startOffset = offset
+		}
+		f, err := os.OpenFile(partPath, flag, 0o644)
+		if err != nil {
+			body.Close()
+			return err
+		}
+		pr := &progressReader{r: io.LimitReader(body, size-startOffset+1), base: startOffset, total: size, fn: progress}
+		n, copyErr := io.Copy(f, pr)
+		closeErr := f.Close()
+		body.Close()
+		if copyErr == nil {
+			copyErr = closeErr
+		}
+		if copyErr != nil {
+			lastErr = fmt.Errorf("downloading: %w", copyErr)
+			if ctx.Err() != nil {
+				return lastErr
+			}
+			continue
+		}
+		totalGot := startOffset + n
+		if totalGot != size {
+			if totalGot < size {
+				// Partial body written; resume from totalGot on next mirror.
+				lastErr = fmt.Errorf("downloaded %d bytes, want %d", totalGot, size)
+				continue
+			}
+			_ = os.Remove(partPath)
+			lastErr = fmt.Errorf("downloaded %d bytes, want %d", totalGot, size)
+			continue
+		}
+		if err := verifyPart(); err != nil {
+			_ = os.Remove(partPath)
+			lastErr = err
+			if !resetMismatch && attempt+1 < maxAttempts {
+				resetMismatch = true
+				continue
+			}
+			return err
+		}
+		return nil
+	}
+	if lastErr == nil {
+		lastErr = errors.New("download failed")
+	}
+	return lastErr
+}
+
+var mirrorRetryWait = func(ctx context.Context, d time.Duration) bool {
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-t.C:
+		return true
+	}
+}
+
+func verifyFileDigest(path string, wantSize int64, wantSHA256, wantSig string, ring update.Keyring) ([]byte, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
 	sum := sha256.New()
-	n, err := io.Copy(io.MultiWriter(f, sum), &progressReader{r: io.LimitReader(body, size+1), total: size, fn: progress})
-	if cerr := f.Close(); err == nil {
-		err = cerr
-	}
+	n, err := io.Copy(sum, f)
 	if err != nil {
-		return fmt.Errorf("downloading: %w", err)
+		return nil, err
 	}
-	if n != size {
-		return fmt.Errorf("downloaded %d bytes, want %d", n, size)
+	if n != wantSize {
+		return nil, fmt.Errorf("downloaded %d bytes, want %d", n, wantSize)
 	}
-	return update.Verify(pub, sum.Sum(nil), signature)
+	digest := sum.Sum(nil)
+	if !strings.EqualFold(hex.EncodeToString(digest), wantSHA256) {
+		return nil, errors.New("update checksum mismatch")
+	}
+	if wantSig != "" {
+		if err := update.VerifyArtifactAny(ring, digest, wantSig); err != nil {
+			return nil, err
+		}
+	}
+	return digest, nil
 }
 
-// stagedUpdate is a new version of the app bundle target, at bundle in
-// work, a directory next to target that the update was made in, and the
-// helper process that installs it once the app has exited.
+func moveVerifiedFile(src, dst string) error {
+	if err := os.Rename(src, dst); err == nil {
+		return nil
+	}
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+	if err != nil {
+		in.Close()
+		return err
+	}
+	_, copyErr := io.Copy(out, in)
+	closeIn := in.Close()
+	closeOut := out.Close()
+	if copyErr != nil {
+		_ = os.Remove(dst)
+		return copyErr
+	}
+	if closeOut != nil {
+		_ = os.Remove(dst)
+		return closeOut
+	}
+	_ = closeIn
+	_ = os.Remove(src)
+	return nil
+}
+
 type stagedUpdate struct {
 	work, bundle, target string
 	helper               *exec.Cmd
 }
 
-// pendingUpdate is the update that Install staged on macOS. It replaces the
-// app's bundle once the app has exited, however it exits: replacing it
-// while the app runs moved the bundle of the running app away, the Dock's
-// tile of the app followed it, and the new version, opened where the app
-// was, got a second tile.
 var pendingUpdate atomic.Pointer[stagedUpdate]
 
-// appPid is the process whose exit a staged update waits for: the app's,
-// which tests replace.
 var appPid = os.Getpid()
 
-// stageBundle leaves the bundle that dir holds to replace target once the
-// app has exited, in place of an update staged before.
 func stageBundle(work, dir, target string) error {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -433,14 +804,6 @@ func stageBundle(work, dir, target string) error {
 	return nil
 }
 
-// installAfterExit is the script of /bin/sh that installs a staged update:
-// with the pid of the app, the target, bundle and work of the update, it
-// waits for the app to exit, swaps the bundles, putting the old one back
-// if the new one cannot be moved in, and opens the app again when Relaunch
-// asked for it (relaunchUpdated), with the arguments of open that
-// work/relaunch sets: Relaunch's arguments are known only then. Through
-// Launch Services, as openBundle, but without -n: the app has exited, and
-// the Dock gives the new version the app's tile.
 const installAfterExit = `pid=$1 target=$2 new=$3 work=$4
 trap '' HUP
 while kill -0 "$pid" 2>/dev/null; do sleep 0.05; done
@@ -453,15 +816,11 @@ rm -rf "$work"
 if [ -n "$relaunch" ]; then exec /usr/bin/open "$@"; fi
 `
 
-// relaunchUpdated asks the helper of a staged update to open the app once
-// it has installed the update, with args, reporting whether there is one.
 func relaunchUpdated(args []string) bool {
 	p := pendingUpdate.Load()
 	return p != nil && os.WriteFile(filepath.Join(p.work, "relaunch"), []byte(setArgs(openArgs(p.target, args))), 0o644) == nil
 }
 
-// openArgs returns the arguments of /usr/bin/open that open the app bundle
-// with the arguments args.
 func openArgs(bundle string, args []string) []string {
 	if len(args) == 0 {
 		return []string{bundle}
@@ -469,8 +828,6 @@ func openArgs(bundle string, args []string) []string {
 	return append([]string{bundle, "--args"}, args...)
 }
 
-// setArgs returns the command of /bin/sh that makes args its positional
-// parameters.
 func setArgs(args []string) string {
 	var b strings.Builder
 	b.WriteString("set --")
@@ -483,16 +840,6 @@ func setArgs(args []string) string {
 	return b.String()
 }
 
-// swapFiles replaces the entries of the app directory target with those in
-// dir, and removes those that the version it replaces installed and dir
-// lacks, which target's update.FileList names. Entries that no list names
-// stay, as the data of a portable copy, and so do all the entries of an
-// app installed before versions had a list: they cannot be told from the
-// user's. Replaced and removed entries are renamed aside, and deleted once
-// every entry of dir is in place; if one cannot be, dir's go back and the
-// others are put back. The running executable is renamed away, which
-// Windows allows, and removed at the next launch (cleanUpdateLeftovers).
-// dir gets the list of its entries, which moves into target with them.
 func swapFiles(dir, target string) error {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -510,7 +857,7 @@ func swapFiles(dir, target string) error {
 		return errors.New("the update is empty")
 	}
 	suffix := ".old-" + strconv.Itoa(os.Getpid())
-	var moved, placed [][2]string // renamed: old name, new name
+	var moved, placed [][2]string
 	undo := func() {
 		for i := len(placed) - 1; i >= 0; i-- {
 			if rename(placed[i][1], placed[i][0]) != nil {
@@ -530,13 +877,6 @@ func swapFiles(dir, target string) error {
 		return nil
 	}
 
-	// The entries that the replaced version installed and dir lacks go
-	// first, so that one that dir has under another case, which is the same
-	// entry on Windows and macOS, is moved aside before dir's takes its
-	// place. The executable the app runs from stays, whatever the new
-	// version calls its own: shortcuts, the desktop entry and Relaunch start
-	// it. One that cannot be moved stays listed, for the next update to
-	// remove.
 	running := runningEntry(target)
 	var left []string
 	for _, name := range installedEntries(target) {
@@ -577,9 +917,6 @@ func swapFiles(dir, target string) error {
 	return nil
 }
 
-// installedEntries returns the entries of the app directory target that
-// its version installed, which its update.FileList names: none without
-// one.
 func installedEntries(target string) []string {
 	b, err := readAppFile(filepath.Join(target, update.FileList))
 	if err != nil {
@@ -591,8 +928,6 @@ func installedEntries(target string) []string {
 	return update.ParseFileList(b)
 }
 
-// runningEntry returns the entry of the app directory target that the app
-// runs from, or "" when it runs from elsewhere.
 func runningEntry(target string) string {
 	if startExe == "" {
 		return ""
@@ -610,7 +945,6 @@ func runningEntry(target string) string {
 	return filepath.Base(exe)
 }
 
-// relaunchNow starts the app again; it runs after the quit sequence.
 func relaunchNow() {
 	args := relaunchArguments()
 	if launchedByDev() {
@@ -619,12 +953,9 @@ func relaunchNow() {
 	if runtime.GOOS == "darwin" && (relaunchUpdated(args) || openBundle(args)) {
 		return
 	}
-	// The executable the app started from, which an update may have
-	// replaced.
 	cmd := exec.Command(startExe, args...)
 	cmd.Dir = startDir
 	if runtime.GOOS != "windows" {
-		// GUI executables on Windows have no standard streams to pass on.
 		cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
 	}
 	if cmd.Start() == nil {
@@ -632,9 +963,6 @@ func relaunchNow() {
 	}
 }
 
-// devRelaunch exits for `mygo dev` to start the build again, with args
-// unless they are nil, which it reads from the file that
-// MYGO_DEV_RELAUNCH names.
 func devRelaunch(args []string) {
 	if args != nil {
 		if devRelaunchFile == "" {
@@ -646,8 +974,6 @@ func devRelaunch(args []string) {
 	os.Exit(devRelaunchCode)
 }
 
-// devRelaunchData is what devRelaunch writes: each argument, ended with
-// a NUL byte, which no argument holds.
 func devRelaunchData(args []string) []byte {
 	var b []byte
 	for _, a := range args {
@@ -656,45 +982,69 @@ func devRelaunchData(args []string) []byte {
 	return b
 }
 
-// openBundle starts the app bundle again through Launch Services, as the
-// Dock does, with args, reporting whether it did. A child of this process would stay
-// in this instance's coalition, which has no app once this instance exits:
-// when an app that the new instance started quits, as one a terminal's
-// shell ran, loginwindow takes the coalition's other processes for that
-// app's and ends them with SIGTERM.
 func openBundle(args []string) bool {
 	bundle, err := installTarget()
 	if err != nil {
 		return false
 	}
-	// -n: this instance still runs, and would only be brought forward.
 	return exec.Command("/usr/bin/open", append([]string{"-n"}, openArgs(bundle, args)...)...).Run() == nil
 }
 
-// cleanUpdateLeftovers removes what an update could not remove while the
-// previous version ran (Windows keeps running executables).
+// cleanUpdateLeftovers removes stale .update-* staging folders (on all OSes),
+// Windows/Linux .old-* leftovers, and expired .part downloads.
 func cleanUpdateLeftovers() {
-	if runtime.GOOS == "darwin" || startExe == "" {
-		return
+	now := time.Now()
+	if runtime.GOOS != "darwin" && startExe != "" {
+		olds, _ := filepath.Glob(filepath.Join(filepath.Dir(startExe), ".*.old-*"))
+		for _, p := range olds {
+			_ = os.RemoveAll(p)
+		}
 	}
-	olds, _ := filepath.Glob(filepath.Join(filepath.Dir(startExe), ".*.old-*"))
-	for _, p := range olds {
-		_ = os.RemoveAll(p)
+	if target, err := installTarget(); err == nil {
+		if stages, err := filepath.Glob(filepath.Join(filepath.Dir(target), workPattern(target)+"*")); err == nil {
+			for _, p := range stages {
+				if info, err := os.Stat(p); err == nil && now.Sub(info.ModTime()) > 5*time.Minute {
+					_ = os.RemoveAll(p)
+				}
+			}
+		}
+	}
+	if cacheBase, err := App.Path(PathCache); err == nil && cacheBase != "" {
+		parts, _ := filepath.Glob(filepath.Join(cacheBase, "updates", "*.part"))
+		for _, p := range parts {
+			if info, err := os.Stat(p); err == nil && now.Sub(info.ModTime()) > 7*24*time.Hour {
+				_ = os.Remove(p)
+			}
+		}
 	}
 }
 
-// httpGet fetches a URL over HTTPS (or plain HTTP from the loopback
-// interface, for tests), through the system's proxy (package netproxy).
-// A failure that a moment may mend, as a gateway timing out in front of
-// the store of a release's assets, is tried again (httpRetries).
-//
-// The deadlines of the request are these: the headers must arrive within
-// httpHeaderTimeout, and a body that sends nothing for httpStallTimeout is
-// given up. Without them a connection that the network dropped without a
-// reset holds the caller until the socket times out, which keepalive may
-// never do, and a check in the background has no window to cancel it from
-// and keeps the updater from scheduling the next one.
-func httpGet(ctx context.Context, rawURL string) (io.ReadCloser, error) {
+var currentOSVersion = sync.OnceValue(func() string {
+	if runtime.GOOS != "darwin" {
+		return ""
+	}
+	b, err := os.ReadFile("/System/Library/CoreServices/SystemVersion.plist")
+	if err != nil {
+		return ""
+	}
+	s := string(b)
+	const key = "<key>ProductVersion</key>"
+	_, rest, ok := strings.Cut(s, key)
+	if !ok {
+		return ""
+	}
+	_, rest, ok = strings.Cut(rest, "<string>")
+	if !ok {
+		return ""
+	}
+	ver, _, ok := strings.Cut(rest, "</string>")
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(ver)
+})
+
+func parseHTTPSURL(rawURL string) (*url.URL, error) {
 	u, err := url.Parse(rawURL)
 	if err != nil {
 		return nil, err
@@ -702,21 +1052,76 @@ func httpGet(ctx context.Context, rawURL string) (io.ReadCloser, error) {
 	if u.Scheme != "https" && !(u.Scheme == "http" && isLoopback(u.Hostname())) {
 		return nil, fmt.Errorf("refusing to download %s: updates need HTTPS", rawURL)
 	}
+	return u, nil
+}
+
+func httpGetPlain(ctx context.Context, rawURL string) (io.ReadCloser, error) {
+	body, _, err := httpGetRange(ctx, rawURL, 0)
+	return body, err
+}
+
+func httpGet(ctx context.Context, rawURL string) (io.ReadCloser, error) {
+	return httpGetPlain(ctx, rawURL)
+}
+
+func httpGetRange(ctx context.Context, rawURL string, offset int64) (io.ReadCloser, bool, error) {
+	if _, err := parseHTTPSURL(rawURL); err != nil {
+		return nil, false, err
+	}
+	var headers http.Header
+	if offset > 0 {
+		headers = http.Header{"Range": {"bytes=" + strconv.FormatInt(offset, 10) + "-"}}
+	}
+	resp, err := httpDoWithRetries(ctx, rawURL, headers)
+	if err != nil {
+		return nil, false, err
+	}
+	switch resp.StatusCode {
+	case http.StatusOK:
+		return resp.Body, false, nil
+	case http.StatusPartialContent:
+		if offset > 0 && validContentRangeStart(resp.Header.Get("Content-Range"), offset) {
+			return resp.Body, true, nil
+		}
+		resp.Body.Close()
+		return nil, false, fmt.Errorf("GET %s: unexpected Content-Range %q", rawURL, resp.Header.Get("Content-Range"))
+	default:
+		resp.Body.Close()
+		return nil, false, fmt.Errorf("GET %s: %s", rawURL, resp.Status)
+	}
+}
+
+func validContentRangeStart(header string, offset int64) bool {
+	rest, ok := strings.CutPrefix(strings.TrimSpace(header), "bytes ")
+	if !ok {
+		return false
+	}
+	startStr, _, ok := strings.Cut(rest, "-")
+	if !ok {
+		return false
+	}
+	start, err := strconv.ParseInt(strings.TrimSpace(startStr), 10, 64)
+	return err == nil && start == offset
+}
+
+func httpDoWithRetries(ctx context.Context, rawURL string, headers http.Header) (*http.Response, error) {
+	if _, err := parseHTTPSURL(rawURL); err != nil {
+		return nil, err
+	}
 	client := httpClient()
 	for try := 0; ; try++ {
-		// Canceled when the body closes, or when nothing arrives: the one
-		// cancels the request of a body that stopped, the other ends a
-		// request whose response was refused.
 		reqCtx, cancel := context.WithCancel(ctx)
 		req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, rawURL, nil)
 		if err != nil {
 			cancel()
 			return nil, err
 		}
-		// Not the app's name: GitHub's release assets come from a store that
-		// answers 400 to a User-Agent with bytes outside ASCII, as 云音乐, for
-		// every file its CDN has not cached yet.
 		req.Header.Set("User-Agent", "mygo-updater")
+		for k, vals := range headers {
+			for _, v := range vals {
+				req.Header.Add(k, v)
+			}
+		}
 		resp, err := client.Do(req)
 		var wait time.Duration
 		switch {
@@ -725,13 +1130,17 @@ func httpGet(ctx context.Context, rawURL string) (io.ReadCloser, error) {
 			if ctx.Err() != nil || try >= len(httpRetries) || errors.Is(err, errRedirect) {
 				return nil, err
 			}
-		case resp.StatusCode == http.StatusOK:
-			return newStalledBody(resp.Body, cancel), nil
+		case resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusPartialContent:
+			resp.Body = newStalledBody(resp.Body, cancel)
+			return resp, nil
+		case resp.StatusCode == http.StatusNotModified:
+			cancel()
+			return resp, nil
 		default:
 			resp.Body.Close()
 			cancel()
 			if !transientStatus(resp.StatusCode) || try >= len(httpRetries) {
-				return nil, fmt.Errorf("GET %s: %s", rawURL, resp.Status)
+				return resp, fmt.Errorf("GET %s: %s", rawURL, resp.Status)
 			}
 			wait = retryAfter(resp.Header.Get("Retry-After"))
 		}
@@ -744,20 +1153,9 @@ func httpGet(ctx context.Context, rawURL string) (io.ReadCloser, error) {
 	}
 }
 
-// httpHeaderTimeout is how long the headers of a response may take to
-// arrive: the client has no deadline above the socket. Five minutes of a
-// check in the background would be five minutes without the next check.
 var httpHeaderTimeout = 30 * time.Second
-
-// httpStallTimeout is how long a body may send nothing before the download
-// is given up. A slow download is fine, however long it takes; one that
-// stopped is not, and its reads never return.
 var httpStallTimeout = time.Minute
 
-// httpClient is the client of the updater's requests: the transport of
-// package netproxy, so that the system's proxy settings apply, with the
-// deadline for the headers that it leaves to its callers. A test that needs
-// another deadline changes the transport for its run.
 var updateHTTPClient struct {
 	once   sync.Once
 	client *http.Client
@@ -774,11 +1172,6 @@ func newHTTPClient() *http.Client {
 	return &http.Client{Transport: transport, CheckRedirect: checkRedirect}
 }
 
-// checkRedirect follows a redirect of an update's request only to HTTPS,
-// as httpGet asks of the address it starts from: a feed or an archive
-// served over HTTPS that redirects to plain HTTP would otherwise be read
-// from anyone on the way. A test's server on the loopback may redirect over
-// HTTP, as it may serve over it.
 func checkRedirect(req *http.Request, via []*http.Request) error {
 	if len(via) >= 10 {
 		return fmt.Errorf("%w: stopped after 10", errRedirect)
@@ -789,21 +1182,12 @@ func checkRedirect(req *http.Request, via []*http.Request) error {
 	return nil
 }
 
-// errRedirect is the error of a redirect checkRedirect refuses, which
-// httpGet does not try again: the server would only redirect again.
 var errRedirect = errors.New("refusing the redirect")
 
-// stalledBody cancels the request of a body that stops arriving, and says
-// so instead of the canceled request it would otherwise be read as.
 type stalledBody struct {
-	body   io.ReadCloser
-	cancel context.CancelFunc
-	// d is the timeout it was made with, which the watch reads in its own
-	// goroutine: reading the setting there would race with a test's change.
-	d time.Duration
-	// last is when the last byte arrived, in Unix nanoseconds; stalled is
-	// set once cancel was called, so that the error can say why; done ends
-	// the watch when the body closes.
+	body    io.ReadCloser
+	cancel  context.CancelFunc
+	d       time.Duration
 	last    atomic.Int64
 	stalled atomic.Bool
 	done    atomic.Bool
@@ -813,16 +1197,12 @@ type stalledBody struct {
 func newStalledBody(body io.ReadCloser, cancel context.CancelFunc) *stalledBody {
 	b := &stalledBody{body: body, cancel: cancel, d: httpStallTimeout}
 	b.last.Store(time.Now().UnixNano())
-	// Publish the timer before its callback can read it to rearm it.
 	b.timer = time.AfterFunc(1<<63-1, b.check)
 	b.timer.Stop()
 	b.timer.Reset(b.d / 4)
 	return b
 }
 
-// check cancels the request when nothing arrived for its timeout, and looks
-// again a quarter of that later otherwise: often enough to stop a download
-// soon after it stops, rarely enough to cost nothing while it runs.
 func (b *stalledBody) check() {
 	if b.done.Load() {
 		return
@@ -853,13 +1233,8 @@ func (b *stalledBody) Close() error {
 	return b.body.Close()
 }
 
-// httpRetries are how long httpGet waits before each try after the first
-// of a request that failed for a while: three tries in all.
 var httpRetries = []time.Duration{time.Second, 3 * time.Second}
 
-// transientStatus reports whether a response of status code may succeed
-// when asked again: too many requests, or a server or gateway failing for
-// now.
 func transientStatus(code int) bool {
 	switch code {
 	case http.StatusTooManyRequests, http.StatusInternalServerError, http.StatusBadGateway,
@@ -869,8 +1244,6 @@ func transientStatus(code int) bool {
 	return false
 }
 
-// retryAfter is the wait of a Retry-After header in seconds, up to 30
-// seconds; 0 for none, or for a date.
 func retryAfter(h string) time.Duration {
 	n, err := strconv.Atoi(strings.TrimSpace(h))
 	if err != nil || n <= 0 {
@@ -887,10 +1260,10 @@ func isLoopback(host string) bool {
 	return ip != nil && ip.IsLoopback()
 }
 
-// progressReader reports how much of a download was read.
 type progressReader struct {
 	r     io.Reader
 	n     int64
+	base  int64
 	total int64
 	fn    func(downloaded, total int64)
 	last  time.Time
@@ -899,9 +1272,10 @@ type progressReader struct {
 func (p *progressReader) Read(b []byte) (int, error) {
 	n, err := p.r.Read(b)
 	p.n += int64(n)
-	if p.fn != nil && (err != nil || p.n == p.total || time.Since(p.last) > 100*time.Millisecond) {
+	cur := p.base + p.n
+	if p.fn != nil && (err != nil || cur >= p.total || time.Since(p.last) > 100*time.Millisecond) {
 		p.last = time.Now()
-		p.fn(p.n, p.total)
+		p.fn(min(cur, p.total), p.total)
 	}
 	return n, err
 }
