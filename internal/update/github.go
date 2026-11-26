@@ -11,20 +11,16 @@ import (
 	"strings"
 )
 
-// Updates published as GitHub releases in a repository whose latest
-// release may be another's, such as a CLI's beside the app, have a feed
-// that names the manifest in the release of a version,
-//
-//	https://github.com/<owner>/<repo>/releases/download/<prefix>{version}/update-<target>.json
-//
-// and ResolveFeed finds the newest release tagged <prefix> through the
-// GitHub API. Other feeds are the URL of the manifest.
-
-// VersionPlaceholder stands for the version in the feed of tagged releases.
+// VersionPlaceholder stands for the version in tagged GitHub feeds or mirror URLs.
 const VersionPlaceholder = "{version}"
 
-// ErrNotPublished is returned by ResolveFeed when no release is tagged
-// with the prefix of the feed.
+// ChannelPlaceholder stands for the update channel in manifest feed URLs.
+const ChannelPlaceholder = "{channel}"
+
+// TargetPlaceholder stands for the target platform in manifest feed URLs.
+const TargetPlaceholder = "{target}"
+
+// ErrNotPublished is returned when no release is published for a feed or channel.
 var ErrNotPublished = errors.New("no release is published")
 
 // Getter gets a URL and returns the body of a successful response.
@@ -33,8 +29,6 @@ type Getter func(ctx context.Context, url string) (io.ReadCloser, error)
 // GitHubAPI is the GitHub REST API, which tests replace.
 var GitHubAPI = "https://api.github.com"
 
-// Pages of releases that ResolveFeed and ResolvePrereleaseFeed read at
-// most, of releasesPerPage.
 const (
 	releasesPerPage = 100
 	maxReleasePages = 10
@@ -46,10 +40,37 @@ func TaggedFeed(repo, prefix, name string) string {
 	return "https://github.com/" + repo + "/releases/download/" + url.PathEscape(prefix) + VersionPlaceholder + "/" + url.PathEscape(name)
 }
 
+// ResolveChannelFeed resolves feed for target and channel:
+//   - Direct .json URLs or custom URL templates ({channel}, {target}) expand inline.
+//   - GitHub feeds select prereleases when channel == BetaChannel.
+//   - Base HTTP/HTTPS directory feeds resolve to <feed>/<channel>/update-<target>.json.
+func ResolveChannelFeed(ctx context.Context, feed, target, channel string, get Getter) (string, error) {
+	if channel == "" {
+		channel = DefaultChannel
+	}
+	if strings.Contains(feed, ChannelPlaceholder) || strings.Contains(feed, TargetPlaceholder) {
+		r := strings.NewReplacer(
+			ChannelPlaceholder, url.PathEscape(channel),
+			TargetPlaceholder, url.PathEscape(target),
+		)
+		return r.Replace(feed), nil
+	}
+	if _, _, _, isGH := parseGitHubFeed(feed); isGH || strings.Contains(feed, VersionPlaceholder) {
+		if channel == BetaChannel {
+			return ResolvePrereleaseFeed(ctx, feed, get)
+		}
+		return ResolveFeed(ctx, feed, get)
+	}
+	trimmed := strings.TrimSuffix(feed, "/")
+	if strings.HasSuffix(trimmed, ".json") {
+		return trimmed, nil
+	}
+	return trimmed + "/" + url.PathEscape(channel) + "/" + ManifestName(target), nil
+}
+
 // ResolveFeed returns the URL of the manifest that feed names: feed itself,
-// or for a feed of tagged releases (TaggedFeed) the manifest of the newest
-// release with the tag's prefix that is neither a draft nor a prerelease,
-// as the GitHub API lists them, newest first.
+// or for a feed of tagged GitHub releases (TaggedFeed) the manifest of the
+// newest release with the tag's prefix that is neither a draft nor a prerelease.
 func ResolveFeed(ctx context.Context, feed string, get Getter) (string, error) {
 	if !strings.Contains(feed, VersionPlaceholder) {
 		return feed, nil
@@ -65,8 +86,6 @@ func ResolveFeed(ctx context.Context, feed string, get Getter) (string, error) {
 	return strings.Replace(feed, "/"+url.PathEscape(prefix)+VersionPlaceholder+"/", "/"+url.PathEscape(tag)+"/", 1), nil
 }
 
-// parseTaggedFeed returns the repository and the tag prefix of a feed of
-// tagged releases.
 func parseTaggedFeed(feed string) (repo, prefix string, err error) {
 	rest, ok := strings.CutPrefix(feed, "https://github.com/")
 	parts := strings.SplitN(rest, "/", 6)
@@ -80,8 +99,6 @@ func parseTaggedFeed(feed string) (repo, prefix string, err error) {
 	return parts[0] + "/" + parts[1], prefix, nil
 }
 
-// latestTagged returns the tag of the newest release of repo tagged
-// prefix that is neither a draft nor a prerelease.
 func latestTagged(ctx context.Context, get Getter, repo, prefix string) (string, error) {
 	for page := 1; page <= maxReleasePages; page++ {
 		u := GitHubAPI + "/repos/" + repo + "/releases?per_page=" + strconv.Itoa(releasesPerPage) + "&page=" + strconv.Itoa(page)
@@ -101,13 +118,7 @@ func latestTagged(ctx context.Context, get Getter, repo, prefix string) (string,
 	return "", fmt.Errorf("%w in %s tagged %s", ErrNotPublished, repo, prefix)
 }
 
-// ResolvePrereleaseFeed is ResolveFeed for apps that take prereleases
-// too. For a feed of GitHub releases, of the latest release or tagged
-// (TaggedFeed), it returns the manifest of the release with the highest
-// version (Compare) that is not a draft, a prerelease or not, among the
-// releases tagged with the feed's prefix: "v" for the feed of the latest
-// release, mygo build's default tagPrefix. Other feeds are the URL of the
-// manifest, as with ResolveFeed.
+// ResolvePrereleaseFeed is ResolveFeed for apps that take prereleases too.
 func ResolvePrereleaseFeed(ctx context.Context, feed string, get Getter) (string, error) {
 	repo, prefix, name, ok := parseGitHubFeed(feed)
 	if !ok {
@@ -123,8 +134,6 @@ func ResolvePrereleaseFeed(ctx context.Context, feed string, get Getter) (string
 	return "https://github.com/" + repo + "/releases/download/" + url.PathEscape(tag) + "/" + url.PathEscape(name), nil
 }
 
-// parseGitHubFeed returns the repository, the tag prefix and the manifest
-// name of a feed of GitHub releases, tagged or of the latest release.
 func parseGitHubFeed(feed string) (repo, prefix, name string, ok bool) {
 	rest, ok := strings.CutPrefix(feed, "https://github.com/")
 	parts := strings.SplitN(rest, "/", 6)
@@ -148,12 +157,6 @@ func parseGitHubFeed(feed string) (repo, prefix, name string, ok bool) {
 	return parts[0] + "/" + parts[1], prefix, name, true
 }
 
-// highestTagged returns the tag of the release of repo tagged prefix and
-// the highest version that is not a draft. It reads the pages of releases,
-// newest first, up to the one that holds the newest release that is not a
-// prerelease, the one latestTagged finds: releases listed after it are
-// taken as not newer, so that a repository of many releases still costs
-// one request a check.
 func highestTagged(ctx context.Context, get Getter, repo, prefix string) (string, error) {
 	var best, bestVersion string
 	for page := 1; page <= maxReleasePages; page++ {
@@ -196,7 +199,6 @@ func getReleases(ctx context.Context, get Getter, u string) ([]release, error) {
 	}
 	defer body.Close()
 	var releases []release
-	// Release notes make a page large, but not this large.
 	if err := json.UnmarshalRead(io.LimitReader(body, 64<<20), &releases); err != nil {
 		return nil, fmt.Errorf("reading the releases of %s: %w", u, err)
 	}

@@ -3,10 +3,11 @@ package update
 import (
 	"bufio"
 	"bytes"
-	"compress/flate"
 	"encoding/binary"
 	"errors"
 	"io"
+
+	"github.com/klauspost/compress/zstd"
 )
 
 // Binary patches follow Colin Percival's bsdiff: the new file is made of
@@ -19,10 +20,9 @@ import (
 //	bytes (uvarints) and how far the old position moves after it (a varint),
 //	the difference bytes of all blocks, and their extra bytes,
 //
-// each stream compressed with DEFLATE on its own, as it compresses best
-// alone, and read in order: the updater patches from the delta file.
+// each stream compressed with Zstandard on its own and read in order.
 
-// Diff returns the patch that turns old into new.
+// Diff returns the zstd-compressed bsdiff patch that turns old into new.
 func Diff(old, new []byte) []byte {
 	sa := suffixArray(old)
 	type block struct {
@@ -54,8 +54,6 @@ func Diff(old, new []byte) []byte {
 			continue
 		}
 
-		// Extend the previous match forwards and this one backwards, as
-		// long as at least half of the bytes match.
 		lenF := 0
 		for i, s, best := 0, 0, 0; lastScan+i < scan && lastPos+i < len(old); {
 			if old[lastPos+i] == new[lastScan+i] {
@@ -100,8 +98,6 @@ func Diff(old, new []byte) []byte {
 		extra = append(extra, new[lastScan+lenF:scan-lenB]...)
 		b := block{lenF, scan - lenB - (lastScan + lenF), pos - lenB - (lastPos + lenF)}
 		if b.diff == 0 && b.extra == 0 && len(blocks) > 0 {
-			// Only a move: the previous block makes it, so that every block
-			// but the first makes bytes (Patch relies on it).
 			blocks[len(blocks)-1].seek += b.seek
 		} else {
 			blocks = append(blocks, b)
@@ -114,21 +110,15 @@ func Diff(old, new []byte) []byte {
 		ctrl = binary.AppendUvarint(ctrl, uint64(b.extra))
 		ctrl = binary.AppendVarint(ctrl, int64(b.seek))
 	}
-	ctrl, diff, extra = deflate(ctrl), deflate(diff), deflate(extra)
+	ctrl, diff, extra = zstdCompress(ctrl), zstdCompress(diff), zstdCompress(extra)
 	patch := binary.AppendUvarint(nil, uint64(len(blocks)))
 	patch = binary.AppendUvarint(patch, uint64(len(ctrl)))
 	patch = binary.AppendUvarint(patch, uint64(len(diff)))
 	return bytes.Join([][]byte{patch, ctrl, diff, extra}, nil)
 }
 
-// maxMatch bounds the matches that search compares. Diff searches at each
-// byte while a match is barely better than the previous alignment, so
-// comparing whole matches makes a long one cost time quadratic in its
-// length; a longer match is still taken, in pieces.
 const maxMatch = 64 << 10
 
-// search returns the longest prefix of b found in old, up to maxMatch
-// bytes, and where, by a binary search of the suffix array of old.
 func search(sa []int32, old, b []byte) (length, pos int) {
 	b = b[:min(len(b), maxMatch)]
 	lo, hi := 0, len(sa)-1
@@ -157,21 +147,18 @@ func matchLen(a, b []byte) int {
 	return n
 }
 
-// deflate compresses b.
-func deflate(b []byte) []byte {
-	var buf bytes.Buffer
-	w, _ := flate.NewWriter(&buf, flate.BestCompression)
-	w.Write(b)
-	w.Close()
-	return buf.Bytes()
+func zstdCompress(b []byte) []byte {
+	enc, err := zstd.NewWriter(nil, zstd.WithEncoderLevel(zstd.SpeedBestCompression))
+	if err != nil {
+		return nil
+	}
+	defer enc.Close()
+	return enc.EncodeAll(b, nil)
 }
 
 var errDamagedPatch = errors.New("damaged patch")
 
-// Patch writes to w the file of size bytes that patch makes of old, a file
-// of oldSize bytes. Patches come from signed updates, but a damaged one
-// fails cleanly: it cannot make more than size bytes, bytes read out of
-// old count as zeros, as in bspatch, and the caller checks the file made.
+// Patch writes to w the file of size bytes that patch makes of old (oldSize bytes).
 func Patch(w io.Writer, size int64, old io.ReaderAt, oldSize int64, patch io.ReaderAt, patchSize int64) error {
 	var head [3 * binary.MaxVarintLen64]byte
 	n, _ := patch.ReadAt(head[:min(patchSize, int64(len(head)))], 0)
@@ -182,10 +169,23 @@ func Patch(w io.Writer, size int64, old io.ReaderAt, oldSize int64, patch io.Rea
 		return errDamagedPatch
 	}
 	extraStart := start + int64(ctrlLen) + int64(diffLen)
-	ctrl := bufio.NewReader(flate.NewReader(io.NewSectionReader(patch, start, int64(ctrlLen))))
-	diff := flate.NewReader(io.NewSectionReader(patch, start+int64(ctrlLen), int64(diffLen)))
-	extra := flate.NewReader(io.NewSectionReader(patch, extraStart, patchSize-extraStart))
+	ctrlDec, err := zstd.NewReader(io.NewSectionReader(patch, start, int64(ctrlLen)))
+	if err != nil {
+		return errDamagedPatch
+	}
+	defer ctrlDec.Close()
+	diffDec, err := zstd.NewReader(io.NewSectionReader(patch, start+int64(ctrlLen), int64(diffLen)))
+	if err != nil {
+		return errDamagedPatch
+	}
+	defer diffDec.Close()
+	extraDec, err := zstd.NewReader(io.NewSectionReader(patch, extraStart, patchSize-extraStart))
+	if err != nil {
+		return errDamagedPatch
+	}
+	defer extraDec.Close()
 
+	ctrl := bufio.NewReader(ctrlDec)
 	buf := make([]byte, 32<<10)
 	oldBuf := make([]byte, len(buf))
 	var oldPos, left int64 = 0, size
@@ -199,11 +199,10 @@ func Patch(w io.Writer, size int64, old io.ReaderAt, oldSize int64, patch io.Rea
 		left -= int64(d + e)
 		for d > 0 {
 			n := int(min(d, uint64(len(buf))))
-			if _, err := io.ReadFull(diff, buf[:n]); err != nil {
+			if _, err := io.ReadFull(diffDec, buf[:n]); err != nil {
 				return errDamagedPatch
 			}
 			clear(oldBuf[:n])
-			// Only the part of the block inside old is read.
 			if from, to := max(oldPos, 0), min(oldPos+int64(n), oldSize); from < to {
 				if _, err := old.ReadAt(oldBuf[from-oldPos:to-oldPos], from); err != nil {
 					return err
@@ -218,7 +217,7 @@ func Patch(w io.Writer, size int64, old io.ReaderAt, oldSize int64, patch io.Rea
 			oldPos += int64(n)
 			d -= uint64(n)
 		}
-		if n, err := io.CopyN(w, extra, int64(e)); n != int64(e) {
+		if n, err := io.CopyN(w, extraDec, int64(e)); n != int64(e) {
 			if err == io.EOF || err == io.ErrUnexpectedEOF {
 				return errDamagedPatch
 			}
@@ -229,14 +228,18 @@ func Patch(w io.Writer, size int64, old io.ReaderAt, oldSize int64, patch io.Rea
 			return errDamagedPatch
 		}
 	}
-	if left != 0 {
+	if left != 0 || !streamEOF(ctrlDec) || !streamEOF(diffDec) || !streamEOF(extraDec) {
 		return errDamagedPatch
 	}
 	return nil
 }
 
-// uvarints decodes uvarints from the start of b into vs and returns how
-// many bytes they take.
+func streamEOF(r io.Reader) bool {
+	var b [1]byte
+	n, err := r.Read(b[:])
+	return n == 0 && err == io.EOF
+}
+
 func uvarints(b []byte, vs ...*uint64) (int64, bool) {
 	n := 0
 	for _, v := range vs {

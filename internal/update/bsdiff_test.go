@@ -134,6 +134,6 @@ func BenchmarkDiff(b *testing.B) {
 	for b.Loop() {
 		patch := Diff(old, new)
 		b.ReportMetric(float64(len(patch)), "patch-bytes")
-		b.ReportMetric(float64(len(deflate(new))), "file-bytes")
+		b.ReportMetric(float64(len(zstdCompress(new))), "file-bytes")
 	}
 }

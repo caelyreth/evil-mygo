@@ -175,3 +175,18 @@ func TestResolvePrereleaseFeedPages(t *testing.T) {
 		t.Errorf("rate limited: err = %v", err)
 	}
 }
+
+func TestResolveChannelFeed(t *testing.T) {
+	if got, err := ResolveChannelFeed(context.Background(), "https://updates.example.com/neverland", "darwin-arm64", "", nil); err != nil || got != "https://updates.example.com/neverland/stable/update-darwin-arm64.json" {
+		t.Errorf("default channel = %q, %v", got, err)
+	}
+	if got, err := ResolveChannelFeed(context.Background(), "https://updates.example.com/neverland/", "darwin-arm64", "beta", nil); err != nil || got != "https://updates.example.com/neverland/beta/update-darwin-arm64.json" {
+		t.Errorf("beta channel = %q, %v", got, err)
+	}
+	if got, err := ResolveChannelFeed(context.Background(), "https://updates.example.com/v1/manifest?target={target}&channel={channel}", "darwin-arm64", "beta", nil); err != nil || got != "https://updates.example.com/v1/manifest?target=darwin-arm64&channel=beta" {
+		t.Errorf("template = %q, %v", got, err)
+	}
+	if got, err := ResolveChannelFeed(context.Background(), "https://127.0.0.1:8080/update.json", "darwin-arm64", "stable", nil); err != nil || got != "https://127.0.0.1:8080/update.json" {
+		t.Errorf("direct json = %q, %v", got, err)
+	}
+}

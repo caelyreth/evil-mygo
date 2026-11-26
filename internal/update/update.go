@@ -1,73 +1,47 @@
 // Package update holds what the updater of package mygo and `mygo build`
-// share: the update manifest, signatures, versions, and the formats of
+// share: signed update manifests, keyrings, versions, and zstd/tar
 // archives and delta updates.
 package update
 
 import (
 	"archive/tar"
+	"bufio"
+	"bytes"
 	"compress/gzip"
 	"crypto/ed25519"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
 	"io/fs"
+	"net/url"
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
+
+	"github.com/klauspost/compress/zstd"
 )
 
-// Manifest describes the latest version of an app for one target (such as
-// darwin-arm64), published as update-<target>.json next to the archive.
-type Manifest struct {
-	Version string `json:"version"`
-	// Notes are the release notes, in Markdown.
-	Notes string `json:"notes,omitempty"`
-	// Date is when the version was built, in RFC 3339 format.
-	Date string `json:"date,omitempty"`
-	// URL of the archive, its size in bytes and the Ed25519 signature of
-	// its SHA-256 digest, in base64.
-	URL       string `json:"url"`
-	Size      int64  `json:"size"`
-	Signature string `json:"signature"`
-	// Deltas update earlier versions with smaller downloads (delta.go).
-	Deltas []Delta `json:"deltas,omitempty"`
-	// Previous are the archives of the versions before, newest first,
-	// which `mygo build` makes the deltas of the next version from.
-	Previous []Archive `json:"previous,omitempty"`
-}
+const (
+	// EnvelopeVersion is the signed manifest wrapper format version.
+	EnvelopeVersion = 2
+	// SchemaVersion is the Manifest payload schema version.
+	SchemaVersion = 2
 
-// Delta is a delta update of the app of version From, signed like the
-// archive.
-type Delta struct {
-	From      string `json:"from"`
-	URL       string `json:"url"`
-	Size      int64  `json:"size"`
-	Signature string `json:"signature"`
-}
+	// DefaultChannel is the release channel used when none is configured.
+	DefaultChannel = "stable"
+	// BetaChannel is the channel used for prerelease builds.
+	BetaChannel = "beta"
 
-// Archive is the archive of an earlier version.
-type Archive struct {
-	Version   string `json:"version"`
-	URL       string `json:"url"`
-	Size      int64  `json:"size"`
-	Signature string `json:"signature"`
-}
-
-// Delta returns the delta update of version from, or nil.
-func (m *Manifest) Delta(from string) *Delta {
-	for i, d := range m.Deltas {
-		if d.From == from {
-			return &m.Deltas[i]
-		}
-	}
-	return nil
-}
-
-// ManifestName is the file name of the manifest of target.
-func ManifestName(target string) string { return "update-" + target + ".json" }
+	manifestDomain = "mygo-update-manifest-v2\n"
+	artifactDomain = "mygo-update-artifact-v2\n"
+)
 
 // Limits of what an app downloads.
 const (
@@ -75,10 +49,211 @@ const (
 	MaxArchiveSize  = 1 << 30
 )
 
-// Keys are stored in base64: the 32-byte public key and the 64-byte
-// private key of Ed25519.
+// SignedManifest is the signed update envelope published as update-<target>.json.
+// Payload holds the exact UTF-8 JSON bytes of Manifest so proxies or JSON
+// pretty-printers cannot alter whitespace and invalidate signatures.
+type SignedManifest struct {
+	V          int         `json:"v"`
+	Payload    []byte      `json:"payload"`
+	Signatures []Signature `json:"signatures"`
+}
 
-// ParsePublicKey decodes a public key.
+// Signature authenticates SignedManifest.Payload using an Ed25519 key
+// identified by KeyID.
+type Signature struct {
+	KeyID string `json:"kid"`
+	Sig   string `json:"sig"`
+}
+
+// Manifest describes an available update for one target and channel.
+// It is always decoded from a verified SignedManifest envelope.
+type Manifest struct {
+	Schema     int    `json:"schema"`
+	Target     string `json:"target"`
+	Channel    string `json:"channel,omitempty"`
+	Version    string `json:"version"`
+	Sequence   uint64 `json:"sequence,omitempty"`
+	Date       string `json:"date,omitempty"`
+	MinSystem  string `json:"minSystem,omitempty"`
+	MinVersion string `json:"minVersion,omitempty"`
+	// Notes are default release notes in Markdown, with optional localized
+	// overrides keyed by BCP 47 tag in NotesByLang.
+	Notes       string            `json:"notes,omitempty"`
+	NotesByLang map[string]string `json:"notesByLang,omitempty"`
+	// Mirrors holds ordered base URLs (with optional {version} placeholders)
+	// used to derive fallback download locations or resolve relative paths.
+	Mirrors       []string  `json:"mirrors,omitempty"`
+	Artifact      Artifact  `json:"artifact"`
+	LegacyArchive *Artifact `json:"legacyArchive,omitempty"`
+	Deltas        []Delta   `json:"deltas,omitempty"`
+}
+
+// Artifact describes a downloadable update archive (normally .tar.zst).
+type Artifact struct {
+	URL       string   `json:"url"`
+	URLs      []string `json:"urls,omitempty"`
+	Size      int64    `json:"size"`
+	SHA256    string   `json:"sha256"`
+	Signature string   `json:"signature,omitempty"`
+}
+
+// Delta describes a delta patch from version From to Manifest.Version.
+type Delta struct {
+	From      string   `json:"from"`
+	URL       string   `json:"url"`
+	URLs      []string `json:"urls,omitempty"`
+	Size      int64    `json:"size"`
+	SHA256    string   `json:"sha256"`
+	Signature string   `json:"signature,omitempty"`
+}
+
+// ReleaseIndex stores build-time delta history separately from the public
+// client manifest.
+type ReleaseIndex struct {
+	Target  string    `json:"target"`
+	Channel string    `json:"channel,omitempty"`
+	History []Archive `json:"history,omitempty"`
+}
+
+// Archive describes an earlier release archive retained for delta generation.
+type Archive struct {
+	Version   string   `json:"version"`
+	URL       string   `json:"url"`
+	URLs      []string `json:"urls,omitempty"`
+	Size      int64    `json:"size"`
+	SHA256    string   `json:"sha256"`
+	Signature string   `json:"signature,omitempty"`
+}
+
+// Delta returns the delta update for version from, or nil.
+func (m *Manifest) Delta(from string) *Delta {
+	for i := range m.Deltas {
+		if m.Deltas[i].From == from {
+			return &m.Deltas[i]
+		}
+	}
+	return nil
+}
+
+// ResolveNotes returns localized release notes for lang, falling back to
+// base language subtags and then m.Notes.
+func (m *Manifest) ResolveNotes(lang string) string {
+	if m == nil {
+		return ""
+	}
+	if len(m.NotesByLang) > 0 && lang != "" {
+		norm := normalizeLang(lang)
+		for k, v := range m.NotesByLang {
+			if normalizeLang(k) == norm && v != "" {
+				return v
+			}
+		}
+		if base, _, ok := strings.Cut(norm, "-"); ok {
+			for k, v := range m.NotesByLang {
+				if normalizeLang(k) == base && v != "" {
+					return v
+				}
+			}
+		}
+	}
+	return m.Notes
+}
+
+func normalizeLang(tag string) string {
+	return strings.ToLower(strings.ReplaceAll(strings.TrimSpace(tag), "_", "-"))
+}
+
+// CandidateURLs returns ordered, deduplicated download URLs for the artifact,
+// expanding relative paths and {version} templates across mirrors.
+func (a Artifact) CandidateURLs(mirrors []string, version string) []string {
+	return collectCandidateURLs(a.URL, a.URLs, mirrors, version)
+}
+
+// CandidateURLs returns ordered, deduplicated download URLs for the delta,
+// expanding relative paths and {version} templates across mirrors.
+func (d Delta) CandidateURLs(mirrors []string, version string) []string {
+	return collectCandidateURLs(d.URL, d.URLs, mirrors, version)
+}
+
+// CandidateURLs returns ordered, deduplicated download URLs for an earlier archive.
+func (a Archive) CandidateURLs(mirrors []string) []string {
+	return collectCandidateURLs(a.URL, a.URLs, mirrors, a.Version)
+}
+
+func collectCandidateURLs(primary string, extra, mirrors []string, version string) []string {
+	var out []string
+	seen := map[string]bool{}
+	add := func(raw string) {
+		raw = strings.TrimSpace(raw)
+		if raw == "" || seen[raw] {
+			return
+		}
+		seen[raw] = true
+		out = append(out, raw)
+	}
+	expand := func(base, rel string) string {
+		if version != "" {
+			base = strings.ReplaceAll(base, VersionPlaceholder, url.PathEscape(version))
+		}
+		base = strings.TrimSuffix(base, "/")
+		rel = strings.TrimPrefix(rel, "/")
+		return base + "/" + rel
+	}
+	for _, candidate := range append([]string{primary}, extra...) {
+		candidate = strings.TrimSpace(candidate)
+		if candidate == "" {
+			continue
+		}
+		if strings.Contains(candidate, "://") || len(mirrors) == 0 {
+			add(candidate)
+			continue
+		}
+		for _, mirror := range mirrors {
+			add(expand(mirror, candidate))
+		}
+	}
+	return out
+}
+
+// ManifestName is the file name of the manifest of target.
+func ManifestName(target string) string { return "update-" + target + ".json" }
+
+// ManifestPath is the channel-qualified relative path of a manifest.
+func ManifestPath(channel, target string) string {
+	if channel == "" {
+		channel = DefaultChannel
+	}
+	return channel + "/" + ManifestName(target)
+}
+
+// HistoryName is the file name of the CI delta history of target.
+func HistoryName(target string) string { return "history-" + target + ".json" }
+
+// HistoryPath is the channel-qualified relative path of the CI delta history.
+func HistoryPath(channel, target string) string {
+	if channel == "" {
+		channel = DefaultChannel
+	}
+	return channel + "/" + HistoryName(target)
+}
+
+// KeyID returns the short key identifier (16 lowercase hex chars of SHA-256)
+// for pub.
+func KeyID(pub ed25519.PublicKey) string {
+	sum := sha256.Sum256(pub)
+	return hex.EncodeToString(sum[:8])
+}
+
+// TrustedKey pairs an Ed25519 public key with its KeyID.
+type TrustedKey struct {
+	ID  string
+	Key ed25519.PublicKey
+}
+
+// Keyring is a set of trusted public keys used to verify manifests and artifacts.
+type Keyring []TrustedKey
+
+// ParsePublicKey decodes a base64 Ed25519 public key.
 func ParsePublicKey(s string) (ed25519.PublicKey, error) {
 	b, err := base64.StdEncoding.DecodeString(strings.TrimSpace(s))
 	if err != nil || len(b) != ed25519.PublicKeySize {
@@ -87,7 +262,52 @@ func ParsePublicKey(s string) (ed25519.PublicKey, error) {
 	return ed25519.PublicKey(b), nil
 }
 
-// ParsePrivateKey decodes a private key.
+// ParseKeyring parses a single base64 key, a comma/whitespace-separated list
+// of base64 keys, or a JSON array of base64 keys into a Keyring.
+func ParseKeyring(raw string) (Keyring, error) {
+	s := strings.TrimSpace(raw)
+	if s == "" {
+		return nil, errors.New("empty update keyring")
+	}
+	var tokens []string
+	if strings.HasPrefix(s, "[") {
+		if err := json.Unmarshal([]byte(s), &tokens); err != nil {
+			return nil, fmt.Errorf("invalid update keyring: %w", err)
+		}
+	} else {
+		tokens = strings.FieldsFunc(s, func(r rune) bool {
+			return r == ',' || r == ';' || r == '\n' || r == '\r' || r == '\t' || r == ' '
+		})
+	}
+	if len(tokens) == 0 {
+		return nil, errors.New("empty update keyring")
+	}
+	ring := make(Keyring, 0, len(tokens))
+	seen := map[string]bool{}
+	for _, tok := range tokens {
+		pub, err := ParsePublicKey(tok)
+		if err != nil {
+			return nil, err
+		}
+		id := KeyID(pub)
+		if !seen[id] {
+			seen[id] = true
+			ring = append(ring, TrustedKey{ID: id, Key: pub})
+		}
+	}
+	return ring, nil
+}
+
+// EncodeKeyring encodes keys as a comma-separated list of base64 public keys.
+func EncodeKeyring(keys []ed25519.PublicKey) string {
+	out := make([]string, len(keys))
+	for i, k := range keys {
+		out[i] = base64.StdEncoding.EncodeToString(k)
+	}
+	return strings.Join(out, ",")
+}
+
+// ParsePrivateKey decodes a base64 Ed25519 private key.
 func ParsePrivateKey(s string) (ed25519.PrivateKey, error) {
 	b, err := base64.StdEncoding.DecodeString(strings.TrimSpace(s))
 	if err != nil || len(b) != ed25519.PrivateKeySize {
@@ -96,18 +316,263 @@ func ParsePrivateKey(s string) (ed25519.PrivateKey, error) {
 	return ed25519.PrivateKey(b), nil
 }
 
-// Sign signs the SHA-256 digest of an archive.
-func Sign(key ed25519.PrivateKey, digest []byte) string {
-	return base64.StdEncoding.EncodeToString(ed25519.Sign(key, digest))
+// ParsePrivateKeys decodes one or more base64 Ed25519 private keys separated
+// by commas, semicolons, or whitespace, or encoded as a JSON array.
+func ParsePrivateKeys(raw string) ([]ed25519.PrivateKey, error) {
+	s := strings.TrimSpace(raw)
+	if s == "" {
+		return nil, errors.New("empty update private keys")
+	}
+	var tokens []string
+	if strings.HasPrefix(s, "[") {
+		if err := json.Unmarshal([]byte(s), &tokens); err != nil {
+			return nil, fmt.Errorf("invalid update private keys: %w", err)
+		}
+	} else {
+		tokens = strings.FieldsFunc(s, func(r rune) bool {
+			return r == ',' || r == ';' || r == '\n' || r == '\r' || r == '\t' || r == ' '
+		})
+	}
+	var keys []ed25519.PrivateKey
+	for _, tok := range tokens {
+		k, err := ParsePrivateKey(tok)
+		if err != nil {
+			return nil, err
+		}
+		keys = append(keys, k)
+	}
+	return keys, nil
 }
 
-// Verify checks the signature of the SHA-256 digest of an archive.
-func Verify(key ed25519.PublicKey, digest []byte, signature string) error {
+// SignArtifact signs the SHA-256 digest of an archive or delta with domain separation.
+func SignArtifact(key ed25519.PrivateKey, digest []byte) string {
+	msg := make([]byte, len(artifactDomain)+len(digest))
+	copy(msg, artifactDomain)
+	copy(msg[len(artifactDomain):], digest)
+	return base64.StdEncoding.EncodeToString(ed25519.Sign(key, msg))
+}
+
+// VerifyArtifact checks a standalone artifact signature against key.
+func VerifyArtifact(key ed25519.PublicKey, digest []byte, signature string) error {
 	sig, err := base64.StdEncoding.DecodeString(signature)
-	if err != nil || !ed25519.Verify(key, digest, sig) {
+	if err != nil {
+		return errors.New("the update is not signed with the app's key")
+	}
+	msg := make([]byte, len(artifactDomain)+len(digest))
+	copy(msg, artifactDomain)
+	copy(msg[len(artifactDomain):], digest)
+	if !ed25519.Verify(key, msg, sig) {
 		return errors.New("the update is not signed with the app's key")
 	}
 	return nil
+}
+
+// VerifyArtifactAny checks a standalone artifact signature against any key in ring.
+func VerifyArtifactAny(ring Keyring, digest []byte, signature string) error {
+	for _, tk := range ring {
+		if VerifyArtifact(tk.Key, digest, signature) == nil {
+			return nil
+		}
+	}
+	return errors.New("the update is not signed with a trusted key")
+}
+
+// SignManifest serializes m and signs it with each private key in keys,
+// returning the JSON-encoded SignedManifest envelope.
+func SignManifest(keys []ed25519.PrivateKey, m *Manifest) ([]byte, error) {
+	if len(keys) == 0 {
+		return nil, errors.New("no signing keys provided")
+	}
+	if m == nil {
+		return nil, errors.New("nil manifest")
+	}
+	copyM := *m
+	copyM.Schema = SchemaVersion
+	if copyM.Channel == "" {
+		copyM.Channel = DefaultChannel
+	}
+	if err := validateManifest(&copyM); err != nil {
+		return nil, err
+	}
+	payload, err := json.Marshal(copyM)
+	if err != nil {
+		return nil, err
+	}
+	msg := make([]byte, len(manifestDomain)+len(payload))
+	copy(msg, manifestDomain)
+	copy(msg[len(manifestDomain):], payload)
+
+	sigs := make([]Signature, 0, len(keys))
+	seen := map[string]bool{}
+	for _, k := range keys {
+		pub, ok := k.Public().(ed25519.PublicKey)
+		if !ok {
+			return nil, errors.New("invalid Ed25519 signing key")
+		}
+		kid := KeyID(pub)
+		if seen[kid] {
+			continue
+		}
+		seen[kid] = true
+		sigs = append(sigs, Signature{
+			KeyID: kid,
+			Sig:   base64.StdEncoding.EncodeToString(ed25519.Sign(k, msg)),
+		})
+	}
+	env := SignedManifest{V: EnvelopeVersion, Payload: payload, Signatures: sigs}
+	data, err := json.Marshal(env)
+	if err != nil {
+		return nil, err
+	}
+	var pretty bytes.Buffer
+	if err := indentJSON(&pretty, data); err == nil {
+		pretty.WriteByte('\n')
+		return pretty.Bytes(), nil
+	}
+	return append(data, '\n'), nil
+}
+
+// indentJSON formats JSON cleanly without external helper complexity.
+func indentJSON(dst *bytes.Buffer, src []byte) error {
+	var v any
+	if err := json.Unmarshal(src, &v); err != nil {
+		return err
+	}
+	b, err := marshalIndent(v)
+	if err != nil {
+		return err
+	}
+	dst.Write(b)
+	return nil
+}
+
+func marshalIndent(v any) ([]byte, error) {
+	// Marshal back with standard indentation using SignedManifest structure or raw formatting.
+	// Note: Payload is base64 in SignedManifest so indenting the outer JSON never affects signatures.
+	var env SignedManifest
+	raw, err := json.Marshal(v)
+	if err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal(raw, &env); err != nil {
+		return raw, nil
+	}
+	var b bytes.Buffer
+	b.WriteString("{\n  \"v\": ")
+	b.WriteString(strconv.Itoa(env.V))
+	b.WriteString(",\n  \"payload\": ")
+	p, _ := json.Marshal(env.Payload)
+	b.Write(p)
+	b.WriteString(",\n  \"signatures\": [\n")
+	for i, s := range env.Signatures {
+		if i > 0 {
+			b.WriteString(",\n")
+		}
+		k, _ := json.Marshal(s.KeyID)
+		sg, _ := json.Marshal(s.Sig)
+		b.WriteString("    {\"kid\": ")
+		b.Write(k)
+		b.WriteString(", \"sig\": ")
+		b.Write(sg)
+		b.WriteByte('}')
+	}
+	b.WriteString("\n  ]\n}")
+	return b.Bytes(), nil
+}
+
+// VerifyManifest verifies a SignedManifest JSON document against ring before
+// decoding and validating the inner Manifest.
+func VerifyManifest(ring Keyring, raw []byte) (*Manifest, error) {
+	if len(ring) == 0 {
+		return nil, errors.New("no trusted update keys configured")
+	}
+	var env SignedManifest
+	if err := json.Unmarshal(raw, &env); err != nil {
+		return nil, fmt.Errorf("invalid manifest envelope: %w", err)
+	}
+	if env.V != EnvelopeVersion {
+		return nil, fmt.Errorf("unsupported manifest version %d", env.V)
+	}
+	if len(env.Payload) == 0 || len(env.Signatures) == 0 {
+		return nil, errors.New("incomplete signed manifest")
+	}
+	msg := make([]byte, len(manifestDomain)+len(env.Payload))
+	copy(msg, manifestDomain)
+	copy(msg[len(manifestDomain):], env.Payload)
+
+	verified := false
+	for _, s := range env.Signatures {
+		sigBytes, err := base64.StdEncoding.DecodeString(s.Sig)
+		if err != nil || len(sigBytes) != ed25519.SignatureSize {
+			continue
+		}
+		for _, tk := range ring {
+			if s.KeyID != "" && s.KeyID != tk.ID {
+				continue
+			}
+			if ed25519.Verify(tk.Key, msg, sigBytes) {
+				verified = true
+				break
+			}
+		}
+		if verified {
+			break
+		}
+	}
+	if !verified {
+		return nil, errors.New("manifest signature is not trusted")
+	}
+	var m Manifest
+	if err := json.Unmarshal(env.Payload, &m); err != nil {
+		return nil, fmt.Errorf("invalid signed manifest payload: %w", err)
+	}
+	if err := validateManifest(&m); err != nil {
+		return nil, err
+	}
+	return &m, nil
+}
+
+func validateManifest(m *Manifest) error {
+	if m.Schema != SchemaVersion {
+		return fmt.Errorf("unsupported manifest schema %d", m.Schema)
+	}
+	if m.Version == "" || m.Target == "" {
+		return errors.New("incomplete manifest: missing version or target")
+	}
+	if err := validateDigestSpec("artifact", m.Artifact.Size, m.Artifact.SHA256, m.Artifact.CandidateURLs(m.Mirrors, m.Version)); err != nil {
+		return err
+	}
+	for _, d := range m.Deltas {
+		if d.From == "" {
+			return errors.New("delta missing source version")
+		}
+		if err := validateDigestSpec("delta "+d.From, d.Size, d.SHA256, d.CandidateURLs(m.Mirrors, m.Version)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateDigestSpec(label string, size int64, sha string, urls []string) error {
+	if size <= 0 || size > MaxArchiveSize {
+		return fmt.Errorf("%s invalid size %d", label, size)
+	}
+	if !ValidSHA256(sha) {
+		return fmt.Errorf("%s invalid sha256", label)
+	}
+	if len(urls) == 0 {
+		return fmt.Errorf("%s has no download URLs", label)
+	}
+	return nil
+}
+
+// ValidSHA256 reports whether s is a 64-character hex-encoded SHA-256 digest.
+func ValidSHA256(s string) bool {
+	if len(s) != sha256.Size*2 {
+		return false
+	}
+	_, err := hex.DecodeString(s)
+	return err == nil
 }
 
 // Compare compares versions such as 1.2.3 and 1.3.0-beta.1 like semantic
@@ -130,6 +595,15 @@ func Compare(a, b string) int {
 		return -1
 	}
 	return compareFields(apre, bpre)
+}
+
+// SystemSatisfied reports whether current satisfies minRequired (or returns true
+// if minRequired is empty or current cannot be determined).
+func SystemSatisfied(minRequired, current string) bool {
+	if strings.TrimSpace(minRequired) == "" || strings.TrimSpace(current) == "" {
+		return true
+	}
+	return Compare(current, minRequired) >= 0
 }
 
 func compareFields(a, b string) int {
@@ -169,14 +643,34 @@ func compareFields(a, b string) int {
 	return 0
 }
 
-// WriteArchive writes the entries of dir (files, directories and symbolic
-// links, with their permissions) as a gzip compressed tar archive.
+// WriteArchive writes the entries of dir as a zstd-compressed tar archive (.tar.zst).
 func WriteArchive(w io.Writer, dir string, entries []string) error {
+	zw, err := zstd.NewWriter(w, zstd.WithEncoderLevel(zstd.SpeedBestCompression))
+	if err != nil {
+		return err
+	}
+	if err := writeTar(zw, dir, entries); err != nil {
+		zw.Close()
+		return err
+	}
+	return zw.Close()
+}
+
+// WriteTarGZ writes the entries of dir as a gzip-compressed tar archive (.tar.gz).
+func WriteTarGZ(w io.Writer, dir string, entries []string) error {
 	gz, err := gzip.NewWriterLevel(w, gzip.BestCompression)
 	if err != nil {
 		return err
 	}
-	tw := tar.NewWriter(gz)
+	if err := writeTar(gz, dir, entries); err != nil {
+		gz.Close()
+		return err
+	}
+	return gz.Close()
+}
+
+func writeTar(w io.Writer, dir string, entries []string) error {
+	tw := tar.NewWriter(w)
 	for _, entry := range entries {
 		err := filepath.WalkDir(filepath.Join(dir, entry), func(p string, d fs.DirEntry, err error) error {
 			if err != nil {
@@ -223,29 +717,45 @@ func WriteArchive(w io.Writer, dir string, entries []string) error {
 			return err
 		}
 	}
-	if err := tw.Close(); err != nil {
-		return err
-	}
-	return gz.Close()
+	return tw.Close()
 }
 
-// MaxUnpackedSize is the most an update archive may unpack to: more is
-// refused, so that a small archive that inflates without end cannot fill
-// the disk.
+// MaxUnpackedSize is the most an update archive may unpack to.
 var MaxUnpackedSize int64 = 8 << 30
 
-// ExtractArchive unpacks an archive of WriteArchive into dir. It refuses
-// entries outside dir, links pointing out of it, anything but files,
-// directories and symbolic links, and more than MaxUnpackedSize bytes.
-// It writes through an os.Root of dir, so that no entry reaches outside it
-// through a link another entry made, as a check of each link's text alone
-// would let a chain of them do.
+var (
+	zstdMagic = []byte{0x28, 0xB5, 0x2F, 0xFD}
+	gzipMagic = []byte{0x1F, 0x8B}
+)
+
+// ExtractArchive unpacks a .tar.zst or .tar.gz update archive into dir using
+// os.OpenRoot so symlinks cannot escape dir.
 func ExtractArchive(r io.Reader, dir string) error {
-	gz, err := gzip.NewReader(r)
-	if err != nil {
-		return err
+	br := bufio.NewReader(r)
+	head, err := br.Peek(4)
+	if err != nil && len(head) < 2 {
+		return fmt.Errorf("reading archive header: %w", err)
 	}
-	defer gz.Close()
+	var trSrc io.Reader
+	switch {
+	case bytes.HasPrefix(head, zstdMagic):
+		zr, err := zstd.NewReader(br)
+		if err != nil {
+			return err
+		}
+		defer zr.Close()
+		trSrc = zr
+	case bytes.HasPrefix(head, gzipMagic):
+		gz, err := gzip.NewReader(br)
+		if err != nil {
+			return err
+		}
+		defer gz.Close()
+		trSrc = gz
+	default:
+		return errors.New("unsupported update archive format")
+	}
+
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
@@ -254,7 +764,7 @@ func ExtractArchive(r io.Reader, dir string) error {
 		return err
 	}
 	defer root.Close()
-	tr := tar.NewReader(gz)
+	tr := tar.NewReader(trSrc)
 	var written int64
 	for {
 		hdr, err := tr.Next()
@@ -337,12 +847,20 @@ func ReleaseNotes(changelog, version string) string {
 	return strings.TrimSpace(strings.Join(notes, "\n"))
 }
 
-// headingVersion returns the version a changelog heading starts with, from
-// "1.2.0", or from "[1.2.0]" and "[1.2.0](link)" as Keep a Changelog and
-// release tools write it.
+// headingVersion returns the version a changelog heading starts with.
 func headingVersion(s string) string {
 	if rest, ok := strings.CutPrefix(s, "["); ok {
 		s, _, _ = strings.Cut(rest, "]")
 	}
 	return s
 }
+
+// IsPrerelease reports whether version has a SemVer prerelease suffix.
+func IsPrerelease(version string) bool {
+	v, _, _ := strings.Cut(strings.TrimPrefix(version, "v"), "+")
+	_, pre, ok := strings.Cut(v, "-")
+	return ok && pre != ""
+}
+
+// Unused slice import guard.
+var _ = slices.Contains[[]string, string]

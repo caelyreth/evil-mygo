@@ -2,7 +2,6 @@ package update
 
 import (
 	"bytes"
-	"compress/flate"
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
@@ -14,81 +13,62 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+
+	"github.com/klauspost/compress/zstd"
 )
 
-// Delta updates, as Sparkle's: a delta turns the app of an earlier version
-// into the new one, and holds only what changed. Its index lists the tree
-// of the new app: directories, links, and files with their size and
-// SHA-256, each a copy of a file of the old app, a patch of one
-// (bsdiff.go), or new. A delta is
+// Delta updates v2 ("mygo delta 2\n"):
 //
-//	deltaMagic, the length of the index (uvarint), the index (JSON, DEFLATE),
-//	the data of the files, in the order of the index: a patch, or the
-//	file compressed with DEFLATE,
+//	deltaMagic, the length of the index (uvarint), the index (JSON, zstd),
+//	and the data of the files, in index order: a zstd-compressed bsdiff patch
+//	(against e.From) or the new file compressed with zstd.
 //
-// and is signed like an archive. The data is read from the delta file in
-// place, and applying it checks every file it makes, so that a delta
-// applied to another app than the one it was made from fails: the updater
-// then downloads the archive.
-
-const deltaMagic = "mygo delta 1\n"
+// Blobs are streamed into a temporary file while building so large updates do
+// not retain all patches and compressed files in heap memory at once.
+const deltaMagic = "mygo delta 2\n"
 
 type deltaIndex struct {
-	// From and Version are the versions of the app the delta updates and
-	// makes.
 	From    string       `json:"from"`
 	Version string       `json:"version"`
 	Entries []deltaEntry `json:"entries"`
 }
 
-// deltaEntry is a directory, a link or a file of the new app. Paths are
-// relative to the app: its bundle on macOS, its directory elsewhere.
 type deltaEntry struct {
-	Path string `json:"path"`
-	Dir  bool   `json:"dir,omitzero"`
-	// Link is the target of a symbolic link.
-	Link string `json:"link,omitzero"`
-	// Mode holds the permissions of a file.
+	Path   string `json:"path"`
+	Dir    bool   `json:"dir,omitzero"`
+	Link   string `json:"link,omitzero"`
 	Mode   uint32 `json:"mode,omitzero"`
 	Size   int64  `json:"size,omitzero"`
 	SHA256 string `json:"sha256,omitzero"`
-	// From is the file of the old app that the file copies, or patches
-	// with its Data. Without From, Data is the file, compressed.
-	From string `json:"from,omitzero"`
-	Data int64  `json:"data,omitzero"`
+	From   string `json:"from,omitzero"`
+	Data   int64  `json:"data,omitzero"`
 }
 
 func (e *deltaEntry) isFile() bool { return !e.Dir && e.Link == "" }
 
-// maxDiff is the size of the largest files that deltas patch: making the
-// patch takes about ten times as much memory. Larger files that changed
-// are included whole.
 const maxDiff = 256 << 20
 
-// stapledTicket is where stapling writes the notarization ticket of an app
-// bundle. The archive's app has it, but an app installed from a disk image
-// that mygo made before stapling the app it copies in (dmg.go) does not,
-// so deltas include it whole, never as a copy or patch of the old app's.
 const stapledTicket = "Contents/CodeResources"
 
-// WriteDelta writes the delta that turns the app in oldDir, of version from,
-// into the app in newDir, of version to: the entries of newDir, or all of
-// it when entries is nil.
+// WriteDelta writes the delta that turns the app in oldDir (version from)
+// into the app in newDir (version to): entries of newDir, or all of it when
+// entries is nil.
 func WriteDelta(w io.Writer, from, to, oldDir, newDir string, entries []string) error {
-	// The files of the old app, and the first of each content.
 	type oldFile struct {
-		sum  string // SHA-256
+		sum  string
 		size int64
 	}
 	old := map[string]oldFile{}
 	bySum := map[string]string{}
+	byBaseCount := map[string]int{}
+	byBasePath := map[string]string{}
+
 	err := filepath.WalkDir(oldDir, func(p string, d fs.DirEntry, err error) error {
 		if err != nil || !d.Type().IsRegular() {
 			return err
 		}
-		// The FileList too is included whole: the updater rewrites the
-		// installed app's, which may then differ from the archive's.
-		if rel := relPath(oldDir, p); rel == stapledTicket || rel == FileList {
+		rel := relPath(oldDir, p)
+		if rel == stapledTicket || rel == FileList {
 			return nil
 		}
 		f, err := os.Open(p)
@@ -101,10 +81,17 @@ func WriteDelta(w io.Writer, from, to, oldDir, newDir string, entries []string) 
 		if err != nil {
 			return err
 		}
-		rel, sum := relPath(oldDir, p), hex.EncodeToString(h.Sum(nil))
+		sum := hex.EncodeToString(h.Sum(nil))
 		old[rel] = oldFile{sum, size}
 		if _, ok := bySum[sum]; !ok {
 			bySum[sum] = rel
+		}
+		base := path.Base(rel)
+		byBaseCount[base]++
+		if byBaseCount[base] == 1 {
+			byBasePath[base] = rel
+		} else {
+			delete(byBasePath, base)
 		}
 		return nil
 	})
@@ -121,8 +108,17 @@ func WriteDelta(w io.Writer, from, to, oldDir, newDir string, entries []string) 
 		}
 	}
 
+	chunksFile, err := os.CreateTemp("", "mygo-delta-chunks-*")
+	if err != nil {
+		return err
+	}
+	chunksPath := chunksFile.Name()
+	defer func() {
+		chunksFile.Close()
+		os.Remove(chunksPath)
+	}()
+
 	index := deltaIndex{From: from, Version: to}
-	var data [][]byte
 	for _, top := range entries {
 		err := filepath.WalkDir(filepath.Join(newDir, top), func(p string, d fs.DirEntry, err error) error {
 			if err != nil {
@@ -152,20 +148,28 @@ func WriteDelta(w io.Writer, from, to, oldDir, newDir string, entries []string) 
 				if o.sum == e.SHA256 {
 					e.From = e.Path
 				} else if src, ok := bySum[e.SHA256]; ok {
-					e.From = src // moved, or copied
+					e.From = src
 				} else {
-					blob := deflate(b)
-					if o.size > 0 && o.size <= maxDiff && len(b) <= maxDiff {
-						prev, err := os.ReadFile(filepath.Join(oldDir, filepath.FromSlash(e.Path)))
+					blob := zstdCompress(b)
+					baseFrom, baseFile := "", oldFile{}
+					if o.size > 0 {
+						baseFrom, baseFile = e.Path, o
+					} else if moved, ok := byBasePath[path.Base(e.Path)]; ok {
+						baseFrom, baseFile = moved, old[moved]
+					}
+					if baseFrom != "" && baseFile.size > 0 && baseFile.size <= maxDiff && len(b) <= maxDiff {
+						prev, err := os.ReadFile(filepath.Join(oldDir, filepath.FromSlash(baseFrom)))
 						if err != nil {
 							return err
 						}
 						if patch := Diff(prev, b); len(patch) < len(blob) {
-							e.From, blob = e.Path, patch
+							e.From, blob = baseFrom, patch
 						}
 					}
 					e.Data = int64(len(blob))
-					data = append(data, blob)
+					if _, err := chunksFile.Write(blob); err != nil {
+						return err
+					}
 				}
 			default:
 				return fmt.Errorf("%s is not a file, directory or link", p)
@@ -182,17 +186,16 @@ func WriteDelta(w io.Writer, from, to, oldDir, newDir string, entries []string) 
 	if err != nil {
 		return err
 	}
-	js = deflate(js)
+	js = zstdCompress(js)
 	head := binary.AppendUvarint([]byte(deltaMagic), uint64(len(js)))
 	if _, err := w.Write(append(head, js...)); err != nil {
 		return err
 	}
-	for _, b := range data {
-		if _, err := w.Write(b); err != nil {
-			return err
-		}
+	if _, err := chunksFile.Seek(0, io.SeekStart); err != nil {
+		return err
 	}
-	return nil
+	_, err = io.Copy(w, chunksFile)
+	return err
 }
 
 func relPath(dir, p string) string {
@@ -200,15 +203,12 @@ func relPath(dir, p string) string {
 	return filepath.ToSlash(rel)
 }
 
-// maxDeltaIndex limits the index of a delta that an app reads.
 const maxDeltaIndex = 16 << 20
 
 var errDamagedDelta = errors.New("damaged delta update")
 
-// ApplyDelta makes in newDir, which must not exist, the app that the delta
-// of size bytes read from r makes of the app in oldDir. The delta must
-// update version from to version to, and every file it makes must have
-// the size and SHA-256 its index gives.
+// ApplyDelta applies a delta update of size bytes read from r against oldDir
+// to create newDir, verifying every output file's size and SHA-256.
 func ApplyDelta(r io.ReaderAt, size int64, from, to, oldDir, newDir string) error {
 	var head [len(deltaMagic) + binary.MaxVarintLen64]byte
 	n, _ := r.ReadAt(head[:min(size, int64(len(head)))], 0)
@@ -221,7 +221,12 @@ func ApplyDelta(r io.ReaderAt, size int64, from, to, oldDir, newDir string) erro
 	if !ok || indexLen > uint64(size-start) {
 		return errDamagedDelta
 	}
-	js, err := io.ReadAll(io.LimitReader(flate.NewReader(io.NewSectionReader(r, start, int64(indexLen))), maxDeltaIndex+1))
+	dec, err := zstd.NewReader(io.NewSectionReader(r, start, int64(indexLen)))
+	if err != nil {
+		return errDamagedDelta
+	}
+	js, err := io.ReadAll(io.LimitReader(dec, maxDeltaIndex+1))
+	dec.Close()
 	if err != nil || len(js) > maxDeltaIndex {
 		return errDamagedDelta
 	}
@@ -233,7 +238,6 @@ func ApplyDelta(r io.ReaderAt, size int64, from, to, oldDir, newDir string) erro
 		return fmt.Errorf("the delta updates %s to %s, not %s to %s", index.From, index.Version, from, to)
 	}
 
-	// Check the index before making anything.
 	offset := start + int64(indexLen)
 	seen := map[string]bool{}
 	for _, e := range index.Entries {
@@ -291,7 +295,6 @@ func ApplyDelta(r io.ReaderAt, size int64, from, to, oldDir, newDir string) erro
 	return nil
 }
 
-// applyFile makes the file of e from data, its data in the delta.
 func applyFile(e deltaEntry, data *io.SectionReader, oldRoot, newRoot *os.Root) error {
 	f, err := newRoot.OpenFile(filepath.FromSlash(e.Path), os.O_CREATE|os.O_EXCL|os.O_WRONLY, fs.FileMode(e.Mode).Perm()|0o200)
 	if err != nil {
@@ -301,7 +304,15 @@ func applyFile(e deltaEntry, data *io.SectionReader, oldRoot, newRoot *os.Root) 
 	h := sha256.New()
 	out := &limitWriter{w: io.MultiWriter(f, h), n: e.Size}
 	if e.From == "" {
-		_, err = io.Copy(out, flate.NewReader(data))
+		zr, zerr := zstd.NewReader(data)
+		if zerr != nil {
+			return errDamagedDelta
+		}
+		_, err = io.Copy(out, zr)
+		if err == nil && !streamEOF(zr) {
+			err = errDamagedPatch
+		}
+		zr.Close()
 	} else {
 		var src *os.File
 		if src, err = oldRoot.Open(filepath.FromSlash(e.From)); err != nil {
@@ -323,7 +334,6 @@ func applyFile(e deltaEntry, data *io.SectionReader, oldRoot, newRoot *os.Root) 
 		err = f.Close()
 	}
 	if err == errDamagedPatch || err == errTooLong || err == nil && (out.n != 0 || hex.EncodeToString(h.Sum(nil)) != e.SHA256) {
-		// Most likely, the app is not the one the delta was made from.
 		return fmt.Errorf("the delta update made %s wrong", e.Path)
 	}
 	if err == nil {
@@ -334,7 +344,6 @@ func applyFile(e deltaEntry, data *io.SectionReader, oldRoot, newRoot *os.Root) 
 
 var errTooLong = errors.New("too long")
 
-// limitWriter fails writes past n bytes.
 type limitWriter struct {
 	w io.Writer
 	n int64

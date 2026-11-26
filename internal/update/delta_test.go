@@ -134,6 +134,22 @@ func TestDelta(t *testing.T) {
 		t.Errorf("applying the delta made\n%v\nwant\n%v", slices.Sorted(maps.Keys(got)), slices.Sorted(maps.Keys(want)))
 	}
 
+	// Moved+modified files still get bsdiff patches by unique basename match.
+	movedOld := writeTree(t, map[string]string{"v1/app.exe": string(code)})
+	movedNew := writeTree(t, map[string]string{"v2/app.exe": string(newCode)})
+	var movedDelta bytes.Buffer
+	if err := WriteDelta(&movedDelta, "1.0.0", "1.1.0", movedOld, movedNew, nil); err != nil {
+		t.Fatal(err)
+	}
+	if movedDelta.Len() > 5000 {
+		t.Errorf("renamed binary delta too large: %d bytes", movedDelta.Len())
+	}
+	if outMoved, err := apply(movedDelta.Bytes(), "1.0.0", "1.1.0", movedOld); err != nil {
+		t.Fatal(err)
+	} else if got, want := readTree(t, outMoved), readTree(t, movedNew); !maps.Equal(got, want) {
+		t.Errorf("renamed delta mismatch")
+	}
+
 	// Only the entries named.
 	delta.Reset()
 	if err := WriteDelta(&delta, "1.0.0", "1.1.0", oldDir, newDir, []string{"app.exe"}); err != nil {

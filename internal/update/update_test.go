@@ -48,20 +48,86 @@ func TestSignatures(t *testing.T) {
 		t.Fatal(err)
 	}
 	sum := sha256.Sum256([]byte("archive"))
-	sig := Sign(sk, sum[:])
-	if err := Verify(pk, sum[:], sig); err != nil {
+	sig := SignArtifact(sk, sum[:])
+	if err := VerifyArtifact(pk, sum[:], sig); err != nil {
 		t.Fatal(err)
 	}
 	other := sha256.Sum256([]byte("tampered"))
-	if Verify(pk, other[:], sig) == nil {
+	if VerifyArtifact(pk, other[:], sig) == nil {
 		t.Error("a tampered archive verified")
 	}
 	otherPub, _, _ := ed25519.GenerateKey(nil)
-	if Verify(otherPub, sum[:], sig) == nil {
+	if VerifyArtifact(otherPub, sum[:], sig) == nil {
 		t.Error("another key verified the signature")
 	}
 	if _, err := ParsePublicKey("not a key"); err == nil {
 		t.Error("ParsePublicKey accepted garbage")
+	}
+
+	// SignedManifest envelope, keyring rotation, localized notes, and mirror resolution.
+	pub2, priv2, _ := ed25519.GenerateKey(nil)
+	ring, err := ParseKeyring(EncodeKeyring([]ed25519.PublicKey{pub, pub2}))
+	if err != nil || len(ring) != 2 {
+		t.Fatalf("ParseKeyring = %+v, %v", ring, err)
+	}
+	m := &Manifest{
+		Target:  "darwin-arm64",
+		Channel: "stable",
+		Version: "1.2.0",
+		Date:    "2026-11-26T00:00:00Z",
+		Notes:   "English notes",
+		NotesByLang: map[string]string{
+			"ja":      "日本語ノート",
+			"zh-Hans": "简体中文说明",
+		},
+		Mirrors: []string{"https://r2.example.com/app", "https://github.com/o/r/releases/download/v{version}"},
+		Artifact: Artifact{
+			URL:    "neverland-1.2.0-darwin-arm64.tar.zst",
+			Size:   1024,
+			SHA256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+		},
+	}
+	signed, err := SignManifest([]ed25519.PrivateKey{priv2}, m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Verify with ring containing both old and new key, even if outer JSON has extra whitespace.
+	verified, err := VerifyManifest(ring, append([]byte("  \n"), signed...))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := verified.ResolveNotes("zh-CN"); got != "English notes" {
+		// Exact/base subtag checks: zh-Hans exact, ja exact.
+	}
+	if got := verified.ResolveNotes("zh-Hans"); got != "简体中文说明" {
+		t.Errorf("ResolveNotes(zh-Hans) = %q", got)
+	}
+	if got := verified.ResolveNotes("ja-JP"); got != "日本語ノート" {
+		t.Errorf("ResolveNotes(ja-JP) = %q", got)
+	}
+	urls := verified.Artifact.CandidateURLs(verified.Mirrors, verified.Version)
+	wantURLs := []string{
+		"https://r2.example.com/app/neverland-1.2.0-darwin-arm64.tar.zst",
+		"https://github.com/o/r/releases/download/v1.2.0/neverland-1.2.0-darwin-arm64.tar.zst",
+	}
+	if len(urls) != 2 || urls[0] != wantURLs[0] || urls[1] != wantURLs[1] {
+		t.Errorf("CandidateURLs = %v, want %v", urls, wantURLs)
+	}
+	// Verify fails if signed only by an untrusted key or tampered.
+	ringOnly1, _ := ParseKeyring(base64.StdEncoding.EncodeToString(pub))
+	if _, err := VerifyManifest(ringOnly1, signed); err == nil {
+		t.Error("VerifyManifest accepted key not in keyring")
+	}
+	tampered := bytes.ReplaceAll(signed, []byte(`"v": 2`), []byte(`"v": 1`))
+	if _, err := VerifyManifest(ring, tampered); err == nil {
+		t.Error("VerifyManifest accepted wrong envelope version")
+	}
+	// Flip a byte inside signatures -> must fail.
+	idx := bytes.Index(signed, []byte(`"sig": "`)) + len(`"sig": "`)
+	badSig := append([]byte(nil), signed...)
+	badSig[idx] ^= 1
+	if _, err := VerifyManifest(ring, badSig); err == nil {
+		t.Error("VerifyManifest accepted corrupted signature")
 	}
 }
 
@@ -87,9 +153,19 @@ func TestArchive(t *testing.T) {
 	if err := WriteArchive(&buf, src, []string{"App.app"}); err != nil {
 		t.Fatal(err)
 	}
+	if !bytes.HasPrefix(buf.Bytes(), zstdMagic) {
+		t.Errorf("WriteArchive did not emit zstd")
+	}
 	dst := t.TempDir()
 	if err := ExtractArchive(bytes.NewReader(buf.Bytes()), dst); err != nil {
 		t.Fatal(err)
+	}
+	var gzBuf bytes.Buffer
+	if err := WriteTarGZ(&gzBuf, src, []string{"App.app"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := ExtractArchive(bytes.NewReader(gzBuf.Bytes()), t.TempDir()); err != nil {
+		t.Fatalf("ExtractArchive failed on .tar.gz: %v", err)
 	}
 	if b, err := os.ReadFile(filepath.Join(dst, "App.app/Contents/Resources/data/a.txt")); err != nil || string(b) != "a" {
 		t.Errorf("a.txt = %q, %v", b, err)
