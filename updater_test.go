@@ -782,3 +782,59 @@ func TestUpdateCheckRedirect(t *testing.T) {
 		t.Errorf("asked %d times", asked.Load())
 	}
 }
+
+func TestDownloadMirrorsRecoversFromTruncated200ErrorPage(t *testing.T) {
+	useIsolatedCache(t)
+	payload := bytes.Repeat([]byte("valid-update-payload-"), 2048)
+	sum := sha256.Sum256(payload)
+	hexSum := hex.EncodeToString(sum[:])
+	pub, priv, _ := ed25519.GenerateKey(nil)
+	ring, _ := update.ParseKeyring(base64.StdEncoding.EncodeToString(pub))
+	sig := update.SignArtifact(priv, sum[:])
+
+	var m1Calls, m2Calls atomic.Int32
+	// Primary mirror returns an HTTP 200 short HTML error page (< size).
+	m1 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		m1Calls.Add(1)
+		w.Write([]byte("<html>error page</html>"))
+	}))
+	defer m1.Close()
+
+	// Fallback mirror serves full valid payload (and rejects stale ranges if any).
+	m2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		m2Calls.Add(1)
+		http.ServeContent(w, r, "app.tar.zst", time.Time{}, bytes.NewReader(payload))
+	}))
+	defer m2.Close()
+
+	dst := filepath.Join(t.TempDir(), "update.tar.zst")
+	err := downloadMirrors(t.Context(), httpGetRange, []string{m1.URL + "/a.tar.zst", m2.URL + "/a.tar.zst"},
+		int64(len(payload)), hexSum, sig, ring, testTarget(), dst, nil)
+	if err != nil {
+		t.Fatalf("downloadMirrors failed: %v (m1=%d m2=%d)", err, m1Calls.Load(), m2Calls.Load())
+	}
+	if m2Calls.Load() < 1 {
+		t.Errorf("expected fallback mirror to be called")
+	}
+	got, _ := os.ReadFile(dst)
+	if !bytes.Equal(got, payload) {
+		t.Error("final payload mismatch")
+	}
+}
+
+func TestTakeLastInstallError(t *testing.T) {
+	useIsolatedCache(t)
+	if err := Updater.TakeLastInstallError(); err != nil {
+		t.Fatalf("unexpected initial error: %v", err)
+	}
+	p := lastInstallErrorPath()
+	_ = os.MkdirAll(filepath.Dir(p), 0o755)
+	_ = os.WriteFile(p, []byte("could not replace installed app: Operation not permitted\n"), 0o644)
+	err := Updater.TakeLastInstallError()
+	if err == nil || !strings.Contains(err.Error(), "Operation not permitted") {
+		t.Fatalf("got %v, want permission error", err)
+	}
+	if err := Updater.TakeLastInstallError(); err != nil {
+		t.Fatalf("error was not cleared after reading: %v", err)
+	}
+}

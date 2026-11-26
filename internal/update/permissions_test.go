@@ -53,3 +53,22 @@ func TestUpdateFilePermissions(t *testing.T) {
 		})
 	}
 }
+
+func TestArchiveFileModePreservesExecutableMagic(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		head []byte
+		perm os.FileMode
+		want os.FileMode
+	}{
+		{"shebang", []byte("#!/bin/sh\n"), 0o644, 0o755},
+		{"elf", []byte{0x7f, 'E', 'L', 'F'}, 0o644, 0o755},
+		{"macho", []byte{0xcf, 0xfa, 0xed, 0xfe}, 0o644, 0o755},
+		{"text", []byte("hello"), 0o644, 0o644},
+		{"alreadyExec", []byte("hello"), 0o700, 0o700},
+	} {
+		if got := ArchiveFileMode(tc.head, tc.perm); got != tc.want {
+			t.Errorf("%s: got %o, want %o", tc.name, got, tc.want)
+		}
+	}
+}

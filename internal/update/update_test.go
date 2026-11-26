@@ -7,9 +7,11 @@ import (
 	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/json/v2"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -261,5 +263,43 @@ func TestExtractArchiveLimit(t *testing.T) {
 	}
 	if err := ExtractArchive(writeTestArchive(t, [3]string{"file", "a", "123456"}, [3]string{"file", "b", "12345"}), t.TempDir()); err == nil {
 		t.Fatal("over the limit, unpacked")
+	}
+}
+
+func TestVerifyManifestSkipsMalformedHistoricalDelta(t *testing.T) {
+	pub, priv, _ := ed25519.GenerateKey(nil)
+	ring, _ := ParseKeyring(base64.StdEncoding.EncodeToString(pub))
+	m := Manifest{
+		Schema:  SchemaVersion,
+		Target:  "darwin-arm64",
+		Version: "1.2.0",
+		Artifact: Artifact{
+			URL:    "https://dl.example.com/app.tar.zst",
+			Size:   100,
+			SHA256: strings.Repeat("a", 64),
+		},
+		Deltas: []Delta{
+			{From: "1.1.0", URL: "https://dl.example.com/delta.tar.zst", Size: 20, SHA256: strings.Repeat("b", 64)},
+		},
+	}
+	// Forge a signed envelope containing a broken delta alongside a valid one.
+	bad := m
+	bad.Deltas = append(bad.Deltas, Delta{From: "1.0.0", URL: "https://dl.example.com/bad.tar.zst", Size: -1, SHA256: "bad"})
+	payload, _ := json.Marshal(bad)
+	env := SignedManifest{
+		V:       EnvelopeVersion,
+		Payload: payload,
+		Signatures: []Signature{{
+			KeyID: KeyID(pub),
+			Sig:   base64.StdEncoding.EncodeToString(ed25519.Sign(priv, append([]byte(manifestDomain), payload...))),
+		}},
+	}
+	raw, _ := json.Marshal(env)
+	got, err := VerifyManifest(ring, raw)
+	if err != nil {
+		t.Fatalf("VerifyManifest failed despite valid Artifact: %v", err)
+	}
+	if len(got.Deltas) != 1 || got.Deltas[0].From != "1.1.0" {
+		t.Fatalf("Deltas = %+v, want only valid delta 1.1.0", got.Deltas)
 	}
 }

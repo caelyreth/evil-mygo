@@ -526,20 +526,47 @@ func VerifyManifest(ring Keyring, raw []byte) (*Manifest, error) {
 	if err := json.Unmarshal(env.Payload, &m); err != nil {
 		return nil, fmt.Errorf("invalid signed manifest payload: %w", err)
 	}
-	if err := validateManifest(&m); err != nil {
+	if err := validateVerifiedManifest(&m); err != nil {
 		return nil, err
 	}
 	return &m, nil
 }
 
-func validateManifest(m *Manifest) error {
+// validateVerifiedManifest checks mandatory manifest fields and drops any
+// malformed historical delta entries so a stale bad delta cannot block full
+// archive recovery.
+func validateVerifiedManifest(m *Manifest) error {
+	if err := validateManifestCore(m); err != nil {
+		return err
+	}
+	if len(m.Deltas) > 0 {
+		valid := m.Deltas[:0]
+		for _, d := range m.Deltas {
+			if d.From == "" {
+				continue
+			}
+			if err := validateDigestSpec("delta "+d.From, d.Size, d.SHA256, d.CandidateURLs(m.Mirrors, m.Version)); err != nil {
+				continue
+			}
+			valid = append(valid, d)
+		}
+		m.Deltas = valid
+	}
+	return nil
+}
+
+func validateManifestCore(m *Manifest) error {
 	if m.Schema != SchemaVersion {
 		return fmt.Errorf("unsupported manifest schema %d", m.Schema)
 	}
 	if m.Version == "" || m.Target == "" {
 		return errors.New("incomplete manifest: missing version or target")
 	}
-	if err := validateDigestSpec("artifact", m.Artifact.Size, m.Artifact.SHA256, m.Artifact.CandidateURLs(m.Mirrors, m.Version)); err != nil {
+	return validateDigestSpec("artifact", m.Artifact.Size, m.Artifact.SHA256, m.Artifact.CandidateURLs(m.Mirrors, m.Version))
+}
+
+func validateManifest(m *Manifest) error {
+	if err := validateManifestCore(m); err != nil {
 		return err
 	}
 	for _, d := range m.Deltas {
@@ -699,16 +726,25 @@ func writeTar(w io.Writer, dir string, entries []string) error {
 				hdr.Name += "/"
 			}
 			hdr.Uid, hdr.Gid, hdr.Uname, hdr.Gname = 0, 0, "", ""
-			if err := tw.WriteHeader(hdr); err != nil {
-				return err
-			}
 			if info.Mode().IsRegular() {
 				f, err := os.Open(p)
 				if err != nil {
 					return err
 				}
+				var head [4]byte
+				hn, _ := io.ReadFull(f, head[:])
+				_, _ = f.Seek(0, io.SeekStart)
+				mode := ArchiveFileMode(head[:hn], info.Mode().Perm())
+				hdr.Mode = int64(mode)
+				if err := tw.WriteHeader(hdr); err != nil {
+					f.Close()
+					return err
+				}
 				_, err = io.Copy(tw, f)
 				f.Close()
+				return err
+			}
+			if err := tw.WriteHeader(hdr); err != nil {
 				return err
 			}
 			return nil
@@ -718,6 +754,43 @@ func writeTar(w io.Writer, dir string, entries []string) error {
 		}
 	}
 	return tw.Close()
+}
+
+// ArchiveFileMode ensures regular executable binaries/scripts keep Unix +x
+// bits even when packaged on hosts (such as Windows) whose filesystems lack
+// Unix mode bits.
+func ArchiveFileMode(head []byte, perm fs.FileMode) fs.FileMode {
+	if perm&0o111 != 0 {
+		return perm
+	}
+	if hasExecutableMagic(head) {
+		return perm | 0o755
+	}
+	return perm
+}
+
+func hasExecutableMagic(head []byte) bool {
+	if len(head) >= 2 && head[0] == '#' && head[1] == '!' {
+		return true
+	}
+	if len(head) < 4 {
+		return false
+	}
+	// ELF (\x7fELF)
+	if head[0] == 0x7f && head[1] == 'E' && head[2] == 'L' && head[3] == 'F' {
+		return true
+	}
+	// Mach-O 32/64/universal magics (big/little endian)
+	switch [4]byte(head[:4]) {
+	case [4]byte{0xfe, 0xed, 0xfa, 0xce},
+		[4]byte{0xce, 0xfa, 0xed, 0xfe},
+		[4]byte{0xfe, 0xed, 0xfa, 0xcf},
+		[4]byte{0xcf, 0xfa, 0xed, 0xfe},
+		[4]byte{0xca, 0xfe, 0xba, 0xbe},
+		[4]byte{0xbe, 0xba, 0xfe, 0xca}:
+		return true
+	}
+	return false
 }
 
 // MaxUnpackedSize is the most an update archive may unpack to.

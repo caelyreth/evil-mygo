@@ -217,12 +217,46 @@ func (u *UpdaterModule) Availability() UpdateAvailability {
 	if err != nil {
 		return UpdateUnavailableNotBundle
 	}
-	probe, err := os.MkdirTemp(filepath.Dir(target), ".app-update-")
-	if err != nil {
+	if !probeWritableDir(filepath.Dir(target)) || !probeWritableDir(target) {
 		return UpdateUnavailableReadOnly
 	}
-	os.Remove(probe)
 	return UpdateAvailable
+}
+
+func probeWritableDir(dir string) bool {
+	probe, err := os.MkdirTemp(dir, ".app-update-")
+	if err != nil {
+		return false
+	}
+	_ = os.Remove(probe)
+	return true
+}
+
+// TakeLastInstallError returns and clears any error recorded by the post-exit
+// bundle swap helper (macOS) from the previous launch attempt.
+func (u *UpdaterModule) TakeLastInstallError() error {
+	p := lastInstallErrorPath()
+	if p == "" {
+		return nil
+	}
+	data, err := os.ReadFile(p)
+	if err != nil {
+		return nil
+	}
+	_ = os.Remove(p)
+	msg := strings.TrimSpace(string(data))
+	if msg == "" {
+		return nil
+	}
+	return errors.New(msg)
+}
+
+func lastInstallErrorPath() string {
+	cacheBase, err := App.Path(PathCache)
+	if err != nil || cacheBase == "" {
+		return ""
+	}
+	return filepath.Join(cacheBase, "updates", "last-install-error.txt")
 }
 
 // Enabled reports whether the app can update itself.
@@ -290,7 +324,10 @@ func (f feedSource) Manifest(ctx context.Context, q ManifestQuery) (ManifestResu
 	if err != nil {
 		return ManifestResult{}, err
 	}
-	reqHeaders := http.Header{"Accept": {"application/json"}}
+	reqHeaders := http.Header{
+		"Accept":        {"application/json"},
+		"Cache-Control": {"no-cache"},
+	}
 	if q.ETag != "" {
 		reqHeaders.Set("If-None-Match", q.ETag)
 	}
@@ -325,7 +362,18 @@ func (f feedSource) Open(ctx context.Context, rawURL string, offset int64) (io.R
 	return httpGetRange(ctx, rawURL, offset)
 }
 
+var checkTimeout = 30 * time.Second
+
+func withDefaultDeadline(ctx context.Context, d time.Duration) (context.Context, context.CancelFunc) {
+	if _, hasDeadline := ctx.Deadline(); hasDeadline {
+		return ctx, func() {}
+	}
+	return context.WithTimeout(ctx, d)
+}
+
 func checkUpdateCached(ctx context.Context, src UpdateSource, srcKey, keysRaw, target, channel, current, locale string) (*Update, error) {
+	ctx, cancel := withDefaultDeadline(ctx, checkTimeout)
+	defer cancel()
 	cacheKey := srcKey + "|" + target + "|" + channel
 	cached, hasCached := getETagEntry(cacheKey)
 	q := ManifestQuery{Target: target, Channel: channel, Current: current, Locale: locale}
@@ -628,9 +676,10 @@ func downloadMirrors(
 		_ = os.Remove(partPath)
 	}
 
-	maxAttempts := max(len(urls)*2, 3)
+	maxAttempts := max(len(urls)*2+1, 3)
 	var lastErr error
-	resetMismatch := false
+	triedClean := make([]bool, len(urls))
+	mirrorIdx := 0
 	for attempt := 0; attempt < maxAttempts; attempt++ {
 		if attempt > 0 {
 			wait := time.Duration(min(attempt, 3)) * 500 * time.Millisecond
@@ -640,7 +689,7 @@ func downloadMirrors(
 				}
 			}
 		}
-		u := urls[attempt%len(urls)]
+		u := urls[mirrorIdx%len(urls)]
 		offset := int64(0)
 		if info, err := os.Stat(partPath); err == nil && info.Size() > 0 && info.Size() < size {
 			offset = info.Size()
@@ -652,6 +701,17 @@ func downloadMirrors(
 			if ctx.Err() != nil || errors.Is(err, errRedirect) {
 				return err
 			}
+			if errors.Is(err, errRangeNotSatisfiable) {
+				_ = os.Remove(partPath)
+				// Retry same or next mirror from offset 0 cleanly.
+				if offset > 0 {
+					continue
+				}
+			}
+			if offset == 0 {
+				triedClean[mirrorIdx%len(urls)] = true
+			}
+			mirrorIdx = nextUntriedMirror(triedClean, mirrorIdx)
 			continue
 		}
 
@@ -678,24 +738,37 @@ func downloadMirrors(
 			if ctx.Err() != nil {
 				return lastErr
 			}
+			mirrorIdx = nextUntriedMirror(triedClean, mirrorIdx)
 			continue
 		}
 		totalGot := startOffset + n
 		if totalGot != size {
-			if totalGot < size {
-				// Partial body written; resume from totalGot on next mirror.
-				lastErr = fmt.Errorf("downloaded %d bytes, want %d", totalGot, size)
-				continue
+			// If the server gave a full 200 short body (not partial), it sent
+			// an invalid/truncated response from offset 0 — discard it so the
+			// next mirror starts cleanly from byte 0 rather than appending tail
+			// onto corrupt bytes.
+			if totalGot > size || !partial {
+				_ = os.Remove(partPath)
+				if !partial && startOffset == 0 {
+					triedClean[mirrorIdx%len(urls)] = true
+				}
 			}
-			_ = os.Remove(partPath)
 			lastErr = fmt.Errorf("downloaded %d bytes, want %d", totalGot, size)
+			mirrorIdx = nextUntriedMirror(triedClean, mirrorIdx)
 			continue
 		}
 		if err := verifyPart(); err != nil {
 			_ = os.Remove(partPath)
 			lastErr = err
-			if !resetMismatch && attempt+1 < maxAttempts {
-				resetMismatch = true
+			if startOffset == 0 {
+				triedClean[mirrorIdx%len(urls)] = true
+			}
+			next := nextUntriedMirror(triedClean, mirrorIdx)
+			if attempt+1 < maxAttempts && !triedClean[next] {
+				mirrorIdx = next
+				continue
+			}
+			if startOffset > 0 && !triedClean[mirrorIdx%len(urls)] && attempt+1 < maxAttempts {
 				continue
 			}
 			return err
@@ -706,6 +779,16 @@ func downloadMirrors(
 		lastErr = errors.New("download failed")
 	}
 	return lastErr
+}
+
+func nextUntriedMirror(tried []bool, cur int) int {
+	for step := 1; step <= len(tried); step++ {
+		idx := (cur + step) % len(tried)
+		if !tried[idx] {
+			return idx
+		}
+	}
+	return (cur + 1) % len(tried)
 }
 
 var mirrorRetryWait = func(ctx context.Context, d time.Duration) bool {
@@ -791,8 +874,13 @@ func stageBundle(work, dir, target string) error {
 	if len(entries) != 1 || !strings.HasSuffix(entries[0].Name(), ".app") {
 		return errors.New("the update holds no app bundle")
 	}
+	errFile := lastInstallErrorPath()
+	if errFile != "" {
+		_ = os.MkdirAll(filepath.Dir(errFile), 0o755)
+		_ = os.Remove(errFile)
+	}
 	p := &stagedUpdate{work: work, bundle: filepath.Join(dir, entries[0].Name()), target: target}
-	p.helper = exec.Command("/bin/sh", "-c", installAfterExit, "app-update", strconv.Itoa(appPid), p.target, p.bundle, p.work)
+	p.helper = exec.Command("/bin/sh", "-c", installAfterExit, "app-update", strconv.Itoa(appPid), p.target, p.bundle, p.work, errFile)
 	if err := p.helper.Start(); err != nil {
 		return err
 	}
@@ -804,11 +892,24 @@ func stageBundle(work, dir, target string) error {
 	return nil
 }
 
-const installAfterExit = `pid=$1 target=$2 new=$3 work=$4
+const installAfterExit = `pid=$1 target=$2 new=$3 work=$4 errfile=$5
 trap '' HUP
 while kill -0 "$pid" 2>/dev/null; do sleep 0.05; done
-if mv "$target" "$work/old"; then
-	mv "$new" "$target" || mv "$work/old" "$target"
+record_err() {
+	if [ -n "$errfile" ]; then
+		mkdir -p "$(dirname "$errfile")" 2>/dev/null || true
+		printf '%s\n' "$1" > "$errfile" 2>/dev/null || true
+	fi
+}
+if err=$(mv "$target" "$work/old" 2>&1); then
+	if err2=$(mv "$new" "$target" 2>&1); then
+		:
+	else
+		mv "$work/old" "$target" 2>/dev/null || true
+		record_err "could not move new app into place: $err2"
+	fi
+else
+	record_err "could not replace installed app: $err"
 fi
 relaunch=
 if [ -e "$work/relaunch" ]; then relaunch=1; . "$work/relaunch"; fi
@@ -994,10 +1095,19 @@ func openBundle(args []string) bool {
 // Windows/Linux .old-* leftovers, and expired .part downloads.
 func cleanUpdateLeftovers() {
 	now := time.Now()
-	if runtime.GOOS != "darwin" && startExe != "" {
-		olds, _ := filepath.Glob(filepath.Join(filepath.Dir(startExe), ".*.old-*"))
-		for _, p := range olds {
-			_ = os.RemoveAll(p)
+	if runtime.GOOS != "darwin" {
+		dirs := map[string]bool{}
+		if startExe != "" {
+			dirs[filepath.Dir(startExe)] = true
+		}
+		if target, err := installTarget(); err == nil {
+			dirs[target] = true
+		}
+		for dir := range dirs {
+			olds, _ := filepath.Glob(filepath.Join(dir, ".*.old-*"))
+			for _, p := range olds {
+				_ = os.RemoveAll(p)
+			}
 		}
 	}
 	if target, err := installTarget(); err == nil {
@@ -1087,9 +1197,14 @@ func httpGetRange(ctx context.Context, rawURL string, offset int64) (io.ReadClos
 		return nil, false, fmt.Errorf("GET %s: unexpected Content-Range %q", rawURL, resp.Header.Get("Content-Range"))
 	default:
 		resp.Body.Close()
+		if resp.StatusCode == http.StatusRequestedRangeNotSatisfiable {
+			return nil, false, fmt.Errorf("%w: GET %s: %s", errRangeNotSatisfiable, rawURL, resp.Status)
+		}
 		return nil, false, fmt.Errorf("GET %s: %s", rawURL, resp.Status)
 	}
 }
+
+var errRangeNotSatisfiable = errors.New("range not satisfiable")
 
 func validContentRangeStart(header string, offset int64) bool {
 	rest, ok := strings.CutPrefix(strings.TrimSpace(header), "bytes ")

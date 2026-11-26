@@ -148,7 +148,7 @@ func WriteDelta(w io.Writer, from, to, oldDir, newDir string, entries []string) 
 					return err
 				}
 				sum := sha256.Sum256(b)
-				e.Mode, e.Size, e.SHA256 = uint32(info.Mode().Perm()), int64(len(b)), hex.EncodeToString(sum[:])
+				e.Mode, e.Size, e.SHA256 = uint32(ArchiveFileMode(b, info.Mode().Perm())), int64(len(b)), hex.EncodeToString(sum[:])
 				o := old[e.Path]
 				if o.sum == e.SHA256 {
 					e.From = e.Path
