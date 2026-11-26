@@ -437,6 +437,169 @@ func main() {
 	}
 }
 
+// TestUpdateRelaunchEndToEnd verifies that installing an update inside a running
+// application and calling App.Relaunch swaps the binary/bundle cleanly on disk
+// and starts the new version automatically.
+func TestUpdateRelaunchEndToEnd(t *testing.T) {
+	if testing.Short() {
+		t.Skip("compiles programs")
+	}
+	marker := filepath.Join(t.TempDir(), "relaunched.txt")
+	dir := testModule(t, map[string]string{
+		"main.go": `package main
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"slices"
+	"time"
+
+	"github.com/egoist/mygo"
+)
+
+func main() {
+	if !mygo.App.RequestSingleInstanceLock() {
+		return
+	}
+	if slices.Contains(os.Args[1:], "--updated") {
+		_ = os.WriteFile(os.Getenv("MARKER"), []byte(mygo.App.Version()), 0o644)
+		mygo.App.Quit()
+		return
+	}
+	mygo.App.WhenReady(func() {
+		if os.Getenv("UPDATE") == "" {
+			mygo.App.Quit()
+			return
+		}
+		go func() {
+			up, err := mygo.Updater.Check(context.Background())
+			if err != nil || up == nil {
+				fmt.Println("check:", up, err)
+				mygo.App.Exit(1)
+				return
+			}
+			if err := up.Install(context.Background(), nil); err != nil {
+				fmt.Println("install:", err)
+				mygo.App.Exit(1)
+				return
+			}
+			mygo.App.Relaunch("--updated")
+		}()
+	})
+	_ = mygo.App.Run()
+	time.Sleep(150 * time.Millisecond) // simulate defer cleanup holding single-instance lock
+}
+`,
+		"CHANGELOG.md": "# Changelog\n\n## 1.1.0\n\n- Relaunched\n\n## 1.0.0\n\n- First\n",
+	})
+	pub, priv, _ := ed25519.GenerateKey(nil)
+	t.Setenv("MYGO_UPDATER_PRIVATE_KEY", base64.StdEncoding.EncodeToString(priv))
+	serve := t.TempDir()
+	srv := httptest.NewServer(http.FileServer(http.Dir(serve)))
+	defer srv.Close()
+
+	goos, goarch := runtime.GOOS, runtime.GOARCH
+	target := goos + "-" + goarch
+	ring, _ := update.ParseKeyring(base64.StdEncoding.EncodeToString(pub))
+	buildAndPublish := func(version, out string) string {
+		t.Helper()
+		c, err := loadConfig(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		c.Name, c.Version, c.Out = "Relaunch Test", version, out
+		c.Updates = &Updates{PublicKey: base64.StdEncoding.EncodeToString(pub), URL: srv.URL}
+		opts := buildOptions{sign: "-", skipDMG: true, work: t.TempDir()}
+		if opts.pkg, err = packageDir(c); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := buildPlatform(c, goos, goarch, opts); err != nil {
+			t.Fatal(err)
+		}
+		dist := filepath.Join(dir, out, target)
+		data, err := os.ReadFile(filepath.Join(dist, update.ManifestName(target)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		m, err := update.VerifyManifest(ring, data)
+		if err != nil {
+			t.Fatal(err)
+		}
+		chDir := filepath.Join(serve, m.Channel)
+		os.MkdirAll(chDir, 0o755)
+		os.WriteFile(filepath.Join(chDir, update.ManifestName(target)), data, 0o644)
+		if hData, err := os.ReadFile(filepath.Join(dist, update.HistoryName(target))); err == nil {
+			os.WriteFile(filepath.Join(chDir, update.HistoryName(target)), hData, 0o644)
+		}
+		names := []string{filepath.Base(m.Artifact.URL)}
+		for _, d := range m.Deltas {
+			names = append(names, filepath.Base(d.URL))
+		}
+		for _, name := range names {
+			b, err := os.ReadFile(filepath.Join(dist, name))
+			if err != nil {
+				t.Fatal(err)
+			}
+			os.WriteFile(filepath.Join(serve, name), b, 0o644)
+		}
+		return dist
+	}
+
+	v1 := buildAndPublish("1.0.0", "dist1")
+	_ = buildAndPublish("1.1.0", "dist2")
+
+	install := t.TempDir()
+	exe := filepath.Join(install, "relaunch-test")
+	switch goos {
+	case "darwin":
+		if err := exec.Command("ditto", filepath.Join(v1, "Relaunch Test.app"), filepath.Join(install, "Relaunch Test.app")).Run(); err != nil {
+			t.Fatal(err)
+		}
+		exe = filepath.Join(install, "Relaunch Test.app", "Contents", "MacOS", "Relaunch Test")
+	case "windows":
+		exe = filepath.Join(install, "Relaunch Test.exe")
+		fallthrough
+	default:
+		b, err := os.ReadFile(filepath.Join(v1, filepath.Base(exe)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(exe, b, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	cmd := exec.Command(exe)
+	cmd.Env = append(os.Environ(), "UPDATE=1", "MARKER="+marker)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("running 1.0.0 update+relaunch: %v\n%s", err, out)
+	}
+
+	for deadline := time.Now().Add(15 * time.Second); ; time.Sleep(50 * time.Millisecond) {
+		b, err := os.ReadFile(marker)
+		if err == nil && string(b) == "1.1.0" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("relaunched 1.1.0 did not write marker (got %q, %v)", b, err)
+		}
+	}
+	if goos == "darwin" {
+		for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(25 * time.Millisecond) {
+			if staged, _ := filepath.Glob(filepath.Join(install, ".*.update-*")); len(staged) == 0 {
+				break
+			}
+			if time.Now().After(deadline) {
+				t.Fatal("staging folder remained after relaunch")
+			}
+		}
+		if out, err := exec.Command("codesign", "--verify", "--deep", "--strict", filepath.Join(install, "Relaunch Test.app")).CombinedOutput(); err != nil {
+			t.Errorf("updated bundle fails codesign: %v\n%s", err, out)
+		}
+	}
+}
+
 // TestUnsignedUpdateWarning warns when the update of a macOS build would
 // hold a bundle that mygo build did not sign: off a Mac, without
 // macos.signCommand.
