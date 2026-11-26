@@ -148,3 +148,31 @@ func BenchmarkAtlasRepack(b *testing.B) {
 		}
 	}
 }
+
+func TestAtlasShrink(t *testing.T) {
+	a := NewAtlas(1, 256, 256)
+	if a.Shrink(256, 256) {
+		t.Fatal("Shrink changed atlas already at target size")
+	}
+	for range 4 {
+		if !a.Grow() {
+			t.Fatal("Grow failed before MaxAtlasSize")
+		}
+	}
+	if a.W != 4096 || a.H != 4096 {
+		t.Fatalf("grown size = %dx%d, want 4096x4096", a.W, a.H)
+	}
+	gen := a.Generation()
+	if !a.Shrink(256, 256) {
+		t.Fatal("Shrink returned false for 4096x4096 atlas")
+	}
+	if a.W != 256 || a.H != 256 || len(a.Pix) != 256*256 || cap(a.Pix) != 256*256 {
+		t.Fatalf("after Shrink: %dx%d len=%d cap=%d, want 256x256", a.W, a.H, len(a.Pix), cap(a.Pix))
+	}
+	if a.Generation() == gen {
+		t.Fatal("Shrink did not increment generation")
+	}
+	if _, _, ok := a.Alloc(32, 32); !ok {
+		t.Fatal("Alloc failed after Shrink")
+	}
+}

@@ -566,11 +566,42 @@ func newSystem() *System {
 	return s
 }
 
+const (
+	initMaskAtlasSize  = 256
+	initColorAtlasSize = 1
+	trimMaskAtlasOver  = 512
+	trimColorAtlasOver = 256
+)
+
 // newAtlases returns the glyph atlases a System starts with.
 func newAtlases() (mask, color *scene.Atlas) {
 	// Most interfaces have no color or subpixel glyphs. Keep just a
 	// transparent texel until one asks for room.
-	return scene.NewAtlas(1, 256, 256), scene.NewAtlas(4, 1, 1)
+	return scene.NewAtlas(1, initMaskAtlasSize, initMaskAtlasSize), scene.NewAtlas(4, initColorAtlasSize, initColorAtlasSize)
+}
+
+func (s *System) resetAtlasEntries() {
+	clear(s.glyphs)
+	clear(s.runs)
+	clear(s.masks)
+	clear(s.transient)
+	clear(s.recent)
+	s.forgetLeftOut()
+	s.rooms = 0
+}
+
+func (s *System) shrinkAtlases() {
+	if s.MaskAtlas.W <= trimMaskAtlasOver && s.MaskAtlas.H <= trimMaskAtlasOver &&
+		s.ColorAtlas.W <= trimColorAtlasOver && s.ColorAtlas.H <= trimColorAtlasOver {
+		return
+	}
+	if !s.MaskAtlas.Shrink(initMaskAtlasSize, initMaskAtlasSize) {
+		s.MaskAtlas.Reset()
+	}
+	if !s.ColorAtlas.Shrink(initColorAtlasSize, initColorAtlasSize) {
+		s.ColorAtlas.Reset()
+	}
+	s.resetAtlasEntries()
 }
 
 // Shared returns the process-wide text system.
@@ -617,13 +648,7 @@ func (s *System) Reuse() {
 	}
 	s.frame += liveLayoutFrames
 	s.MaskAtlas, s.ColorAtlas = newAtlases()
-	clear(s.glyphs)
-	clear(s.runs)
-	clear(s.masks)
-	clear(s.transient)
-	clear(s.recent)
-	s.forgetLeftOut()
-	s.rooms = 0
+	s.resetAtlasEntries()
 }
 
 // appFonts are the fonts the app registered for all its text
@@ -1049,14 +1074,15 @@ func (s *System) EndFrame() {
 	}
 }
 
-// ReleaseShaping lets go of what the engine keeps of text shaped lately, for
-// when a window goes idle: the next frames shape it again.
+// ReleaseShaping lets go of what the engine keeps of text shaped lately, and
+// shrinks oversized glyph atlases back down when a window goes idle.
 func (s *System) ReleaseShaping() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if k, ok := s.eng.(shapingKeeper); ok {
 		k.releaseShaping()
 	}
+	s.shrinkAtlases()
 }
 
 // Layout shapes and wraps p.Text. The result is shared and must not be

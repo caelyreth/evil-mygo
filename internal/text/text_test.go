@@ -2672,3 +2672,48 @@ func sameLayout(a, b *Layout) bool {
 	}
 	return true
 }
+
+func TestReleaseShapingShrinksOversizedAtlases(t *testing.T) {
+	s := newSystem()
+	// Normal 512x512 atlas stays intact on ReleaseShaping.
+	if !s.MaskAtlas.Grow() || s.MaskAtlas.W != 512 {
+		t.Fatalf("expected 512x512 mask atlas, got %dx%d", s.MaskAtlas.W, s.MaskAtlas.H)
+	}
+	maskPix := make([]byte, 10*10)
+	maskPix[0] = 200
+	s.Mask(99, func() (int, int, []byte) { return 10, 10, maskPix })
+	genBefore := s.MaskAtlas.Generation()
+	s.ReleaseShaping()
+	if s.MaskAtlas.W != 512 || s.MaskAtlas.Generation() != genBefore {
+		t.Fatalf("ReleaseShaping shrank non-oversized 512x512 atlas: %dx%d", s.MaskAtlas.W, s.MaskAtlas.H)
+	}
+
+	// Oversized 4096x4096 MaskAtlas and 1024x1024 ColorAtlas shrink on idle.
+	for range 3 {
+		if !s.MaskAtlas.Grow() {
+			t.Fatal("MaskAtlas.Grow failed")
+		}
+	}
+	for range 10 {
+		s.ColorAtlas.Grow()
+	}
+	if s.MaskAtlas.W != scene.MaxAtlasSize || s.ColorAtlas.W != 1024 {
+		t.Fatalf("grown sizes = mask %dx%d color %dx%d", s.MaskAtlas.W, s.MaskAtlas.H, s.ColorAtlas.W, s.ColorAtlas.H)
+	}
+	maskGen := s.MaskAtlas.Generation()
+	colorGen := s.ColorAtlas.Generation()
+	s.ReleaseShaping()
+	if s.MaskAtlas.W != 256 || s.MaskAtlas.H != 256 || len(s.MaskAtlas.Pix) != 256*256 {
+		t.Fatalf("shrunk MaskAtlas = %dx%d (%d bytes), want 256x256", s.MaskAtlas.W, s.MaskAtlas.H, len(s.MaskAtlas.Pix))
+	}
+	if s.ColorAtlas.W != 1 || s.ColorAtlas.H != 1 || len(s.ColorAtlas.Pix) != 4 {
+		t.Fatalf("shrunk ColorAtlas = %dx%d (%d bytes), want 1x1", s.ColorAtlas.W, s.ColorAtlas.H, len(s.ColorAtlas.Pix))
+	}
+	if s.MaskAtlas.Generation() == maskGen || s.ColorAtlas.Generation() == colorGen {
+		t.Fatal("ReleaseShaping did not advance atlas generations on shrink")
+	}
+	// Re-populating masks after shrink must succeed cleanly.
+	if g := s.Mask(99, func() (int, int, []byte) { return 10, 10, maskPix }); !g.OK {
+		t.Fatal("Mask allocation failed after ReleaseShaping shrink")
+	}
+}

@@ -237,6 +237,21 @@ func (a *Atlas) Reset() {
 	a.changedAll()
 }
 
+// Shrink drops an oversized backing allocation back down to w×h pixels,
+// invalidating all prior allocations and reporting whether the atlas shrank.
+func (a *Atlas) Shrink(w, h int) bool {
+	if w <= 0 || h <= 0 || (a.W <= w && a.H <= h) {
+		return false
+	}
+	a.W, a.H = w, h
+	a.Pix = make([]byte, w*h*a.BPP)
+	a.shelves = a.shelves[:0]
+	a.bottom = 0
+	a.ResetTransient()
+	a.changedAll()
+	return true
+}
+
 // changedAll makes renderers upload the whole atlas.
 func (a *Atlas) changedAll() {
 	a.gen++

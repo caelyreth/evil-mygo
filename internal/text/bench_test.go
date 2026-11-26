@@ -247,3 +247,16 @@ func BenchmarkLayoutLong(b *testing.B) {
 		})
 	}
 }
+
+func BenchmarkReleaseShapingIdleShrink(b *testing.B) {
+	s := newSystem()
+	b.ReportAllocs()
+	var afterBytes int
+	for b.Loop() {
+		for s.MaskAtlas.Grow() {
+		}
+		s.ReleaseShaping()
+		afterBytes = len(s.MaskAtlas.Pix) + len(s.ColorAtlas.Pix)
+	}
+	b.ReportMetric(float64(afterBytes)/1024, "idle-KiB")
+}
