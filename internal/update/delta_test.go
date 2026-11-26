@@ -1,7 +1,10 @@
 package update
 
 import (
+	"archive/tar"
 	"bytes"
+	"encoding/json/v2"
+	"io"
 	"io/fs"
 	"maps"
 	"math/rand/v2"
@@ -11,6 +14,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/klauspost/compress/zstd"
 )
 
 // writeTree creates files (path → content; "->target" makes a link, a
@@ -132,6 +137,28 @@ func TestDelta(t *testing.T) {
 	}
 	if got, want := readTree(t, out), readTree(t, newDir); !maps.Equal(got, want) {
 		t.Errorf("applying the delta made\n%v\nwant\n%v", slices.Sorted(maps.Keys(got)), slices.Sorted(maps.Keys(want)))
+	}
+
+	// Verify the .delta archive itself is a valid standard .tar.zst container
+	// inspectable with zstd + archive/tar (`tar --zstd -tf`) and contains raw
+	// RFC 3284 .vcdiff files.
+	zr, err := zstd.NewReader(bytes.NewReader(delta.Bytes()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer zr.Close()
+	tr := tar.NewReader(zr)
+	hdr, err := tr.Next()
+	if err != nil || hdr.Name != deltaIndexName {
+		t.Fatalf("first tar entry = %v, %v; want %s", hdr, err, deltaIndexName)
+	}
+	idxBytes, err := io.ReadAll(tr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var parsedIdx deltaIndex
+	if err := json.Unmarshal(idxBytes, &parsedIdx); err != nil || parsedIdx.Format != deltaFormat {
+		t.Fatalf("index.json invalid: %+v, %v", parsedIdx, err)
 	}
 
 	// Moved+modified files still get bsdiff patches by unique basename match.

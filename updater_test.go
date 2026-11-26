@@ -741,7 +741,7 @@ func TestRelaunchArguments(t *testing.T) {
 	exited := exec.Command("/bin/sh", "-c", "exit 0")
 	_ = exited.Run()
 	script := strings.Replace(installAfterExit, "exec /usr/bin/open", `printf '%s\0'`, 1)
-	out, err := exec.Command("/bin/sh", "-c", script, "mygo-update", strconv.Itoa(exited.Process.Pid), target, bundle, work).Output()
+	out, err := exec.Command("/bin/sh", "-c", script, "app-update", strconv.Itoa(exited.Process.Pid), target, bundle, work).Output()
 	if err != nil {
 		t.Fatal(err)
 	}

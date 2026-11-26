@@ -39,8 +39,8 @@ const (
 	// BetaChannel is the channel used for prerelease builds.
 	BetaChannel = "beta"
 
-	manifestDomain = "mygo-update-manifest-v2\n"
-	artifactDomain = "mygo-update-artifact-v2\n"
+	manifestDomain = "app-update-manifest-v2\n"
+	artifactDomain = "app-update-artifact-v2\n"
 )
 
 // Limits of what an app downloads.

@@ -15,7 +15,7 @@ import (
 // version lacks, and leaves those that no list names, such as the data of
 // a portable copy, or the installer's uninstaller. App bundles have none:
 // updates replace the whole bundle.
-const FileList = ".mygo-files"
+const FileList = ".app-files"
 
 // WriteFileList writes the FileList of dir, naming entries (FileList and
 // what is not a name of dir's own entries left out), through a temporary

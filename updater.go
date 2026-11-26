@@ -217,7 +217,7 @@ func (u *UpdaterModule) Availability() UpdateAvailability {
 	if err != nil {
 		return UpdateUnavailableNotBundle
 	}
-	probe, err := os.MkdirTemp(filepath.Dir(target), ".mygo-update-")
+	probe, err := os.MkdirTemp(filepath.Dir(target), ".app-update-")
 	if err != nil {
 		return UpdateUnavailableReadOnly
 	}
@@ -570,7 +570,7 @@ func updateCacheDir() string {
 			return dir
 		}
 	}
-	dir := filepath.Join(os.TempDir(), "mygo-updates")
+	dir := filepath.Join(os.TempDir(), "app-updates")
 	_ = os.MkdirAll(dir, 0o755)
 	return dir
 }
@@ -792,7 +792,7 @@ func stageBundle(work, dir, target string) error {
 		return errors.New("the update holds no app bundle")
 	}
 	p := &stagedUpdate{work: work, bundle: filepath.Join(dir, entries[0].Name()), target: target}
-	p.helper = exec.Command("/bin/sh", "-c", installAfterExit, "mygo-update", strconv.Itoa(appPid), p.target, p.bundle, p.work)
+	p.helper = exec.Command("/bin/sh", "-c", installAfterExit, "app-update", strconv.Itoa(appPid), p.target, p.bundle, p.work)
 	if err := p.helper.Start(); err != nil {
 		return err
 	}
@@ -1116,7 +1116,7 @@ func httpDoWithRetries(ctx context.Context, rawURL string, headers http.Header) 
 			cancel()
 			return nil, err
 		}
-		req.Header.Set("User-Agent", "mygo-updater")
+		req.Header.Set("User-Agent", "app-updater")
 		for k, vals := range headers {
 			for _, v := range vals {
 				req.Header.Add(k, v)

@@ -1,9 +1,8 @@
 package update
 
 import (
-	"bytes"
+	"archive/tar"
 	"crypto/sha256"
-	"encoding/binary"
 	"encoding/hex"
 	"encoding/json/v2"
 	"errors"
@@ -17,17 +16,24 @@ import (
 	"github.com/klauspost/compress/zstd"
 )
 
-// Delta updates v2 ("mygo delta 2\n"):
+// Delta updates are standard .tar.zst archives containing:
+//   - index.json: UTF-8 JSON index describing entries, SHA-256 digests, and
+//     blob references ("format": "app-delta-tar-v1").
+//   - blobs/<n>.vcdiff: pure IETF RFC 3284 VCDIFF binary patches.
+//   - blobs/<n>: raw full replacement files (compressed by the outer zstd stream).
 //
-//	deltaMagic, the length of the index (uvarint), the index (JSON, zstd),
-//	and the data of the files, in index order: a zstd-compressed bsdiff patch
-//	(against e.From) or the new file compressed with zstd.
-//
-// Blobs are streamed into a temporary file while building so large updates do
-// not retain all patches and compressed files in heap memory at once.
-const deltaMagic = "mygo delta 2\n"
+// Blobs are staged to a temporary directory before streaming index.json and
+// members through a single Zstandard-compressed tar writer.
+const (
+	deltaFormat    = "app-delta-tar-v1"
+	deltaIndexName = "index.json"
+	maxDiff        = 256 << 20
+	maxDeltaIndex  = 16 << 20
+	stapledTicket  = "Contents/CodeResources"
+)
 
 type deltaIndex struct {
+	Format  string       `json:"format"`
 	From    string       `json:"from"`
 	Version string       `json:"version"`
 	Entries []deltaEntry `json:"entries"`
@@ -41,18 +47,14 @@ type deltaEntry struct {
 	Size   int64  `json:"size,omitzero"`
 	SHA256 string `json:"sha256,omitzero"`
 	From   string `json:"from,omitzero"`
-	Data   int64  `json:"data,omitzero"`
+	Blob   string `json:"blob,omitzero"`
 }
 
 func (e *deltaEntry) isFile() bool { return !e.Dir && e.Link == "" }
 
-const maxDiff = 256 << 20
-
-const stapledTicket = "Contents/CodeResources"
-
-// WriteDelta writes the delta that turns the app in oldDir (version from)
-// into the app in newDir (version to): entries of newDir, or all of it when
-// entries is nil.
+// WriteDelta writes a standard .tar.zst delta containing index.json, raw files,
+// and IETF RFC 3284 .vcdiff patches that turns oldDir (version from) into
+// newDir (version to).
 func WriteDelta(w io.Writer, from, to, oldDir, newDir string, entries []string) error {
 	type oldFile struct {
 		sum  string
@@ -108,17 +110,20 @@ func WriteDelta(w io.Writer, from, to, oldDir, newDir string, entries []string) 
 		}
 	}
 
-	chunksFile, err := os.CreateTemp("", "mygo-delta-chunks-*")
+	blobWork, err := os.MkdirTemp("", "app-delta-blobs-*")
 	if err != nil {
 		return err
 	}
-	chunksPath := chunksFile.Name()
-	defer func() {
-		chunksFile.Close()
-		os.Remove(chunksPath)
-	}()
+	defer os.RemoveAll(blobWork)
 
-	index := deltaIndex{From: from, Version: to}
+	type stagedBlob struct {
+		name string
+		path string
+		size int64
+	}
+	var blobs []stagedBlob
+
+	index := deltaIndex{Format: deltaFormat, From: from, Version: to}
 	for _, top := range entries {
 		err := filepath.WalkDir(filepath.Join(newDir, top), func(p string, d fs.DirEntry, err error) error {
 			if err != nil {
@@ -150,7 +155,8 @@ func WriteDelta(w io.Writer, from, to, oldDir, newDir string, entries []string) 
 				} else if src, ok := bySum[e.SHA256]; ok {
 					e.From = src
 				} else {
-					blob := zstdCompress(b)
+					blobData := b
+					blobName := fmt.Sprintf("blobs/%05d", len(blobs)+1)
 					baseFrom, baseFile := "", oldFile{}
 					if o.size > 0 {
 						baseFrom, baseFile = e.Path, o
@@ -162,14 +168,18 @@ func WriteDelta(w io.Writer, from, to, oldDir, newDir string, entries []string) 
 						if err != nil {
 							return err
 						}
-						if patch := Diff(prev, b); len(patch) < len(blob) {
-							e.From, blob = baseFrom, patch
+						if patch := EncodeVCDIFF(prev, b); len(patch) < len(b) {
+							e.From = baseFrom
+							blobData = patch
+							blobName = fmt.Sprintf("blobs/%05d.vcdiff", len(blobs)+1)
 						}
 					}
-					e.Data = int64(len(blob))
-					if _, err := chunksFile.Write(blob); err != nil {
+					e.Blob = blobName
+					bp := filepath.Join(blobWork, fmt.Sprintf("blob-%05d", len(blobs)+1))
+					if err := os.WriteFile(bp, blobData, 0o600); err != nil {
 						return err
 					}
+					blobs = append(blobs, stagedBlob{name: blobName, path: bp, size: int64(len(blobData))})
 				}
 			default:
 				return fmt.Errorf("%s is not a file, directory or link", p)
@@ -186,16 +196,56 @@ func WriteDelta(w io.Writer, from, to, oldDir, newDir string, entries []string) 
 	if err != nil {
 		return err
 	}
-	js = zstdCompress(js)
-	head := binary.AppendUvarint([]byte(deltaMagic), uint64(len(js)))
-	if _, err := w.Write(append(head, js...)); err != nil {
+	js = append(js, '\n')
+
+	zw, err := zstd.NewWriter(w, zstd.WithEncoderLevel(zstd.SpeedBestCompression))
+	if err != nil {
 		return err
 	}
-	if _, err := chunksFile.Seek(0, io.SeekStart); err != nil {
+	tw := tar.NewWriter(zw)
+	if err := tw.WriteHeader(&tar.Header{
+		Name: deltaIndexName,
+		Mode: 0o644,
+		Size: int64(len(js)),
+	}); err != nil {
+		_ = tw.Close()
+		_ = zw.Close()
 		return err
 	}
-	_, err = io.Copy(w, chunksFile)
-	return err
+	if _, err := tw.Write(js); err != nil {
+		_ = tw.Close()
+		_ = zw.Close()
+		return err
+	}
+	for _, b := range blobs {
+		if err := tw.WriteHeader(&tar.Header{
+			Name: b.name,
+			Mode: 0o644,
+			Size: b.size,
+		}); err != nil {
+			_ = tw.Close()
+			_ = zw.Close()
+			return err
+		}
+		f, err := os.Open(b.path)
+		if err != nil {
+			_ = tw.Close()
+			_ = zw.Close()
+			return err
+		}
+		_, cerr := io.Copy(tw, f)
+		f.Close()
+		if cerr != nil {
+			_ = tw.Close()
+			_ = zw.Close()
+			return cerr
+		}
+	}
+	if err := tw.Close(); err != nil {
+		_ = zw.Close()
+		return err
+	}
+	return zw.Close()
 }
 
 func relPath(dir, p string) string {
@@ -203,47 +253,46 @@ func relPath(dir, p string) string {
 	return filepath.ToSlash(rel)
 }
 
-const maxDeltaIndex = 16 << 20
-
 var errDamagedDelta = errors.New("damaged delta update")
 
-// ApplyDelta applies a delta update of size bytes read from r against oldDir
-// to create newDir, verifying every output file's size and SHA-256.
-func ApplyDelta(r io.ReaderAt, size int64, from, to, oldDir, newDir string) error {
-	var head [len(deltaMagic) + binary.MaxVarintLen64]byte
-	n, _ := r.ReadAt(head[:min(size, int64(len(head)))], 0)
-	if !bytes.HasPrefix(head[:n], []byte(deltaMagic)) {
-		return errors.New("not a delta update")
-	}
-	var indexLen uint64
-	k, ok := uvarints(head[len(deltaMagic):n], &indexLen)
-	start := int64(len(deltaMagic)) + k
-	if !ok || indexLen > uint64(size-start) {
+// ApplyDelta applies a standard .tar.zst delta update (index.json + raw files
+// and RFC 3284 .vcdiff patches) of size bytes read from r against oldDir to
+// create newDir, verifying every output file's size and SHA-256.
+func ApplyDelta(r io.Reader, size int64, from, to, oldDir, newDir string) error {
+	if size <= 0 {
 		return errDamagedDelta
 	}
-	dec, err := zstd.NewReader(io.NewSectionReader(r, start, int64(indexLen)))
+	lr := &io.LimitedReader{R: r, N: size}
+	zr, err := zstd.NewReader(lr)
 	if err != nil {
 		return errDamagedDelta
 	}
-	js, err := io.ReadAll(io.LimitReader(dec, maxDeltaIndex+1))
-	dec.Close()
-	if err != nil || len(js) > maxDeltaIndex {
+	defer zr.Close()
+	tr := tar.NewReader(zr)
+
+	hdr, err := tr.Next()
+	if err != nil || hdr.Name != deltaIndexName || (hdr.Typeflag != tar.TypeReg && hdr.Typeflag != tar.TypeRegA) || hdr.Size <= 0 || hdr.Size > maxDeltaIndex {
+		return errDamagedDelta
+	}
+	js, err := io.ReadAll(io.LimitReader(tr, maxDeltaIndex+1))
+	if err != nil || len(js) != int(hdr.Size) || len(js) > maxDeltaIndex {
 		return errDamagedDelta
 	}
 	var index deltaIndex
-	if err := json.Unmarshal(js, &index); err != nil {
+	if err := json.Unmarshal(js, &index); err != nil || index.Format != deltaFormat {
 		return errDamagedDelta
 	}
 	if index.From != from || index.Version != to {
 		return fmt.Errorf("the delta updates %s to %s, not %s to %s", index.From, index.Version, from, to)
 	}
 
-	offset := start + int64(indexLen)
 	seen := map[string]bool{}
-	for _, e := range index.Entries {
-		if !fs.ValidPath(e.Path) || e.Path == "." || seen[e.Path] || e.Size < 0 || e.Data < 0 || e.Data > size-offset ||
-			e.Dir && e.Link != "" || !e.isFile() && (e.Size != 0 || e.Data != 0 || e.From != "") ||
-			e.From != "" && !fs.ValidPath(e.From) || e.isFile() && e.From == "" && e.Data == 0 {
+	expectedBlobs := map[string]*deltaEntry{}
+	for i := range index.Entries {
+		e := &index.Entries[i]
+		if !fs.ValidPath(e.Path) || e.Path == "." || seen[e.Path] || e.Size < 0 ||
+			e.Dir && e.Link != "" || !e.isFile() && (e.Size != 0 || e.Blob != "" || e.From != "") ||
+			e.From != "" && !fs.ValidPath(e.From) || e.isFile() && e.From == "" && e.Blob == "" {
 			return errDamagedDelta
 		}
 		if e.Link != "" {
@@ -252,10 +301,12 @@ func ApplyDelta(r io.ReaderAt, size int64, from, to, oldDir, newDir string) erro
 			}
 		}
 		seen[e.Path] = true
-		offset += e.Data
-	}
-	if offset != size {
-		return errDamagedDelta
+		if e.Blob != "" {
+			if !fs.ValidPath(e.Blob) || expectedBlobs[e.Blob] != nil {
+				return errDamagedDelta
+			}
+			expectedBlobs[e.Blob] = e
+		}
 	}
 
 	if err := os.Mkdir(newDir, 0o755); err != nil {
@@ -271,8 +322,12 @@ func ApplyDelta(r io.ReaderAt, size int64, from, to, oldDir, newDir string) erro
 		return err
 	}
 	defer newRoot.Close()
-	offset = start + int64(indexLen)
+
+	// Create directories, symlinks, and direct-copy entries first.
 	for _, e := range index.Entries {
+		if e.Blob != "" {
+			continue
+		}
 		name := filepath.FromSlash(e.Path)
 		if dir := filepath.Dir(name); dir != "." {
 			if err := newRoot.MkdirAll(dir, 0o755); err != nil {
@@ -285,17 +340,48 @@ func ApplyDelta(r io.ReaderAt, size int64, from, to, oldDir, newDir string) erro
 		case e.Link != "":
 			err = newRoot.Symlink(filepath.FromSlash(e.Link), name)
 		default:
-			err = applyFile(e, io.NewSectionReader(r, offset, e.Data), oldRoot, newRoot)
-			offset += e.Data
+			err = applyFile(e, nil, oldRoot, newRoot)
 		}
 		if err != nil {
 			return err
 		}
 	}
+
+	// Stream each tar blob into its target file.
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return errDamagedDelta
+		}
+		if hdr.Typeflag != tar.TypeReg && hdr.Typeflag != tar.TypeRegA {
+			return errDamagedDelta
+		}
+		e, ok := expectedBlobs[hdr.Name]
+		if !ok {
+			return errDamagedDelta
+		}
+		delete(expectedBlobs, hdr.Name)
+
+		name := filepath.FromSlash(e.Path)
+		if dir := filepath.Dir(name); dir != "." {
+			if err := newRoot.MkdirAll(dir, 0o755); err != nil {
+				return err
+			}
+		}
+		if err := applyFile(*e, tr, oldRoot, newRoot); err != nil {
+			return err
+		}
+	}
+	if len(expectedBlobs) != 0 || !streamEOF(zr) || lr.N != 0 {
+		return errDamagedDelta
+	}
 	return nil
 }
 
-func applyFile(e deltaEntry, data *io.SectionReader, oldRoot, newRoot *os.Root) error {
+func applyFile(e deltaEntry, blob io.Reader, oldRoot, newRoot *os.Root) error {
 	f, err := newRoot.OpenFile(filepath.FromSlash(e.Path), os.O_CREATE|os.O_EXCL|os.O_WRONLY, fs.FileMode(e.Mode).Perm()|0o200)
 	if err != nil {
 		return err
@@ -304,15 +390,7 @@ func applyFile(e deltaEntry, data *io.SectionReader, oldRoot, newRoot *os.Root) 
 	h := sha256.New()
 	out := &limitWriter{w: io.MultiWriter(f, h), n: e.Size}
 	if e.From == "" {
-		zr, zerr := zstd.NewReader(data)
-		if zerr != nil {
-			return errDamagedDelta
-		}
-		_, err = io.Copy(out, zr)
-		if err == nil && !streamEOF(zr) {
-			err = errDamagedPatch
-		}
-		zr.Close()
+		_, err = io.Copy(out, blob)
 	} else {
 		var src *os.File
 		if src, err = oldRoot.Open(filepath.FromSlash(e.From)); err != nil {
@@ -324,10 +402,10 @@ func applyFile(e deltaEntry, data *io.SectionReader, oldRoot, newRoot *os.Root) 
 		case err != nil:
 		case !info.Mode().IsRegular():
 			err = fmt.Errorf("%s is not a file", e.From)
-		case e.Data == 0:
+		case e.Blob == "":
 			_, err = io.Copy(out, src)
 		default:
-			err = Patch(out, e.Size, src, info.Size(), data, e.Data)
+			err = DecodeVCDIFF(out, e.Size, src, info.Size(), blob)
 		}
 	}
 	if err == nil {

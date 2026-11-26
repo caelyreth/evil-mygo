@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/ed25519"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
@@ -727,8 +728,8 @@ func TestWriteDeltas(t *testing.T) {
 	t.Setenv("MYGO_UPDATER_PRIVATE_KEY", base64.StdEncoding.EncodeToString(priv))
 	ring, _ := update.ParseKeyring(base64.StdEncoding.EncodeToString(pub))
 	code := make([]byte, 50_000)
-	for i := range code {
-		code[i] = byte(i * i >> 3)
+	if _, err := rand.Read(code); err != nil {
+		t.Fatal(err)
 	}
 	app := func(dir, version string) []string {
 		os.MkdirAll(dir, 0o755)

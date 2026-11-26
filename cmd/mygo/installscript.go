@@ -412,7 +412,7 @@ verify_openssl() {
 	printf '%s' "$public_key" | grep -Eq '^[A-Za-z0-9+/]{43}=$' || return 1
 	printf '%s' "$2" | grep -Eq '^[A-Za-z0-9+/]{86}==$' || return 1
 	{
-		printf 'mygo-update-artifact-v2\n'
+		printf 'app-update-artifact-v2\n'
 		openssl dgst -sha256 -binary <"$1"
 	} >"$work/digest" || return 1
 	ed25519_verify "MCowBQYDK2VwAyEA$public_key" "$2" "$work/digest"
