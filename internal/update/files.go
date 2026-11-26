@@ -1,10 +1,14 @@
 package update
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
+	"syscall"
+	"time"
 )
 
 // FileList is the file of an app directory, on Linux and Windows, that
@@ -43,7 +47,14 @@ func WriteFileList(dir string, entries []string) error {
 		err = cerr
 	}
 	if err == nil {
-		err = os.Rename(f.Name(), filepath.Join(dir, FileList))
+		for i := 1; ; i++ {
+			err = os.Rename(f.Name(), filepath.Join(dir, FileList))
+			if err == nil || i >= 10 || runtime.GOOS != "windows" ||
+				(!errors.Is(err, syscall.Errno(32)) && !errors.Is(err, syscall.Errno(5))) {
+				break
+			}
+			time.Sleep(time.Duration(i) * 100 * time.Millisecond)
+		}
 	}
 	if err != nil {
 		os.Remove(f.Name())

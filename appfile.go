@@ -75,7 +75,7 @@ func beingReplaced(path string) bool {
 func retryInUse(f func() error) error {
 	for i := 1; ; i++ {
 		err := f()
-		if err == nil || i == 10 || runtime.GOOS != "windows" ||
+		if err == nil || i == 16 || runtime.GOOS != "windows" ||
 			// ERROR_SHARING_VIOLATION, or ERROR_ACCESS_DENIED for a file
 			// being deleted or replaced, or a directory holding an open file.
 			!errors.Is(err, syscall.Errno(32)) && !errors.Is(err, syscall.Errno(5)) {

@@ -210,17 +210,37 @@ func (u *UpdaterModule) Availability() UpdateAvailability {
 			return UpdateUnavailableNotBundle
 		}
 	}
-	if runtime.GOOS == "linux" && os.Getenv("APPIMAGE") != "" {
+	if runtime.GOOS == "linux" && runningInsideAppImage(exe) {
 		return UpdateUnavailableAppImage
 	}
 	target, err := installTarget()
 	if err != nil {
 		return UpdateUnavailableNotBundle
 	}
-	if !probeWritableDir(filepath.Dir(target)) || !probeWritableDir(target) {
+	if runtime.GOOS == "darwin" {
+		if !probeWritableDir(filepath.Dir(target)) {
+			return UpdateUnavailableReadOnly
+		}
+	} else if !probeWritableDir(filepath.Dir(target)) || !probeWritableDir(target) {
 		return UpdateUnavailableReadOnly
 	}
 	return UpdateAvailable
+}
+
+func runningInsideAppImage(exe string) bool {
+	if os.Getenv("APPIMAGE") == "" {
+		return false
+	}
+	appDir := os.Getenv("APPDIR")
+	if appDir == "" {
+		return true
+	}
+	if real, err := filepath.EvalSymlinks(appDir); err == nil {
+		appDir = real
+	}
+	appDir = filepath.Clean(appDir)
+	exe = filepath.Clean(exe)
+	return exe == appDir || strings.HasPrefix(exe, appDir+string(filepath.Separator))
 }
 
 func probeWritableDir(dir string) bool {
@@ -520,7 +540,7 @@ func installTarget() (string, error) {
 		}
 		return bundle, nil
 	}
-	if os.Getenv("APPIMAGE") != "" {
+	if runningInsideAppImage(exe) {
 		return "", errors.New("mygo: AppImages cannot update themselves")
 	}
 	return filepath.Dir(exe), nil
@@ -536,6 +556,7 @@ func installUpdate(ctx context.Context, open mirrorOpener, m update.Manifest, ri
 	if err != nil {
 		return fmt.Errorf("cannot write next to the app: %w", err)
 	}
+	_ = os.WriteFile(filepath.Join(work, ".active"), []byte(strconv.Itoa(os.Getpid())+"\n"), 0o600)
 	staged := false
 	defer func() {
 		if !staged {
@@ -695,8 +716,10 @@ func downloadMirrors(
 			offset = info.Size()
 		}
 
-		body, partial, err := open(ctx, u, offset)
+		attemptCtx, cancelAttempt := context.WithTimeout(ctx, httpAttemptTimeout)
+		body, partial, err := open(attemptCtx, u, offset)
 		if err != nil {
+			cancelAttempt()
 			lastErr = err
 			if ctx.Err() != nil || errors.Is(err, errRedirect) {
 				return err
@@ -724,12 +747,14 @@ func downloadMirrors(
 		f, err := os.OpenFile(partPath, flag, 0o644)
 		if err != nil {
 			body.Close()
+			cancelAttempt()
 			return err
 		}
 		pr := &progressReader{r: io.LimitReader(body, size-startOffset+1), base: startOffset, total: size, fn: progress}
 		n, copyErr := io.Copy(f, pr)
 		closeErr := f.Close()
 		body.Close()
+		cancelAttempt()
 		if copyErr == nil {
 			copyErr = closeErr
 		}
@@ -737,6 +762,13 @@ func downloadMirrors(
 			lastErr = fmt.Errorf("downloading: %w", copyErr)
 			if ctx.Err() != nil {
 				return lastErr
+			}
+			// If a fresh HTTP 200 connection timed out/stalled before sending
+			// meaningful data, discard tiny prefix bytes so fallback mirrors
+			// start cleanly from offset 0 without corrupting Range resume.
+			if !partial && startOffset == 0 && attemptCtx.Err() != nil && n < 4096 {
+				_ = os.Remove(partPath)
+				triedClean[mirrorIdx%len(urls)] = true
 			}
 			mirrorIdx = nextUntriedMirror(triedClean, mirrorIdx)
 			continue
@@ -961,12 +993,16 @@ func swapFiles(dir, target string) error {
 	var moved, placed [][2]string
 	undo := func() {
 		for i := len(placed) - 1; i >= 0; i-- {
-			if rename(placed[i][1], placed[i][0]) != nil {
-				_ = os.RemoveAll(placed[i][1])
+			if err := rename(placed[i][1], placed[i][0]); err != nil {
+				if rmErr := os.RemoveAll(placed[i][1]); rmErr != nil {
+					log.Printf("mygo: reverting placed file %s: %v (remove: %v)", placed[i][1], err, rmErr)
+				}
 			}
 		}
 		for i := len(moved) - 1; i >= 0; i-- {
-			_ = rename(moved[i][1], moved[i][0])
+			if err := rename(moved[i][1], moved[i][0]); err != nil {
+				log.Printf("mygo: restoring %s from %s: %v", moved[i][0], moved[i][1], err)
+			}
 		}
 	}
 	moveAside := func(dst string) error {
@@ -1113,6 +1149,9 @@ func cleanUpdateLeftovers() {
 	if target, err := installTarget(); err == nil {
 		if stages, err := filepath.Glob(filepath.Join(filepath.Dir(target), workPattern(target)+"*")); err == nil {
 			for _, p := range stages {
+				if workHasLivePID(p) {
+					continue
+				}
 				if info, err := os.Stat(p); err == nil && now.Sub(info.ModTime()) > 5*time.Minute {
 					_ = os.RemoveAll(p)
 				}
@@ -1270,6 +1309,19 @@ func httpDoWithRetries(ctx context.Context, rawURL string, headers http.Header) 
 
 var httpHeaderTimeout = 30 * time.Second
 var httpStallTimeout = time.Minute
+var httpAttemptTimeout = 15 * time.Minute
+
+func workHasLivePID(workDir string) bool {
+	data, err := os.ReadFile(filepath.Join(workDir, ".active"))
+	if err != nil {
+		return false
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	if err != nil {
+		return false
+	}
+	return pidAlive(pid)
+}
 
 var updateHTTPClient struct {
 	once   sync.Once

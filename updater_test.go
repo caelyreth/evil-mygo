@@ -838,3 +838,70 @@ func TestTakeLastInstallError(t *testing.T) {
 		t.Fatalf("error was not cleared after reading: %v", err)
 	}
 }
+
+func TestDownloadMirrorsFailsOverOnTrickleServer(t *testing.T) {
+	useIsolatedCache(t)
+	origAttempt, origRetry := httpAttemptTimeout, mirrorRetryWait
+	httpAttemptTimeout = 60 * time.Millisecond
+	mirrorRetryWait = func(ctx context.Context, d time.Duration) bool { return ctx.Err() == nil }
+	defer func() {
+		httpAttemptTimeout, mirrorRetryWait = origAttempt, origRetry
+	}()
+
+	payload := bytes.Repeat([]byte("trickle-recovery-payload-"), 1024)
+	sum := sha256.Sum256(payload)
+	hexSum := hex.EncodeToString(sum[:])
+	pub, priv, _ := ed25519.GenerateKey(nil)
+	ring, _ := update.ParseKeyring(base64.StdEncoding.EncodeToString(pub))
+	sig := update.SignArtifact(priv, sum[:])
+
+	// Mirror 1 drips 1 byte every 20ms (never silent, but exceeds httpAttemptTimeout).
+	m1 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fl, _ := w.(http.Flusher)
+		w.Header().Set("Content-Length", strconv.Itoa(len(payload)))
+		w.WriteHeader(http.StatusOK)
+		for range 20 {
+			select {
+			case <-r.Context().Done():
+				return
+			case <-time.After(20 * time.Millisecond):
+				_, _ = w.Write([]byte("x"))
+				if fl != nil {
+					fl.Flush()
+				}
+			}
+		}
+	}))
+	defer m1.Close()
+
+	m2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.ServeContent(w, r, "app.tar.zst", time.Time{}, bytes.NewReader(payload))
+	}))
+	defer m2.Close()
+
+	dst := filepath.Join(t.TempDir(), "update.tar.zst")
+	err := downloadMirrors(t.Context(), httpGetRange, []string{m1.URL + "/a.tar.zst", m2.URL + "/a.tar.zst"},
+		int64(len(payload)), hexSum, sig, ring, testTarget(), dst, nil)
+	if err != nil {
+		t.Fatalf("downloadMirrors failed on trickle mirror: %v", err)
+	}
+	got, _ := os.ReadFile(dst)
+	if !bytes.Equal(got, payload) {
+		t.Error("final payload mismatch after trickle failover")
+	}
+}
+
+func TestWorkHasLivePIDProtectsActiveStagingDir(t *testing.T) {
+	dir := t.TempDir()
+	if workHasLivePID(dir) {
+		t.Fatal("empty dir reported live PID")
+	}
+	_ = os.WriteFile(filepath.Join(dir, ".active"), []byte(strconv.Itoa(os.Getpid())), 0o600)
+	if !workHasLivePID(dir) {
+		t.Fatal("expected current process PID to be reported alive")
+	}
+	_ = os.WriteFile(filepath.Join(dir, ".active"), []byte("99999999"), 0o600)
+	if workHasLivePID(dir) {
+		t.Fatal("expected dead PID to be reported inactive")
+	}
+}
