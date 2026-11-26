@@ -48,7 +48,7 @@ func (cv *Canvas) Size() (w, h int) { return cv.img.W, cv.img.H }
 // paths, text, images, parts of them, other canvases, under transforms and
 // clips. Drawn, the canvas shows it from this frame on.
 func (cv *Canvas) Draw(p *Painter, fn func(cp *Painter)) {
-	cv.paint(p, 1, cv.img.W, cv.img.H, fn)
+	cv.paint(p, 1, cv.img.W, cv.img.H, true, fn)
 	cv.keep()
 	cv.drawn(p)
 }
@@ -77,13 +77,14 @@ func (cv *Canvas) keep() {
 // (scene.Scene.Drawn), as in a canvas of that size. Its scene keeps the
 // window's atlases (keep).
 func (cv *Canvas) drawPart(p *Painter, scale float32, w, h int, fn func(cp *Painter)) {
-	cv.paint(p, scale, w, h, fn)
+	cv.paint(p, scale, w, h, false, fn)
 	cv.drawn(p)
 }
 
 // paint paints fn into the canvas's scene, as drawPart does, leaving the
-// canvas as it shows.
-func (cv *Canvas) paint(p *Painter, scale float32, w, h int, fn func(cp *Painter)) {
+// canvas as it shows. kept tells that the canvas keeps what fn paints
+// (Painter.kept), as Draw's does.
+func (cv *Canvas) paint(p *Painter, scale float32, w, h int, kept bool, fn func(cp *Painter)) {
 	s := cv.img.Scene
 	s.Reset(cv.img.W, cv.img.H, scene.Color{})
 	if w != cv.img.W || h != cv.img.H {
@@ -93,7 +94,7 @@ func (cv *Canvas) paint(p *Painter, scale float32, w, h int, fn func(cp *Painter
 	parent := p.s
 	s.MaskAtlas, s.ColorAtlas, s.Text = parent.MaskAtlas, parent.ColorAtlas, parent.Text
 	part := Rect{W: float32(w) / scale, H: float32(h) / scale}
-	cp := &Painter{rt: p.rt, s: s, scale: scale, opacity: 1, clip: part, theme: p.theme}
+	cp := &Painter{rt: p.rt, s: s, scale: scale, opacity: 1, clip: part, theme: p.theme, kept: kept}
 	if s.Drawn != (image.Point{}) {
 		cp.Clip(part, 0, func() { fn(cp) })
 	} else {

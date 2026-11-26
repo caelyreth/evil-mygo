@@ -128,7 +128,7 @@ func (keptLayer) draw(cv *Canvas, p *Painter, scale float32, w, h int, fn func(c
 	}
 	last := cv.img.Scene
 	cv.img.Scene = c.spare
-	cv.paint(p, scale, w, h, fn)
+	cv.paint(p, scale, w, h, false, fn)
 	s := cv.img.Scene
 	c.spare = last
 	// Kept, the scene is that of the frame all the same, whose glyphs the

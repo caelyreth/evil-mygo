@@ -2,6 +2,7 @@ package ui
 
 import (
 	"bytes"
+	"image"
 	"image/color"
 	"testing"
 
@@ -220,5 +221,81 @@ func TestCanvasKeepsMasks(t *testing.T) {
 		if got := (color.RGBA{pix[i], pix[i+1], pix[i+2], pix[i+3]}); got != c.want {
 			t.Errorf("drawn some frames later, pixel %d,%d = %v, want %v", c.x, c.y, got, c.want)
 		}
+	}
+}
+
+// canvasFills fills shapes of curves as a mark of a few paths: one larger
+// than a new atlas (256 pixels a side, as a Tester's text system starts
+// with), and smaller ones that fit it.
+func canvasFills(p *Painter) {
+	var big Path
+	big.MoveTo(10, 150).CubeTo(10, -40, 290, -40, 290, 150).CubeTo(290, 290, 150, 300, 120, 250).Close()
+	p.FillPath(&big, RGB(30, 30, 30))
+	for i := range 4 {
+		var small Path
+		x := 40 + float32(i)*55
+		small.MoveTo(x, 120).CubeTo(x+10, 60, x+40, 60, x+45, 120).QuadTo(x+20, 150, x, 120).Close()
+		p.FillPath(&small, RGB(220, 40, 40))
+	}
+}
+
+// TestCanvasKeepsLargeMasks checks that a canvas drawn once with paths
+// whose masks the atlas has no room for yet shows them in the frames
+// after, which do not draw it again. The runtime makes room and paints
+// the frame again (System.MakeRoom), which draws the canvas no more: its
+// masks spill into a layer of it (Painter.kept). It shows, every frame,
+// the pixels of a canvas drawn in every paint, within two levels of 255
+// where the layer rounds them to 8 bits.
+func TestCanvasKeepsLargeMasks(t *testing.T) {
+	show := func(once bool) (*Tester, *int) {
+		cv := NewCanvas(300, 300)
+		draws := 0
+		tt := coreNewTester(func(c *context) {
+			coreBox(c).Size(300, 300).Background(RGB(255, 255, 255)).Draw(func(p *Painter, r Rect) {
+				if !once || draws == 0 {
+					draws++
+					cv.Draw(p, canvasFills)
+				}
+				p.Image(cv.Bitmap(), r, FillBox)
+			})
+		}, 300, 300)
+		return tt, &draws
+	}
+	every, _ := show(false)
+	want := every.Image()
+
+	tt, draws := show(true)
+	if tt.Paints() < 2 {
+		t.Fatal("the atlas had room for the canvas's masks: the frame was painted once")
+	}
+	for frame := 1; frame <= 4; frame++ {
+		if frame > 1 {
+			paints := tt.Paints()
+			tt.rt.changed()
+			tt.Frame()
+			if tt.Paints() == paints {
+				t.Fatalf("frame %d was not painted", frame)
+			}
+		}
+		got, worst, at := tt.Image(), 0, image.Point{}
+		for y := range 300 {
+			for x := range 300 {
+				a, b := got.RGBAAt(x, y), want.RGBAAt(x, y)
+				for _, d := range []int{int(a.R) - int(b.R), int(a.G) - int(b.G), int(a.B) - int(b.B)} {
+					if d = max(d, -d); d > worst {
+						worst, at = d, image.Pt(x, y)
+					}
+				}
+			}
+		}
+		if worst > 2 {
+			t.Errorf("frame %d: pixel %v is %v, drawn in every paint %v", frame, at, got.RGBAAt(at.X, at.Y), want.RGBAAt(at.X, at.Y))
+		}
+	}
+	if *draws != 1 {
+		t.Errorf("the canvas was drawn %d times", *draws)
+	}
+	if w := spillWarnings(tt, "drawing paths on the CPU"); w != 0 {
+		t.Errorf("drawing paths on the CPU was told %d times", w)
 	}
 }

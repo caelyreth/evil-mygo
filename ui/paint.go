@@ -58,6 +58,12 @@ type Painter struct {
 	// rec, set while Record paints, keeps what paints as vectors in place
 	// of the scene's ops (record.go).
 	rec *Drawing
+	// kept tells that what paints goes into a canvas that keeps it
+	// (Canvas.Draw), which the paints after this one need not draw again,
+	// as they do the layers of effects and of Cache: a mask the atlas has
+	// no room for spills into a layer of the canvas at once (pathMask),
+	// rather than wait for a paint that makes room.
+	kept bool
 }
 
 // opaqueBox is the box of a background an element painted, and how many

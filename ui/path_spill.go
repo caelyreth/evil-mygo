@@ -175,7 +175,10 @@ func (p *Painter) openSpill() *pathSpill {
 	if sp.last {
 		sp.until = rt.paints + pathCrowdedPaints
 	}
-	if !sp.logged {
+	// A canvas kept as drawn spills what its first paint has no room for,
+	// as the atlas grows to hold it (Painter.kept): no sign of too many
+	// paths.
+	if !sp.logged && !p.kept {
 		sp.logged = true
 		msg := "mygo: drawing paths on the CPU: the mask atlas has no room for their masks, as for many large paths that change every frame; " +
 			"opaque StrokePolyline lines draw without masks on a GPU"

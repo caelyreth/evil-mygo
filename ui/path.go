@@ -768,6 +768,10 @@ func (p *Painter) pathMask(key uint64, f *flatPath, hw, x0, y0 float32, w, h int
 		return got
 	}
 	spill, quiet := p.spills()
+	// A canvas drawn once shows what this paint draws into it from now
+	// on: a mask that finds no room spills, whatever room the paints
+	// after this one make.
+	spill = spill || p.kept
 	ps.rasterized = false
 	var gi text.GlyphImage
 	if quiet {
