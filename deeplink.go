@@ -13,7 +13,7 @@ import (
 	"github.com/egoist/mygo/internal/platform"
 )
 
-// Set by `mygo build` and `mygo dev` with -ldflags -X: what mygo.config.ts says
+// Set by `mygo build` and `mygo dev` with -ldflags -X: what mygo.json says
 // about the app, for platforms whose executables carry no such metadata
 // (Linux), and the URL schemes it declares.
 var (
@@ -42,7 +42,7 @@ func packageInfo() (platform.PackageInfo, bool) {
 }
 
 // Deep links: URLs of the schemes the app handles reach OnOpenURL. macOS
-// hands them to bundles that declare the scheme (urlSchemes in mygo.config.ts)
+// hands them to bundles that declare the scheme (urlSchemes in mygo.json)
 // with Apple Events; Windows and Linux start the app with the URL as an
 // argument, so the arguments of the launch, and those that a second
 // instance forwards (RequestSingleInstanceLock), are searched for them.
@@ -140,7 +140,7 @@ func deliverArgs(args []string, wd string) {
 //
 // On Windows it registers the executable under HKEY_CURRENT_USER, on Linux
 // a hidden desktop entry that becomes the default handler (as xdg-mime
-// does). On macOS the scheme must be listed in urlSchemes in mygo.config.ts,
+// does). On macOS the scheme must be listed in urlSchemes in mygo.json,
 // which registers it with the system; this makes the app its default
 // handler when others claim it too. Unregister it when the app is
 // uninstalled, for example with UnregisterURLScheme.
@@ -160,7 +160,7 @@ func (a *Application) RegisterURLScheme(scheme string) error {
 }
 
 // UnregisterURLScheme undoes RegisterURLScheme (Linux, Windows); URLs of
-// the scheme no longer reach the app unless mygo.config.ts declares it.
+// the scheme no longer reach the app unless mygo.json declares it.
 func (a *Application) UnregisterURLScheme(scheme string) error {
 	if !isURLScheme(scheme) {
 		return fmt.Errorf("mygo: invalid URL scheme %q", scheme)

@@ -50,7 +50,7 @@ type JumpListTask struct {
 // whether it starts the app or, with App.RequestSingleInstanceLock, the
 // running instance gets it:
 //
-//	mygo.App.RegisterURLScheme("myapp") // or urlSchemes in mygo.config.ts
+//	mygo.App.RegisterURLScheme("myapp") // or urlSchemes in mygo.json
 //	mygo.App.OnOpenURL(func(u string) {
 //		if u == "myapp://new-note" { … }
 //	})

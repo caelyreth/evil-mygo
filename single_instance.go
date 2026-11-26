@@ -64,7 +64,7 @@ type secondInstanceMessage struct {
 // then.
 func (a *Application) RequestSingleInstanceLock() bool {
 	if os.Getenv("MYGO_GENERATE") != "" {
-		return true // Run will only write the TypeScript client.
+		return true // Run only generates assets/catalogs in this mode.
 	}
 	singleInstance.Lock()
 	defer singleInstance.Unlock()

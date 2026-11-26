@@ -118,9 +118,7 @@ WebAssembly, named by its content: a static site, to serve from anywhere.`)
 
 	con.startBanner("build")
 	started := time.Now()
-	// The accessors of the catalogs come first, which the app calls, then
-	// the TypeScript client: the frontend build type-checks and bundles
-	// them.
+	// Generate the i18n catalog accessors first so the compiled app builds against them.
 	if err := generateI18n(c); err != nil {
 		return err
 	}
@@ -496,8 +494,11 @@ func writeLinuxPackages(c *Config, stage, target, goarch string, installed []str
 	// Arch Linux packages the app from its archive, as the Debian package
 	// has it.
 	if _, ok := archArch[goarch]; ok && c.Linux.builds("pkgbuild") {
-		archive := files[slices.IndexFunc(files, func(f string) bool { return strings.HasSuffix(f, ".tar.gz") })]
-		pkg, err := writePKGBUILD(c, stage, c.slug(), goarch, installed, archive)
+		idx := slices.IndexFunc(files, func(f string) bool { return strings.HasSuffix(f, ".tar.gz") })
+		if idx < 0 {
+			return nil, fmt.Errorf("missing .tar.gz archive required for PKGBUILD")
+		}
+		pkg, err := writePKGBUILD(c, stage, c.slug(), goarch, installed, files[idx])
 		if err != nil {
 			return nil, err
 		}

@@ -29,7 +29,7 @@ type SecretsModule struct {
 //
 // A store keeps a secret under a service and an account, which Secrets
 // takes the key for. The service is the app's identifier (identifier of
-// mygo.config.ts); under `mygo dev`, whose app is "<identifier>.dev", the
+// mygo.json); under `mygo dev`, whose app is "<identifier>.dev", the
 // development app's, so it keeps secrets apart from the installed app;
 // and without an identifier, as with `go run`, the app's name
 // (App.Name). Service chooses another. Other apps of the user may still
