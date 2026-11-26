@@ -117,3 +117,11 @@ Unobstructed breathing overlays (`Painter.OverlayFill`, `ui.Pulse`, `platform.Ov
 | `BenchmarkLayoutLong/edit/16KiB-15` | `534,454 ns/op` (`3.35 MB`, `82 allocs`) | `4,575,260 ns/op` (`3.06 MB`, `4,453 allocs`) | `585,619 ns/op` (`3.55 MB`, `122 allocs`) | **`-87.2%` vs windowed (`7.81×` faster), `-97.3%` allocs** |
 | `BenchmarkLayoutLong/edit/64KiB-15` | `2,547,564 ns/op` (`13.2 MB`, `143 allocs`) | `17,994,351 ns/op` (`12.2 MB`, `17,667 allocs`) | `1,535,567 ns/op` (`14.1 MB`, `130 allocs`) | **`-91.5%` vs windowed (`11.7×` faster), `-39.7%` vs `46ae2db2`** |
 | `BenchmarkLayoutLong/edit/256KiB-15` | `23,829,881 ns/op` *(bimodal `6.1–39.5 ms`, `445 allocs`)* | `72,597,120 ns/op` (`49.2 MB`, `70,486 allocs`) | `4,686,002 ns/op` (`56.7 MB`, `142 allocs`) | **`-93.5%` vs windowed (`15.5×` faster), `-80.3%` vs `46ae2db2` median** |
+
+**Metal private render targets, transition canvas reaping & idle atlas shrinking (`9bf0d96b`..`5f5e5738`, `-count=5` medians)**
+
+| Benchmark | Result | Alloc / Resource Footprint | Notes |
+| --- | --- | --- | --- |
+| `BenchmarkRenderTargetCanvas-15` (`metal`) | `1,236,642 ns/op` | `9,956 B/op`, `207 allocs/op`, `56.98`–`69.89 gpu-MB` *(median `56.98 gpu-MB`)* | `canvas-mode: 2.000`, `blur-mode: 2.000` (`MTLStorageModePrivate`, no duplicate CPU backing store) |
+| `BenchmarkTransitionCanvasReap-15` (`metal`) | `215,547 ns/op` | `9,948 B/op`, `143 allocs/op`, `1.000 max-canvases` | Immediate `Image.Release` + per-frame GPU reaping |
+| `BenchmarkReleaseShapingIdleShrink-15` (`text`) | `212,697 ns/op` | `22,347,785 B/op`, `5 allocs/op`, `64.00 idle-KiB` | Collapses overgrown `MaskAtlas` + `ColorAtlas` back to `64 KiB` on idle release |
