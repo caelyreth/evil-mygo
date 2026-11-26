@@ -85,3 +85,67 @@ func TestTransientCanvas(t *testing.T) {
 	runtime.KeepAlive(layer)
 	runtime.KeepAlive(kept)
 }
+
+// TestReleasedCanvasReaped verifies that explicitly releasing a canvas drops
+// its Metal texture on TrimIdleImages or the next presented frame rather than
+// waiting 120 frames and Go garbage collection.
+func TestReleasedCanvasReaped(t *testing.T) {
+	r, err := newRenderer()
+	if err != nil {
+		t.Skip("no Metal:", err)
+	}
+	defer r.Release()
+
+	kept := scene.NewCanvas(64, 64)
+	s := &scene.Scene{Width: 64, Height: 64, Canvases: []*scene.Image{kept}}
+	if _, err := r.renderOffscreen(s); err != nil {
+		t.Fatal(err)
+	}
+	if r.canvases[kept.ID()] == nil {
+		t.Fatal("canvas texture missing after renderOffscreen")
+	}
+
+	// Releasing marks the image released and drops its scene; TrimIdleImages
+	// reaps it even while caller keeps a live Go reference.
+	kept.Release()
+	if !kept.Released() || kept.Scene != nil {
+		t.Fatalf("after Release(): released=%v Scene=%v", kept.Released(), kept.Scene)
+	}
+	r.TrimIdleImages()
+	if r.canvases[kept.ID()] != nil {
+		t.Error("released canvas texture still present after TrimIdleImages")
+	}
+
+	// Also test layer-backed Render() frame reaping without waiting sweepEvery.
+	var layer id
+	pool(func() { layer = send(class("CALayer"), "new") })
+	if layer == 0 {
+		t.Skip("no Core Animation")
+	}
+	defer pool(func() { release(&layer) })
+	lr, err := New(uintptr(layer))
+	if err != nil {
+		unavailable(t, err)
+	}
+	defer lr.Release()
+
+	c2 := scene.NewCanvas(64, 64)
+	s2 := &scene.Scene{Width: 64, Height: 64, Canvases: []*scene.Image{c2}}
+	if err := lr.Render(s2); err != nil {
+		t.Fatal(err)
+	}
+	if lr.canvases[c2.ID()] == nil {
+		t.Fatal("layer canvas texture missing after Render")
+	}
+	c2.Release()
+	s2.Canvases = nil
+	s2.Ops = append(s2.Ops, scene.Op{Kind: scene.OpFill, Rect: scene.Rect{W: 8, H: 8}, Color: scene.Color{R: 1, A: 255}})
+	if err := lr.Render(s2); err != nil {
+		t.Fatal(err)
+	}
+	if lr.canvases[c2.ID()] != nil {
+		t.Error("released canvas texture not reaped on next Render frame")
+	}
+	runtime.KeepAlive(kept)
+	runtime.KeepAlive(c2)
+}

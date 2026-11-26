@@ -175,3 +175,70 @@ func TestCacheKeepsBlur(t *testing.T) {
 		t.Errorf("transient %v, drawn %d times again, want kept", layer.Transient, layer.Version()-v)
 	}
 }
+
+func TestEffectLayerReleasedOnDropAndUnmount(t *testing.T) {
+	effecting := true
+	mounted := true
+	var holder *node
+	tt := newRepaintTester(func(c *context) {
+		if !mounted {
+			coreBox(c).Key("empty").Size(100, 100)
+			return
+		}
+		box := coreBox(c).Key("card").Size(120, 60).Background(RGB(40, 80, 200))
+		if effecting {
+			box.Opacity(0.5)
+		}
+		holder = box
+		box.Children(func() {
+			coreText(c, "hello")
+		})
+	})
+
+	layer := holder.st.effectLayer
+	if layer == nil || layer.img.Released() {
+		t.Fatalf("expected active effectLayer, got %v", layer)
+	}
+
+	// Dropping effect returns to flat painting and must release the dropped layer.
+	effecting = false
+	tt.Frame()
+	if holder.st.effectLayer != nil {
+		t.Fatal("effectLayer not cleared after dropping effect")
+	}
+	if !layer.img.Released() || layer.img.Scene != nil {
+		t.Errorf("dropped effectLayer not released: released=%v Scene=%v", layer.img.Released(), layer.img.Scene)
+	}
+
+	// Re-attaching a cached layer and then unmounting must release its canvas too.
+	effecting = true
+	tt.Frame()
+	layer2 := holder.st.effectLayer
+	if layer2 == nil || layer2.img.Released() {
+		t.Fatalf("expected re-created effectLayer, got %v", layer2)
+	}
+	mounted = false
+	tt.Frame()
+	if !layer2.img.Released() || layer2.img.Scene != nil {
+		t.Errorf("unmounted effectLayer not released: released=%v Scene=%v", layer2.img.Released(), layer2.img.Scene)
+	}
+}
+
+func BenchmarkEffectLayerDropRelease(b *testing.B) {
+	effecting := true
+	tt := coreNewTester(func(c *context) {
+		box := coreBox(c).Key("card").Size(320, 180).Background(RGB(40, 80, 200))
+		if effecting {
+			box.Cache().Scale(0.8, 0.8)
+		}
+		box.Children(func() {
+			coreText(c, "Transition card")
+		})
+	}, 400, 300)
+
+	b.ReportAllocs()
+	for frame := 0; b.Loop(); frame++ {
+		effecting = frame%2 == 0
+		tt.Frame()
+	}
+}

@@ -1081,6 +1081,9 @@ func (rt *engine) unlook(s *state) {
 	}
 	rt.nbuilt--
 	delete(rt.states, s.id)
+	if s.effectLayer != nil {
+		s.effectLayer.release()
+	}
 	// Locals made on the element's place before Key gave it another
 	// identity are the element's no more.
 	rt.dropped = append(rt.dropped, s.closes...)

@@ -216,6 +216,7 @@ func (p *Painter) groupLayer(e *node, flat *groupMark) bool {
 // flat or opaque now, unless its effect, blur or Cache paints into it.
 func (e *node) dropGroupLayer() {
 	if e.effect == nil && e.blur <= 0 && e.cache == nil {
+		e.st.effectLayer.release()
 		e.st.effectLayer = nil
 	}
 }

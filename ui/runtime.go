@@ -1450,6 +1450,9 @@ func (rt *engine) prune() {
 				if s.textAdapter != nil {
 					s.textAdapter.release()
 				}
+				if s.effectLayer != nil {
+					s.effectLayer.release()
+				}
 				if s.closes != nil {
 					rt.dropCloses(s)
 				}

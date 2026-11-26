@@ -500,6 +500,7 @@ type Image struct {
 	// frames stop drawing it, rather than once it is collected, which
 	// the little memory it takes of Go's heap may put off for minutes.
 	Transient bool
+	released  atomic.Bool
 	// Restore re-creates Pix when a renderer needs the pixels after an
 	// owner dropped them, to upload or to draw them again, and Dropped
 	// runs after a renderer uploaded them, to drop them again. Both are
@@ -585,6 +586,22 @@ func (m *Image) Version() uint64 { return m.version }
 
 // Changed records that Pix was modified.
 func (m *Image) Changed() { m.version++ }
+
+// Release drops the image's canvas scene and CPU pixel slice so GPU renderers
+// can immediately reclaim its texture instead of waiting for garbage collection.
+func (m *Image) Release() {
+	if m == nil {
+		return
+	}
+	m.released.Store(true)
+	m.Scene = nil
+	m.Pix = nil
+}
+
+// Released reports whether Release has dropped this image.
+func (m *Image) Released() bool {
+	return m != nil && m.released.Load()
+}
 
 // Pixels returns the pixels a renderer uploads or draws, re-creating them
 // from Restore when an owner dropped them. The pixels stay then, until

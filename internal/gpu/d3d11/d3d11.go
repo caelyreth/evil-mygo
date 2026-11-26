@@ -2101,6 +2101,7 @@ func (r *Renderer) show(sync uintptr) error {
 		// present uncapped again (uncapped.go).
 		r.gaveUp = false
 	}
+	r.reapCanvases()
 	if r.frame-r.swept >= sweepEvery {
 		r.swept = r.frame
 		r.sweep()
@@ -2184,8 +2185,8 @@ func (r *Renderer) FrameInfo() string {
 // multiples, and never sweep.
 const sweepEvery = 120
 
-// TrimIdleImages releases textures of collected images once the window
-// stops drawing. It runs on the UI thread, like Render and Release.
+// TrimIdleImages releases textures of collected images and released canvases
+// once the window stops drawing. It runs on the UI thread, like Render and Release.
 func (r *Renderer) TrimIdleImages() {
 	removed := false
 	for id, t := range r.images {
@@ -2195,11 +2196,26 @@ func (r *Renderer) TrimIdleImages() {
 			removed = true
 		}
 	}
+	if r.reapCanvases() {
+		removed = true
+	}
 	if removed {
 		// Direct3D can defer destruction until more work is submitted.
 		// An idle window may not submit another frame.
 		call(r.ctx, ctxFlush)
 	}
+}
+
+func (r *Renderer) reapCanvases() bool {
+	removed := false
+	for id, t := range r.canvases {
+		if c := t.canvas.Value(); c == nil || c.Released() {
+			freeCanvas(t)
+			delete(r.canvases, id)
+			removed = true
+		}
+	}
+	return removed
 }
 
 // sweep frees the textures of images no frame drew for a while, and
@@ -2214,7 +2230,7 @@ func (r *Renderer) sweep() {
 	r.evictImages()
 	r.sweepShared(false)
 	for id, t := range r.canvases {
-		if c := t.canvas.Value(); c == nil || c.Transient && t.lastFrame != r.frame {
+		if c := t.canvas.Value(); c == nil || c.Released() || c.Transient && t.lastFrame != r.frame {
 			freeCanvas(t)
 			delete(r.canvases, id)
 		}

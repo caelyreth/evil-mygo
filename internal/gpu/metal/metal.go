@@ -2235,6 +2235,7 @@ func (r *Renderer) render(s *scene.Scene) error {
 	r.track(cb)
 	r.lastRender = time.Now()
 	r.armTrim()
+	r.reapCanvases()
 	r.sweepIfDue()
 	return nil
 }
@@ -2658,6 +2659,27 @@ func (r *Renderer) sweepIfDue() {
 
 // sweep frees the textures of images no frame drew for a while, and
 // those of canvases gone, or transient and not drawn this frame.
+// TrimIdleImages releases textures of collected or explicitly released
+// canvases once the window stops drawing.
+func (r *Renderer) TrimIdleImages() {
+	pool(func() {
+		r.waitLast()
+		r.reapCanvases()
+	})
+}
+
+// reapCanvases immediately releases textures of canvases that have been
+// garbage-collected or explicitly released by the UI.
+func (r *Renderer) reapCanvases() {
+	for key, t := range r.canvases {
+		if c := t.canvas.Value(); c == nil || c.Released() {
+			release(&t.tex)
+			t.drawState.release()
+			delete(r.canvases, key)
+		}
+	}
+}
+
 func (r *Renderer) sweep() {
 	for key, t := range r.images {
 		if r.frame-t.lastFrame > 240 {
@@ -2667,7 +2689,7 @@ func (r *Renderer) sweep() {
 	}
 	r.evictImages()
 	for key, t := range r.canvases {
-		if c := t.canvas.Value(); c == nil || c.Transient && t.lastFrame != r.frame {
+		if c := t.canvas.Value(); c == nil || c.Released() || c.Transient && t.lastFrame != r.frame {
 			release(&t.tex)
 			t.drawState.release()
 			delete(r.canvases, key)

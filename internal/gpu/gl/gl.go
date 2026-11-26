@@ -768,6 +768,7 @@ func (r *Renderer) draw(s *scene.Scene) error {
 	if err := r.drawFrame(s); err != nil {
 		return err
 	}
+	r.reapCanvases()
 	if r.frame%120 == 0 {
 		r.sweep()
 	}
@@ -1593,6 +1594,15 @@ func (r *Renderer) FrameInfo() string {
 	return r.b.Summary()
 }
 
+func (r *Renderer) reapCanvases() {
+	for key, t := range r.canvases {
+		if c := t.canvas.Value(); c == nil || c.Released() {
+			r.deleteCanvas(t)
+			delete(r.canvases, key)
+		}
+	}
+}
+
 // sweep frees the textures of images no frame drew for a while, and
 // those of canvases gone, or transient and not drawn this frame: render
 // calls it every 120 frames.
@@ -1605,7 +1615,7 @@ func (r *Renderer) sweep() {
 	}
 	r.evictImages()
 	for key, t := range r.canvases {
-		if c := t.canvas.Value(); c == nil || c.Transient && t.lastFrame != r.frame {
+		if c := t.canvas.Value(); c == nil || c.Released() || c.Transient && t.lastFrame != r.frame {
 			r.deleteCanvas(t)
 			delete(r.canvases, key)
 		}

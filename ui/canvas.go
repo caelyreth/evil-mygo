@@ -132,3 +132,14 @@ func (cv *Canvas) region(w, h int) *Bitmap {
 	}
 	return cv.part
 }
+
+// release drops the canvas's underlying scene and pixels once its layer is no
+// longer used, allowing GPU renderers to reclaim its texture immediately.
+func (cv *Canvas) release() {
+	if cv == nil {
+		return
+	}
+	cv.img.Release()
+	cv.cache = nil
+	cv.own = nil
+}

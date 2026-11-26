@@ -264,6 +264,7 @@ func (r *Renderer) finishPending(prefetch bool) error {
 	release(&p.cb)
 	r.lastRender = time.Now()
 	r.armTrim()
+	r.reapCanvases()
 	r.sweepIfDue()
 	return nil
 }

@@ -451,3 +451,57 @@ func BenchmarkRenderTargetCanvas(b *testing.B) {
 	b.ReportMetric(float64(mode), "canvas-mode")
 	b.ReportMetric(float64(blurMode), "blur-mode")
 }
+
+// BenchmarkTransitionCanvasReap measures GPU canvas churn when transition
+// layers are allocated and explicitly released across frames.
+func BenchmarkTransitionCanvasReap(b *testing.B) {
+	r, err := newRenderer()
+	if err != nil {
+		b.Skip("no Metal:", err)
+	}
+	defer r.Release()
+
+	target := id(0)
+	pool(func() {
+		target = r.newTexture(512, 512, pixelFormatBGRA8Unorm, usageRenderTarget|usageShaderRead, nil, 0)
+	})
+	defer pool(func() {
+		r.waitLast()
+		release(&target)
+	})
+
+	var prev *scene.Image
+	maxMap := 0
+	b.ReportAllocs()
+	for b.Loop() {
+		if prev != nil {
+			prev.Release()
+		}
+		c := scene.NewCanvas(512, 512)
+		c.Scene.Ops = []scene.Op{
+			{Kind: scene.OpFill, Rect: scene.Rect{W: 512, H: 512}, Color: scene.Color{R: 30, G: 90, B: 200, A: 255}},
+		}
+		s := &scene.Scene{
+			Width: 512, Height: 512, Clear: scene.Color{A: 255},
+			Canvases: []*scene.Image{c},
+			Ops:      []scene.Op{{Kind: scene.OpImage, Rect: scene.Rect{W: 512, H: 512}, Image: c, Src: scene.Rect{W: 512, H: 512}}},
+		}
+		pool(func() {
+			r.waitLast()
+			r.cur = &r.formats[0]
+			cb, err := r.encode(s, target)
+			if err != nil {
+				b.Fatal(err)
+			}
+			send(cb, "commit")
+			r.track(cb)
+			send(cb, "waitUntilCompleted")
+			r.reapCanvases()
+		})
+		if n := len(r.canvases); n > maxMap {
+			maxMap = n
+		}
+		prev = c
+	}
+	b.ReportMetric(float64(maxMap), "max-canvases")
+}
