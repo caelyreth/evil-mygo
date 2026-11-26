@@ -1212,10 +1212,11 @@ func (e *pangoEngine) ink(f *Font, id uint32) (a, b float32, ok bool) {
 func (e *pangoEngine) baseline(y float32) float32 { return float32(math.Floor(float64(y) + 1e-3)) }
 
 func (e *pangoEngine) glyph(f *Font, id uint32, scale, dx float32, _ Shade, subpixel bool) bitmap {
-	// Pango's empty glyphs, and the boxes it draws for missing ones, are
-	// not the font's.
-	if id == pangoGlyphEmpty || id&pangoGlyphUnknow != 0 {
+	if id == pangoGlyphEmpty {
 		return bitmap{}
+	}
+	if id&pangoGlyphUnknow != 0 {
+		return missingGlyphTofu(f, scale)
 	}
 	if subpixel && e.antialias == cairoAntialiasSubpixel && f.colorKnown && !f.color {
 		return e.draw(f, id, scale, dx, true)
@@ -1319,6 +1320,35 @@ func (e *pangoEngine) draw(f *Font, id uint32, scale, dx float32, subpixel bool)
 		}
 	}
 	return b
+}
+
+// missingGlyphTofu draws a 1px rectangular outline so missing characters render
+// visibly on minimal Linux systems instead of disappearing as blank whitespace.
+func missingGlyphTofu(f *Font, scale float32) bitmap {
+	em := float32(12)
+	capH := float32(9)
+	if f != nil && f.Size > 0 {
+		em = f.Size
+		if f.CapHeight > 0 {
+			capH = f.CapHeight
+		} else if f.Ascent > 0 {
+			capH = f.Ascent * 0.72
+		} else {
+			capH = em * 0.72
+		}
+	}
+	w := max(int(math.Round(float64(em*0.56*scale))), 4)
+	h := max(int(math.Round(float64(capH*scale))), 6)
+	pix := make([]byte, w*h)
+	for x := range w {
+		pix[x] = 220
+		pix[(h-1)*w+x] = 220
+	}
+	for y := range h {
+		pix[y*w] = 220
+		pix[y*w+w-1] = 220
+	}
+	return bitmap{left: max(int(math.Round(float64(0.06*em*scale))), 1), top: -h, w: w, h: h, pix: pix}
 }
 
 // fontMapFamilies lists the font map's families as fontconfig knows

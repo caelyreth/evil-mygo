@@ -75,8 +75,8 @@ func TestImagePixelsRejectsFilteredCases(t *testing.T) {
 		"pixelated":    func(op *scene.Op) { op.Pixelated = true },
 		"rounded":      func(op *scene.Op) { op.Radii = scene.Uniform(4) },
 		"large":        func(op *scene.Op) { op.Rect.X = 1 << 24 },
-		"surface":      func(op *scene.Op) { copy := *img; copy.Surface = &scene.Surface{}; op.Image = &copy },
-		"no-pixels":    func(op *scene.Op) { copy := *img; copy.Pix = nil; op.Image = &copy },
+		"surface":      func(op *scene.Op) { cp := copyTestImage(img); cp.Surface = &scene.Surface{}; op.Image = cp },
+		"no-pixels":    func(op *scene.Op) { cp := copyTestImage(img); cp.Pix = nil; op.Image = cp },
 	} {
 		t.Run(name, func(t *testing.T) {
 			op := base
@@ -86,6 +86,21 @@ func TestImagePixelsRejectsFilteredCases(t *testing.T) {
 				t.Fatal("filtered image took the direct pixel path")
 			}
 		})
+	}
+}
+
+func copyTestImage(src *scene.Image) *scene.Image {
+	return &scene.Image{
+		W:          src.W,
+		H:          src.H,
+		Pix:        src.Pix,
+		Alpha:      src.Alpha,
+		Scene:      src.Scene,
+		PixVersion: src.PixVersion,
+		Transient:  src.Transient,
+		Restore:    src.Restore,
+		Dropped:    src.Dropped,
+		GPU:        src.GPU,
 	}
 }
 
