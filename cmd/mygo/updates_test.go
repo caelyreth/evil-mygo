@@ -6,6 +6,7 @@ import (
 	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
@@ -192,8 +193,15 @@ func TestUpdatesConfig(t *testing.T) {
 		}
 	}
 	c, err = load(`{"publicKey": "` + key + `", "url": "https://dl.example.com/my-app/"}`)
-	if err != nil || c.updateFeed("linux-amd64") != "https://dl.example.com/my-app/update-linux-amd64.json" {
+	if err != nil || c.updateFeed("linux-amd64") != "https://dl.example.com/my-app/stable/update-linux-amd64.json" {
 		t.Errorf("url feed = %s, %v", c.updateFeed("linux-amd64"), err)
+	}
+	c, err = load(`{"publicKey": "` + key + `", "feedUrl": "https://updates.example.com/app", "url": "https://r2.example.com/app", "mirrors": ["https://fallback.example.com/v{version}"]}`)
+	if err != nil || c.updateFeed("darwin-arm64") != "https://updates.example.com/app/stable/update-darwin-arm64.json" {
+		t.Errorf("split feedUrl = %v, %v", c.updateFeed("darwin-arm64"), err)
+	}
+	if p, ex := c.artifactURLs("app-1.2.0-darwin-arm64.tar.zst"); p != "https://r2.example.com/app/app-1.2.0-darwin-arm64.tar.zst" || len(ex) != 1 || ex[0] != "https://fallback.example.com/v1.2.0/app-1.2.0-darwin-arm64.tar.zst" {
+		t.Errorf("artifactURLs = %q, %v", p, ex)
 	}
 	if _, err := load(`{"publicKey": "` + key + `", "url": "https://dl.example.com/my-app", "s3": {"bucket": "downloads", "prefix": "my-app", "endpoint": "https://acc.r2.cloudflarestorage.com"}}`); err != nil {
 		t.Error(err)
@@ -315,20 +323,27 @@ func main() {
 		return filepath.Join(dir, out, target)
 	}
 	// publish copies the update files of a build to the server, and
-	// returns its manifest.
+	// returns its verified manifest.
+	ring, _ := update.ParseKeyring(base64.StdEncoding.EncodeToString(pub))
 	publish := func(dir string) update.Manifest {
 		t.Helper()
 		data, err := os.ReadFile(filepath.Join(dir, update.ManifestName(target)))
 		if err != nil {
 			t.Fatal(err)
 		}
-		var m update.Manifest
-		if err := json.Unmarshal(data, &m); err != nil {
+		m, err := update.VerifyManifest(ring, data)
+		if err != nil {
 			t.Fatal(err)
 		}
-		names := []string{filepath.Base(m.URL), update.ManifestName(target)}
+		chDir := filepath.Join(serve, m.Channel)
+		os.MkdirAll(chDir, 0o755)
+		os.WriteFile(filepath.Join(chDir, update.ManifestName(target)), data, 0o644)
+		if hData, err := os.ReadFile(filepath.Join(dir, update.HistoryName(target))); err == nil {
+			os.WriteFile(filepath.Join(chDir, update.HistoryName(target)), hData, 0o644)
+		}
+		names := []string{filepath.Base(m.Artifact.URL)}
 		for _, d := range m.Deltas {
-			names = append([]string{filepath.Base(d.URL)}, names...)
+			names = append(names, filepath.Base(d.URL))
 		}
 		for _, name := range names {
 			b, err := os.ReadFile(filepath.Join(dir, name))
@@ -339,22 +354,22 @@ func main() {
 				t.Fatal(err)
 			}
 		}
-		return m
+		return *m
 	}
 	v1 := build("1.0.0", "dist1")
-	if m := publish(v1); len(m.Deltas) != 0 || len(m.Previous) != 0 {
-		t.Errorf("the first version has deltas %+v and previous %+v", m.Deltas, m.Previous)
+	if m := publish(v1); len(m.Deltas) != 0 {
+		t.Errorf("the first version has deltas %+v", m.Deltas)
 	}
 	v2 := build("1.1.0", "dist2")
 	m := publish(v2)
 	if m.Version != "1.1.0" || m.Notes != "- New things" {
 		t.Errorf("manifest = %+v", m)
 	}
-	if len(m.Deltas) != 1 || m.Deltas[0].From != "1.0.0" || len(m.Previous) != 1 || m.Previous[0].Version != "1.0.0" {
-		t.Fatalf("deltas %+v, previous %+v", m.Deltas, m.Previous)
+	if len(m.Deltas) != 1 || m.Deltas[0].From != "1.0.0" {
+		t.Fatalf("deltas %+v", m.Deltas)
 	}
-	if d := m.Deltas[0]; d.Size > m.Size/5 {
-		t.Errorf("the delta update takes %d bytes, the archive %d", d.Size, m.Size)
+	if d := m.Deltas[0]; d.Size > m.Artifact.Size/5 {
+		t.Errorf("the delta update takes %d bytes, the archive %d", d.Size, m.Artifact.Size)
 	}
 
 	// Install 1.0.0 as a user would, and run it.
@@ -397,7 +412,7 @@ func main() {
 		t.Fatalf("updating printed:\n%s", out)
 	}
 	mu.Lock()
-	if want := []string{"/" + update.ManifestName(target), "/" + filepath.Base(m.Deltas[0].URL)}; !slices.Equal(requests, want) {
+	if want := []string{"/stable/" + update.ManifestName(target), "/" + filepath.Base(m.Deltas[0].URL)}; !slices.Equal(requests, want) {
 		t.Errorf("the update downloaded %q, want %q", requests, want)
 	}
 	mu.Unlock()
@@ -512,16 +527,17 @@ func TestBuildSignCommandBeforeUpdate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var m update.Manifest
-	if err := json.Unmarshal(data, &m); err != nil {
+	ring, _ := update.ParseKeyring(base64.StdEncoding.EncodeToString(pub))
+	m, err := update.VerifyManifest(ring, data)
+	if err != nil {
 		t.Fatal(err)
 	}
-	archive, err := os.ReadFile(filepath.Join(built, filepath.Base(m.URL)))
+	archive, err := os.ReadFile(filepath.Join(built, filepath.Base(m.Artifact.URL)))
 	if err != nil {
 		t.Fatal(err)
 	}
 	sum := sha256.Sum256(archive)
-	if err := update.Verify(pub, sum[:], m.Signature); err != nil || m.Size != int64(len(archive)) {
+	if err := update.VerifyArtifact(pub, sum[:], m.Artifact.Signature); err != nil || m.Artifact.Size != int64(len(archive)) {
 		t.Errorf("the manifest does not cover the archive: %v", err)
 	}
 	extracted := t.TempDir()
@@ -537,21 +553,20 @@ func TestBuildSignCommandBeforeUpdate(t *testing.T) {
 	if _, err := buildPlatform(c, "darwin", "arm64", opts); err == nil || !strings.Contains(err.Error(), "macos.signCommand") {
 		t.Errorf("a failing sign command gave %v", err)
 	}
-	if after, err := os.ReadFile(filepath.Join(built, filepath.Base(m.URL))); err != nil || !bytes.Equal(after, archive) {
+	if after, err := os.ReadFile(filepath.Join(built, filepath.Base(m.Artifact.URL))); err != nil || !bytes.Equal(after, archive) {
 		t.Errorf("a failed build replaced the update: %v", err)
 	}
 }
 
-// TestWriteDeltas makes delta updates from the versions a published
-// manifest lists.
+// TestWriteDeltas makes delta updates from the versions in history/manifest.
 func TestWriteDeltas(t *testing.T) {
 	pub, priv, _ := ed25519.GenerateKey(nil)
 	t.Setenv("MYGO_UPDATER_PRIVATE_KEY", base64.StdEncoding.EncodeToString(priv))
+	ring, _ := update.ParseKeyring(base64.StdEncoding.EncodeToString(pub))
 	code := make([]byte, 50_000)
 	for i := range code {
 		code[i] = byte(i * i >> 3)
 	}
-	// app writes the app of a version into dir.
 	app := func(dir, version string) []string {
 		os.MkdirAll(dir, 0o755)
 		os.WriteFile(filepath.Join(dir, "app"), append(slices.Clone(code), version...), 0o755)
@@ -569,9 +584,8 @@ func TestWriteDeltas(t *testing.T) {
 		files.ServeHTTP(w, r)
 	}))
 	defer srv.Close()
-	// Published: 1.1.0, and before it 1.0.0, a 2.0.0 that cannot be, and
-	// 0.9.0, whose archive is signed with another key.
-	published := update.Manifest{Version: "1.1.0"}
+	// Publish ReleaseIndex history-linux-amd64.json with 1.1.0, 1.0.0, 2.0.0, and untrusted 0.9.0.
+	idx := update.ReleaseIndex{Target: "linux-amd64", Channel: "stable"}
 	for _, v := range []string{"1.1.0", "1.0.0", "2.0.0", "0.9.0"} {
 		dir := filepath.Join(t.TempDir(), v)
 		entries := app(dir, v)
@@ -579,22 +593,22 @@ func TestWriteDeltas(t *testing.T) {
 		if err := update.WriteArchive(&archive, dir, entries); err != nil {
 			t.Fatal(err)
 		}
-		name := "app-" + v + ".tar.gz"
+		name := "app-" + v + ".tar.zst"
 		os.WriteFile(filepath.Join(serve, name), archive.Bytes(), 0o644)
 		sum := sha256.Sum256(archive.Bytes())
-		a := update.Archive{Version: v, URL: srv.URL + "/" + name, Size: int64(archive.Len()), Signature: update.Sign(priv, sum[:])}
+		a := update.Archive{
+			Version: v, URL: srv.URL + "/" + name, Size: int64(archive.Len()),
+			SHA256: hex.EncodeToString(sum[:]), Signature: update.SignArtifact(priv, sum[:]),
+		}
 		if v == "0.9.0" {
 			_, other, _ := ed25519.GenerateKey(nil)
-			a.Signature = update.Sign(other, sum[:])
+			a.Signature = update.SignArtifact(other, sum[:])
 		}
-		if v == "1.1.0" {
-			published.URL, published.Size, published.Signature = a.URL, a.Size, a.Signature
-		} else {
-			published.Previous = append(published.Previous, a)
-		}
+		idx.History = append(idx.History, a)
 	}
-	data, _ := json.Marshal(published)
-	os.WriteFile(filepath.Join(serve, update.ManifestName("linux-amd64")), data, 0o644)
+	os.MkdirAll(filepath.Join(serve, "stable"), 0o755)
+	histBytes, _ := json.Marshal(idx)
+	os.WriteFile(filepath.Join(serve, "stable", update.HistoryName("linux-amd64")), histBytes, 0o644)
 
 	build := func(deltas int) (update.Manifest, []string) {
 		t.Helper()
@@ -608,12 +622,17 @@ func TestWriteDeltas(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		var m update.Manifest
-		data, _ := os.ReadFile(written[len(written)-1])
-		if err := json.Unmarshal(data, &m); err != nil {
+		var mPath string
+		for _, p := range written {
+			if filepath.Base(p) == update.ManifestName("linux-amd64") {
+				mPath = p
+			}
+		}
+		data, _ := os.ReadFile(mPath)
+		m, err := update.VerifyManifest(ring, data)
+		if err != nil {
 			t.Fatal(err)
 		}
-		// Each delta makes the new version of the old.
 		for _, d := range m.Deltas {
 			old := filepath.Join(t.TempDir(), "old")
 			app(old, d.From)
@@ -633,30 +652,27 @@ func TestWriteDeltas(t *testing.T) {
 		}
 		mu.Lock()
 		defer mu.Unlock()
-		return m, slices.Clone(requests)
+		return *m, slices.Clone(requests)
 	}
-	versions := func(m update.Manifest) (deltas, previous []string) {
+	versions := func(m update.Manifest) (deltas []string) {
 		for _, d := range m.Deltas {
 			deltas = append(deltas, d.From)
 		}
-		for _, a := range m.Previous {
-			previous = append(previous, a.Version)
-		}
-		return deltas, previous
+		return deltas
 	}
 
 	m, _ := build(3)
-	if deltas, previous := versions(m); !slices.Equal(deltas, []string{"1.1.0", "1.0.0"}) || !slices.Equal(previous, []string{"1.1.0", "1.0.0"}) {
-		t.Errorf("3 deltas: from %v, previous %v", deltas, previous)
+	if deltas := versions(m); !slices.Equal(deltas, []string{"1.1.0", "1.0.0"}) {
+		t.Errorf("3 deltas: from %v", deltas)
 	}
-	if d := m.Deltas[0]; d.URL != srv.URL+"/app-1.1.0-to-1.2.0-linux-amd64.delta" || d.Size > m.Size/4 {
-		t.Errorf("delta %+v, archive of %d bytes", d, m.Size)
+	if d := m.Deltas[0]; d.URL != srv.URL+"/app-1.1.0-to-1.2.0-linux-amd64.delta" || d.Size > m.Artifact.Size/4 {
+		t.Errorf("delta %+v, archive of %d bytes", d, m.Artifact.Size)
 	}
 	m, _ = build(1)
-	if deltas, previous := versions(m); !slices.Equal(deltas, []string{"1.1.0"}) || previous != nil {
-		t.Errorf("1 delta: from %v, previous %v", deltas, previous)
+	if deltas := versions(m); !slices.Equal(deltas, []string{"1.1.0"}) {
+		t.Errorf("1 delta: from %v", deltas)
 	}
-	if m, requests := build(0); m.Deltas != nil || m.Previous != nil || requests != nil {
+	if m, requests := build(0); m.Deltas != nil || requests != nil {
 		t.Errorf("no deltas: %+v, requested %v", m, requests)
 	}
 }
@@ -764,7 +780,7 @@ func TestFetchSignedRetry(t *testing.T) {
 		<-r.Context().Done() // stall
 	}))
 	defer srv.Close()
-	get := (&Config{Updates: &Updates{URL: srv.URL}}).archiveGetter()
+	get := (&Config{Updates: &Updates{URL: srv.URL}}).archiveGetter("")
 	for _, tc := range []struct {
 		responses     []string
 		requests      int
@@ -784,7 +800,7 @@ func TestFetchSignedRetry(t *testing.T) {
 		responses, requests, waitPastStall, waits = tc.responses, 0, tc.waitPastStall, 0
 		mu.Unlock()
 		path := filepath.Join(t.TempDir(), "archive.tar.gz")
-		err := fetchSigned(get, srv.URL+"/app-1.0.0.tar.gz", int64(len(archive)), update.Sign(priv, sum[:]), pub, path)
+		err := fetchSigned(get, srv.URL+"/app-1.0.0.tar.gz", int64(len(archive)), "", update.SignArtifact(priv, sum[:]), update.Keyring{{ID: update.KeyID(pub), Key: pub}}, path)
 		if tc.err == "" && err != nil || tc.err != "" && (err == nil || !strings.Contains(err.Error(), tc.err)) {
 			t.Errorf("%v: %v, want %q", tc.responses, err, tc.err)
 		}

@@ -129,14 +129,14 @@ func TestPublishS3(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []object{
-		{"/downloads/app/app-1.2.0.dmg", "application/x-apple-diskimage", ""},
-		{"/downloads/app/app-1.2.0-darwin-arm64.tar.gz", "application/gzip", ""},
-		{"/downloads/app/app-1.1.0-to-1.2.0-darwin-arm64.delta", "application/octet-stream", ""},
-		{"/downloads/app/app-setup-1.2.0.exe", "application/vnd.microsoft.portable-executable", ""},
-		{"/downloads/app/empty.deb", "application/vnd.debian.binary-package", ""},
-		{"/downloads/app/app-1.2.0-1.x86_64.rpm", "application/x-rpm", ""},
+		{"/downloads/app/app-1.2.0.dmg", "application/x-apple-diskimage", "public, max-age=31536000, immutable"},
+		{"/downloads/app/app-1.2.0-darwin-arm64.tar.gz", "application/gzip", "public, max-age=31536000, immutable"},
+		{"/downloads/app/app-1.1.0-to-1.2.0-darwin-arm64.delta", "application/octet-stream", "public, max-age=31536000, immutable"},
+		{"/downloads/app/app-setup-1.2.0.exe", "application/vnd.microsoft.portable-executable", "public, max-age=31536000, immutable"},
+		{"/downloads/app/empty.deb", "application/vnd.debian.binary-package", "public, max-age=31536000, immutable"},
+		{"/downloads/app/app-1.2.0-1.x86_64.rpm", "application/x-rpm", "public, max-age=31536000, immutable"},
 		{"/downloads/app/install.sh", "text/plain; charset=utf-8", "no-cache"},
-		{"/downloads/app/update-darwin-arm64.json", "application/json", "no-cache"},
+		{"/downloads/app/stable/update-darwin-arm64.json", "application/json", "no-cache"},
 	}
 	if !slices.Equal(put, want) {
 		t.Errorf("uploaded\n%v\nwant\n%v", put, want)
@@ -195,7 +195,7 @@ func TestArchivesFromS3(t *testing.T) {
 		}
 		return nil
 	}
-	get := c.archiveGetter()
+	get := c.archiveGetter("stable")
 	for _, u := range []string{served + "/App%201.0.0.tar.gz", srv.URL + "/elsewhere/app-0.9.0.tar.gz"} {
 		if err := read(get, u); err != nil {
 			t.Fatal(err)
@@ -211,10 +211,60 @@ func TestArchivesFromS3(t *testing.T) {
 	// Without credentials, from updates.url.
 	t.Setenv("AWS_ACCESS_KEY_ID", "")
 	got = nil
-	if err := read(c.archiveGetter(), served+"/app-1.0.0.tar.gz"); err != nil {
+	if err := read(c.archiveGetter("stable"), served+"/app-1.0.0.tar.gz"); err != nil {
 		t.Fatal(err)
 	}
 	if want := []string{host + "/app/app-1.0.0.tar.gz"}; !slices.Equal(got, want) {
 		t.Errorf("without credentials, requested %v", got)
+	}
+}
+
+func TestPublishS3SplitHosting(t *testing.T) {
+	t.Setenv("AWS_ACCESS_KEY_ID", "id")
+	t.Setenv("AWS_SECRET_ACCESS_KEY", "secret")
+	t.Setenv("AWS_SESSION_TOKEN", "")
+	var (
+		mu  sync.Mutex
+		put []string
+	)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		put = append(put, r.URL.EscapedPath())
+		mu.Unlock()
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	dist := t.TempDir()
+	var artifacts []string
+	for _, name := range []string{
+		"update-darwin-arm64.json",
+		"history-darwin-arm64.json",
+		"app-1.2.0-darwin-arm64.tar.zst",
+		"app-1.1.0-to-1.2.0-darwin-arm64.delta",
+	} {
+		p := filepath.Join(dist, name)
+		os.WriteFile(p, []byte(name), 0o644)
+		artifacts = append(artifacts, p)
+	}
+	c := &Config{
+		root:    t.TempDir(),
+		Version: "1.2.0",
+		Updates: &Updates{
+			FeedURL: "https://updates.example.com/app",
+			URL:     "https://r2.example.com/app",
+			S3:      &S3{Bucket: "downloads", Prefix: "app", Endpoint: srv.URL},
+		},
+	}
+	if err := publish(c, artifacts); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		"/downloads/app/app-1.2.0-darwin-arm64.tar.zst",
+		"/downloads/app/app-1.1.0-to-1.2.0-darwin-arm64.delta",
+		"/downloads/app/stable/history-darwin-arm64.json",
+	}
+	if !slices.Equal(put, want) {
+		t.Errorf("split-hosted R2 uploads = %v, want %v", put, want)
 	}
 }

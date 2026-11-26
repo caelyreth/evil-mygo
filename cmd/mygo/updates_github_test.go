@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -132,13 +133,43 @@ func TestWriteDeltasGitHub(t *testing.T) {
 				}
 				archives = append(archives, archive.Bytes())
 				bases = append(bases, update.Archive{
-					Version: v, URL: "https://github.com/me/app/releases/download/v" + v + "/app.tar.gz",
-					Size: int64(archive.Len()), Signature: update.Sign(signer, sum[:]),
+					Version: v, URL: "https://github.com/me/app/releases/download/v" + v + "/app.tar.zst",
+					Size: int64(archive.Len()), SHA256: hex.EncodeToString(sum[:]), Signature: update.SignArtifact(signer, sum[:]),
 				})
 			}
-			manifest, err := json.Marshal(update.Manifest{
-				Version: bases[0].Version, URL: bases[0].URL, Size: bases[0].Size,
-				Signature: bases[0].Signature, Previous: bases[1:],
+			histBytes, err := json.Marshal(update.ReleaseIndex{Target: target, Channel: "stable", History: bases})
+			if err != nil {
+				t.Fatal(err)
+			}
+			// Sign the latest base manifest with priv (or other key if badSignature).
+			baseSigner := key
+			if tc.badSignature {
+				_, baseSigner, _ = ed25519.GenerateKey(nil)
+			}
+			manifest, err := update.SignManifest([]ed25519.PrivateKey{baseSigner}, &update.Manifest{
+				Target:  target,
+				Channel: "stable",
+				Version: bases[0].Version,
+				Artifact: update.Artifact{
+					URL:       bases[0].URL,
+					Size:      bases[0].Size,
+					SHA256:    bases[0].SHA256,
+					Signature: bases[0].Signature,
+				},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			newerManifest, err := update.SignManifest([]ed25519.PrivateKey{key}, &update.Manifest{
+				Target:  target,
+				Channel: "stable",
+				Version: "2.0.0",
+				Artifact: update.Artifact{
+					URL:       bases[0].URL,
+					Size:      bases[0].Size,
+					SHA256:    bases[0].SHA256,
+					Signature: bases[0].Signature,
+				},
 			})
 			if err != nil {
 				t.Fatal(err)
@@ -188,10 +219,13 @@ func TestWriteDeltasGitHub(t *testing.T) {
 				case r.URL.Path == "/me/app/releases/download/v1.1.6/"+name:
 					status = http.StatusNotFound
 				case r.URL.Path == "/me/app/releases/download/v1.1.5/"+name:
-					body = []byte(`{"version":"2.0.0"}`)
-				case r.URL.Path == "/me/app/releases/download/v1.1.0/app.tar.gz":
+					body = newerManifest
+				case r.URL.Path == "/me/app/releases/latest/download/"+update.HistoryName(target) ||
+					r.URL.Path == "/me/app/releases/download/"+prefix+"1.1.0/"+update.HistoryName(target):
+					body = histBytes
+				case r.URL.Path == "/me/app/releases/download/v1.1.0/app.tar.zst":
 					body = archives[0]
-				case r.URL.Path == "/me/app/releases/download/v1.0.0/app.tar.gz":
+				case r.URL.Path == "/me/app/releases/download/v1.0.0/app.tar.zst":
 					body = archives[1]
 				default:
 					t.Errorf("unexpected request: %s", r.URL)
@@ -217,17 +251,21 @@ func TestWriteDeltasGitHub(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			var m update.Manifest
-			if err := json.Unmarshal(data, &m); err != nil {
+			ring, _ := update.ParseKeyring(base64.StdEncoding.EncodeToString(pub))
+			m, err := update.VerifyManifest(ring, data)
+			if err != nil {
 				t.Fatal(err)
 			}
-			if len(m.Deltas) != tc.wantDeltas || len(m.Previous) != tc.wantPrevious || apiReads != tc.wantPages {
-				t.Fatalf("deltas %v, previous %v, API pages %d; want %d, %d, %d; requests %v", m.Deltas, m.Previous, apiReads, tc.wantDeltas, tc.wantPrevious, tc.wantPages, requests)
-			}
-			for i, a := range m.Previous {
-				if a != bases[i] {
-					t.Errorf("previous archive = %+v, want %+v", a, bases[i])
+			// History is stored separately from client manifest (history-<target>.json).
+			var wantHistory []update.Archive
+			if histData, err := os.ReadFile(filepath.Join(stage, update.HistoryName(target))); err == nil {
+				var idx update.ReleaseIndex
+				if json.Unmarshal(histData, &idx) == nil && len(idx.History) > 1 {
+					wantHistory = idx.History[1:]
 				}
+			}
+			if len(m.Deltas) != tc.wantDeltas || len(wantHistory) != tc.wantPrevious && tc.wantDeltas > 0 || apiReads != tc.wantPages {
+				t.Fatalf("deltas %v, history %v, API pages %d; want %d, %d, %d; requests %v", m.Deltas, wantHistory, apiReads, tc.wantDeltas, tc.wantPrevious, tc.wantPages, requests)
 			}
 			for i, d := range m.Deltas {
 				if d.From != bases[i].Version {

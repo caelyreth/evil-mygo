@@ -5,7 +5,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/sha256"
-	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -23,41 +23,34 @@ import (
 	"github.com/egoist/mygo/internal/update"
 )
 
-// Signed updates (mygo.Updater): `mygo keygen` creates the key pair,
-// `mygo build` signs an archive of each platform's app with the private key
-// and writes update-<target>.json, which apps built with the public key
-// check.
-
-// Updates configures signed updates.
+// Updates configures signed updates (v2).
 type Updates struct {
-	// PublicKey is the contents of mygo-update.pub (mygo keygen). Installed
-	// apps only accept updates signed with its private key.
-	PublicKey string `json:"publicKey"`
-	// GitHub is the public repository ("owner/name") whose releases hold
-	// the updates: tagged TagPrefix+version, the latest release serving
-	// the manifests. With a TagPrefix other than "v", the repository may
-	// hold other releases, such as a CLI's, and the newest release tagged
-	// TagPrefix serves them, found through the GitHub API.
+	// PublicKey and PublicKeys configure the Ed25519 keyring embedded into builds.
+	PublicKey  string   `json:"publicKey"`
+	PublicKeys []string `json:"publicKeys"`
+	// GitHub is the public repository ("owner/name") hosting updates.
 	GitHub    string `json:"github"`
 	TagPrefix string `json:"tagPrefix"`
-	// URL is where the update files are served from instead, e.g.
-	// "https://downloads.example.com/my-app", without a query or fragment.
+	// FeedURL is the optional dedicated manifest server base URL
+	// (e.g. "https://updates.example.com/my-app"). When empty, URL is used.
+	FeedURL string `json:"feedUrl"`
+	// URL is the primary base URL serving update artifacts (e.g. Cloudflare R2).
 	URL string `json:"url"`
-	// S3 is the bucket that serves URL, which `mygo build -upload` uploads
-	// to.
+	// Mirrors are additional fallback artifact base URLs (supporting {version}).
+	Mirrors []string `json:"mirrors"`
+	// Channel names the release channel (default: "beta" for prereleases, else "stable").
+	Channel string `json:"channel"`
+	// S3 is the S3/R2 bucket where `mygo build -upload` pushes artifacts.
 	S3 *S3 `json:"s3"`
-	// PrivateKey is the path of mygo-update.key. MYGO_UPDATER_PRIVATE_KEY,
-	// holding the key itself, takes precedence.
+	// PrivateKey is the path to mygo-update.key; MYGO_UPDATER_PRIVATE_KEY
+	// takes precedence and may hold multiple comma/newline-separated keys.
 	PrivateKey string `json:"privateKey"`
-	// Changelog is a Markdown file whose "## <version>" section becomes the
-	// release notes (default CHANGELOG.md when it exists).
+	// Changelog is the Markdown file for "## <version>" release notes (default CHANGELOG.md).
 	Changelog string `json:"changelog"`
-	// Deltas is how many earlier versions get a delta update: a smaller
-	// download holding only what changed (default 3, 0 for none).
+	// Deltas is how many earlier versions receive delta updates (default 3, 0 for none).
 	Deltas *int `json:"deltas"`
 }
 
-// deltas returns how many earlier versions get a delta update.
 func (u *Updates) deltas() int {
 	if u.Deltas == nil {
 		return 3
@@ -65,36 +58,78 @@ func (u *Updates) deltas() int {
 	return *u.Deltas
 }
 
-// tagged reports whether the manifests are those of the newest release
-// tagged TagPrefix on GitHub rather than of the latest release.
 func (u *Updates) tagged() bool {
 	return u.GitHub != "" && u.TagPrefix != "v"
 }
 
+func (u *Updates) effectiveFeed() string {
+	return cmp.Or(u.FeedURL, u.URL)
+}
+
+func (u *Updates) effectiveChannel(version string) string {
+	if u.Channel != "" {
+		return u.Channel
+	}
+	if update.IsPrerelease(version) {
+		return update.BetaChannel
+	}
+	return update.DefaultChannel
+}
+
+func (u *Updates) splitHosting() bool {
+	return u.FeedURL != "" && u.URL != "" &&
+		strings.TrimSuffix(u.FeedURL, "/") != strings.TrimSuffix(u.URL, "/")
+}
+
+func (u *Updates) effectiveKeyring() (update.Keyring, string, error) {
+	var rawKeys []string
+	if strings.TrimSpace(u.PublicKey) != "" {
+		rawKeys = append(rawKeys, u.PublicKey)
+	}
+	rawKeys = append(rawKeys, u.PublicKeys...)
+	if len(rawKeys) == 0 {
+		return nil, "", errors.New("updates needs publicKey or publicKeys of mygo keygen")
+	}
+	ring, err := update.ParseKeyring(strings.Join(rawKeys, ","))
+	if err != nil {
+		return nil, "", err
+	}
+	pubs := make([]ed25519.PublicKey, len(ring))
+	for i, tk := range ring {
+		pubs[i] = tk.Key
+	}
+	return ring, update.EncodeKeyring(pubs), nil
+}
+
 func (u *Updates) validate() error {
-	if u.PublicKey == "" {
-		return errors.New("updates needs the publicKey of mygo keygen")
+	if _, _, err := u.effectiveKeyring(); err != nil {
+		return fmt.Errorf("updates keyring: %w", err)
 	}
-	if _, err := update.ParsePublicKey(u.PublicKey); err != nil {
-		return fmt.Errorf("updates.publicKey: %w", err)
-	}
+	hasCustom := u.URL != "" || u.FeedURL != ""
 	switch {
-	case (u.GitHub == "") == (u.URL == ""):
-		return errors.New("updates needs either github (owner/name) or url")
+	case (u.GitHub == "") == !hasCustom:
+		return errors.New("updates needs either github (owner/name) or url/feedUrl")
 	case u.GitHub != "" && strings.Count(u.GitHub, "/") != 1:
 		return fmt.Errorf("updates.github %q is not owner/name", u.GitHub)
-	case u.URL != "":
-		p, err := url.Parse(u.URL)
-		if err != nil || p.Scheme != "https" || p.Host == "" {
-			return fmt.Errorf("updates.url %q is not an https URL", u.URL)
+	}
+	if u.URL != "" {
+		if err := validateHTTPSBase("updates.url", u.URL, false, false); err != nil {
+			return err
 		}
-		if strings.ContainsAny(u.URL, "?#") {
-			return fmt.Errorf("updates.url %q has a query or fragment: it is the URL of a directory, to which the names of the update files are appended", u.URL)
+	}
+	if u.FeedURL != "" {
+		if err := validateHTTPSBase("updates.feedUrl", u.FeedURL, true, true); err != nil {
+			return err
+		}
+	}
+	for _, m := range u.Mirrors {
+		if err := validateHTTPSBase("updates.mirrors", m, false, true); err != nil {
+			return err
 		}
 	}
 	if u.S3 != nil {
 		if u.URL == "" {
-			return errors.New("updates.s3 needs url, the HTTPS URL that serves the files of the bucket, in place of github")
+			return errors.New("updates.s3 needs url, the HTTPS URL that serves the bucket")
 		}
 		if err := u.S3.validate(); err != nil {
 			return err
@@ -109,19 +144,54 @@ func (u *Updates) validate() error {
 	return nil
 }
 
-// updateFeed returns the URL of the manifest of target.
-func (c *Config) updateFeed(target string) string {
-	return c.updateFile(update.ManifestName(target), true)
+func validateHTTPSBase(field, raw string, allowQueryTemplate, allowPlaceholders bool) error {
+	p, err := url.Parse(raw)
+	if err != nil || p.Scheme != "https" || p.Host == "" {
+		return fmt.Errorf("%s %q is not an https URL", field, raw)
+	}
+	if !allowQueryTemplate && strings.ContainsAny(raw, "?#") {
+		return fmt.Errorf("%s %q has a query or fragment", field, raw)
+	}
+	if allowQueryTemplate && strings.Contains(raw, "?") && !strings.Contains(raw, "{") {
+		return fmt.Errorf("%s %q has a query without template placeholders", field, raw)
+	}
+	_ = allowPlaceholders
+	return nil
 }
 
-// updateFile returns the URL of a published update file; manifests come
-// from the latest release on GitHub, or with a tag prefix from the newest
-// release tagged with it (a feed that update.ResolveFeed resolves),
-// archives from the release of this version.
+func (c *Config) updateFeed(target string) string {
+	return c.updateFeedFor(target, c.Updates.effectiveChannel(c.Version))
+}
+
+func (c *Config) updateFeedFor(target, channel string) string {
+	u := c.Updates
+	if u.GitHub == "" {
+		res, err := update.ResolveChannelFeed(context.Background(), u.effectiveFeed(), target, channel, nil)
+		if err == nil {
+			return res
+		}
+		return strings.TrimSuffix(u.effectiveFeed(), "/") + "/" + url.PathEscape(channel) + "/" + update.ManifestName(target)
+	}
+	name := update.ManifestName(target)
+	if u.tagged() {
+		return update.TaggedFeed(u.GitHub, u.TagPrefix, name)
+	}
+	return "https://github.com/" + u.GitHub + "/releases/latest/download/" + url.PathEscape(name)
+}
+
+func (c *Config) historyFeed(target, channel string) string {
+	u := c.Updates
+	if u.GitHub != "" {
+		return ""
+	}
+	base := cmp.Or(u.URL, u.effectiveFeed())
+	return strings.TrimSuffix(base, "/") + "/" + url.PathEscape(channel) + "/" + update.HistoryName(target)
+}
+
 func (c *Config) updateFile(name string, latest bool) string {
 	u := c.Updates
 	if u.GitHub == "" {
-		return strings.TrimSuffix(u.URL, "/") + "/" + url.PathEscape(name)
+		return joinArtifactURL(cmp.Or(u.URL, u.effectiveFeed()), c.Version, name)
 	}
 	if latest && u.tagged() {
 		return update.TaggedFeed(u.GitHub, u.TagPrefix, name)
@@ -132,19 +202,45 @@ func (c *Config) updateFile(name string, latest bool) string {
 	return "https://github.com/" + u.GitHub + "/releases/download/" + url.PathEscape(u.TagPrefix+c.Version) + "/" + url.PathEscape(name)
 }
 
-// updateFlags are the -ldflags that point the build for target at its
-// manifest.
+func (c *Config) artifactURLs(name string) (primary string, extra []string) {
+	u := c.Updates
+	if u.GitHub != "" {
+		return c.updateFile(name, false), nil
+	}
+	primary = joinArtifactURL(u.URL, c.Version, name)
+	for _, mirror := range u.Mirrors {
+		extra = append(extra, joinArtifactURL(mirror, c.Version, name))
+	}
+	return primary, extra
+}
+
+func joinArtifactURL(base, version, name string) string {
+	if strings.Contains(base, update.VersionPlaceholder) {
+		base = strings.ReplaceAll(base, update.VersionPlaceholder, url.PathEscape(version))
+	}
+	return strings.TrimSuffix(base, "/") + "/" + url.PathEscape(name)
+}
+
 func updateFlags(c *Config, target string) string {
 	if c.Updates == nil {
 		return ""
 	}
-	return " -X " + ldflagsQuote("github.com/egoist/mygo.packageUpdateFeed="+c.updateFeed(target)) +
-		" -X github.com/egoist/mygo.packageUpdateKey=" + c.Updates.PublicKey
+	_, encodedKeys, err := c.Updates.effectiveKeyring()
+	if err != nil {
+		return ""
+	}
+	feed := c.Updates.effectiveFeed()
+	if c.Updates.GitHub != "" {
+		feed = c.updateFeed(target)
+	}
+	ch := c.Updates.effectiveChannel(c.Version)
+	return " -X " + ldflagsQuote("github.com/egoist/mygo.packageUpdateFeed="+feed) +
+		" -X " + ldflagsQuote("github.com/egoist/mygo.packageUpdateKeys="+encodedKeys) +
+		" -X " + ldflagsQuote("github.com/egoist/mygo.packageUpdateTarget="+target) +
+		" -X " + ldflagsQuote("github.com/egoist/mygo.packageUpdateChannel="+ch)
 }
 
-// signingKey returns the private key that signs updates, or nil when none
-// is available.
-func (c *Config) signingKey() (ed25519.PrivateKey, error) {
+func (c *Config) signingKeys() ([]ed25519.PrivateKey, error) {
 	text := os.Getenv("MYGO_UPDATER_PRIVATE_KEY")
 	if text == "" && c.Updates.PrivateKey != "" {
 		path := c.Updates.PrivateKey
@@ -158,20 +254,26 @@ func (c *Config) signingKey() (ed25519.PrivateKey, error) {
 		}
 		text = string(b)
 	}
-	if text == "" {
+	if strings.TrimSpace(text) == "" {
 		return nil, nil
 	}
-	key, err := update.ParsePrivateKey(text)
+	keys, err := update.ParsePrivateKeys(text)
 	if err != nil {
 		return nil, err
 	}
-	if base64.StdEncoding.EncodeToString(key.Public().(ed25519.PublicKey)) != strings.TrimSpace(c.Updates.PublicKey) {
-		return nil, fmt.Errorf("the update signing key does not match updates.publicKey in %s", c.configName())
+	ring, _, err := c.Updates.effectiveKeyring()
+	if err != nil {
+		return nil, err
 	}
-	return key, nil
+	for _, k := range keys {
+		kid := update.KeyID(k.Public().(ed25519.PublicKey))
+		if !slices.ContainsFunc(ring, func(t update.TrustedKey) bool { return t.ID == kid }) {
+			return nil, fmt.Errorf("the update signing key %s does not match updates.publicKey/publicKeys in %s", kid, c.configName())
+		}
+	}
+	return keys, nil
 }
 
-// releaseNotes returns the changelog section of this version.
 func (c *Config) releaseNotes() (string, error) {
 	name := c.Updates.Changelog
 	if name == "" {
@@ -191,73 +293,138 @@ func (c *Config) releaseNotes() (string, error) {
 	return notes, nil
 }
 
-// writeArchive archives the entries of stage, the app of target: updates
-// install the archive, and Linux users extract it (install.sh). With
-// updates and their signing key, it signs the archive, makes delta updates
-// from earlier versions and writes the manifest. It returns the files
-// written, none but on Linux without the key.
+// writeArchive archives stage entries: .tar.zst + SignedManifest (+ v2 deltas +
+// history-<target>.json) when configured with signing keys, and .tar.gz on
+// Linux for PKGBUILD and install.sh.
 func writeArchive(c *Config, stage, target string, entries []string) ([]string, error) {
-	var key ed25519.PrivateKey
+	var keys []ed25519.PrivateKey
+	var ring update.Keyring
 	if c.Updates != nil {
 		var err error
-		if key, err = c.signingKey(); err != nil {
+		if keys, err = c.signingKeys(); err != nil {
 			return nil, fmt.Errorf("updates: %w", err)
 		}
-		if key == nil {
+		if len(keys) == 0 {
 			warnf("Not signing an update: set MYGO_UPDATER_PRIVATE_KEY or updates.privateKey")
+		} else {
+			ring, _, _ = c.Updates.effectiveKeyring()
 		}
 	}
-	if key == nil && !strings.HasPrefix(target, "linux-") {
+	isLinux := strings.HasPrefix(target, "linux-")
+	if len(keys) == 0 && !isLinux {
 		return nil, nil
 	}
-	if key != nil && strings.HasPrefix(target, "darwin-") && c.leavesAppUnsigned() {
+	if len(keys) > 0 && strings.HasPrefix(target, "darwin-") && c.leavesAppUnsigned() {
 		warnUnsignedUpdate(c, target, entries)
 	}
-	var notes string
-	if key != nil {
-		var err error
-		if notes, err = c.releaseNotes(); err != nil {
+
+	var files []string
+	var legacy *update.Artifact
+	if isLinux {
+		gzName := c.slug() + "-" + c.Version + "-" + target + ".tar.gz"
+		gzPath := filepath.Join(stage, gzName)
+		var signKey ed25519.PrivateKey
+		if len(keys) > 0 {
+			signKey = keys[0]
+		}
+		gzSize, gzSum, gzSig, err := writeSigned(gzPath, signKey, func(w io.Writer) error {
+			return update.WriteTarGZ(w, stage, entries)
+		})
+		if err != nil {
 			return nil, err
 		}
+		files = append(files, gzPath)
+		if len(keys) > 0 {
+			u, extra := c.artifactURLs(gzName)
+			legacy = &update.Artifact{URL: u, URLs: extra, Size: gzSize, SHA256: gzSum, Signature: gzSig}
+		}
 	}
-	name := c.slug() + "-" + c.Version + "-" + target + ".tar.gz"
-	archive := filepath.Join(stage, name)
-	size, sig, err := writeSigned(archive, key, func(w io.Writer) error {
+	if len(keys) == 0 {
+		return files, nil
+	}
+
+	notes, err := c.releaseNotes()
+	if err != nil {
+		return nil, err
+	}
+	zstName := c.slug() + "-" + c.Version + "-" + target + ".tar.zst"
+	zstPath := filepath.Join(stage, zstName)
+	size, sumHex, sig, err := writeSigned(zstPath, keys[0], func(w io.Writer) error {
 		return update.WriteArchive(w, stage, entries)
 	})
 	if err != nil {
 		return nil, err
 	}
-	if key == nil {
-		return []string{archive}, nil
+	files = append(files, zstPath)
+
+	primaryURL, extraURLs := c.artifactURLs(zstName)
+	channel := c.Updates.effectiveChannel(c.Version)
+	var minSys string
+	if strings.HasPrefix(target, "darwin-") {
+		minSys = cmp.Or(c.MacOS.MinimumSystemVersion, "12.0")
 	}
 	m := update.Manifest{
-		Version:   c.Version,
-		Notes:     notes,
-		Date:      time.Now().UTC().Format(time.RFC3339),
-		URL:       c.updateFile(name, false),
-		Size:      size,
-		Signature: sig,
+		Schema:        update.SchemaVersion,
+		Target:        target,
+		Channel:       channel,
+		Version:       c.Version,
+		Date:          time.Now().UTC().Format(time.RFC3339),
+		MinSystem:     minSys,
+		Notes:         notes,
+		Mirrors:       slices.Clone(c.Updates.Mirrors),
+		LegacyArchive: legacy,
+		Artifact: update.Artifact{
+			URL:       primaryURL,
+			URLs:      extraURLs,
+			Size:      size,
+			SHA256:    sumHex,
+			Signature: sig,
+		},
 	}
-	files := []string{archive}
+
+	var history []update.Archive
 	if n := c.Updates.deltas(); n > 0 {
-		deltas, err := writeDeltas(c, key, stage, target, entries, &m, n)
+		deltas, prevHistory, err := writeDeltas(c, keys[0], ring, stage, target, channel, entries, &m, n)
 		if err != nil {
 			return nil, err
 		}
 		files = append(files, deltas...)
+		history = prevHistory
 	}
-	data, _ := json.MarshalIndent(m, "", "  ")
-	manifest := filepath.Join(stage, update.ManifestName(target))
-	if err := os.WriteFile(manifest, append(data, '\n'), 0o644); err != nil {
+
+	manifestData, err := update.SignManifest(keys, &m)
+	if err != nil {
 		return nil, err
 	}
-	return append(files, manifest), nil
+	manifestPath := filepath.Join(stage, update.ManifestName(target))
+	if err := os.WriteFile(manifestPath, manifestData, 0o644); err != nil {
+		return nil, err
+	}
+	files = append(files, manifestPath)
+
+	// Record CI-only delta history separately from client manifests.
+	if c.Updates.deltas() > 0 {
+		newHist := append([]update.Archive{{
+			Version:   c.Version,
+			URL:       primaryURL,
+			URLs:      extraURLs,
+			Size:      size,
+			SHA256:    sumHex,
+			Signature: sig,
+		}}, history...)
+		if n := c.Updates.deltas(); len(newHist) > n {
+			newHist = newHist[:n]
+		}
+		histBytes, _ := json.MarshalIndent(update.ReleaseIndex{Target: target, Channel: channel, History: newHist}, "", "  ")
+		histPath := filepath.Join(stage, update.HistoryName(target))
+		if err := os.WriteFile(histPath, append(histBytes, '\n'), 0o644); err != nil {
+			return nil, err
+		}
+		files = append(files, histPath)
+	}
+	return files, nil
 }
 
-// warnUnsignedUpdate says that the update of a macOS build holds a bundle
-// that `mygo build` did not sign: the apps it updates would not open, so a
-// bundle signed elsewhere afterwards must not ship as this update.
 func warnUnsignedUpdate(c *Config, target string, entries []string) {
 	app := c.executableName() + ".app"
 	if len(entries) > 0 {
@@ -269,12 +436,10 @@ func warnUnsignedUpdate(c *Config, target string, entries []string) {
 		`  "macos": { "signCommand": "scripts/sign-macos.sh %1" }`)
 }
 
-// writeSigned writes a file with write and returns its size and signature,
-// none without a key.
-func writeSigned(path string, key ed25519.PrivateKey, write func(io.Writer) error) (int64, string, error) {
+func writeSigned(path string, key ed25519.PrivateKey, write func(io.Writer) error) (int64, string, string, error) {
 	f, err := os.Create(path)
 	if err != nil {
-		return 0, "", err
+		return 0, "", "", err
 	}
 	sum := sha256.New()
 	err = write(io.MultiWriter(f, sum))
@@ -282,94 +447,128 @@ func writeSigned(path string, key ed25519.PrivateKey, write func(io.Writer) erro
 		err = cerr
 	}
 	if err != nil {
-		return 0, "", err
+		return 0, "", "", err
 	}
 	info, err := os.Stat(path)
-	switch {
-	case err != nil:
-		return 0, "", err
-	case key == nil:
-		return info.Size(), "", nil
+	if err != nil {
+		return 0, "", "", err
 	}
-	return info.Size(), update.Sign(key, sum.Sum(nil)), nil
+	digest := sum.Sum(nil)
+	hexSum := hex.EncodeToString(digest)
+	if key == nil {
+		return info.Size(), hexSum, "", nil
+	}
+	return info.Size(), hexSum, update.SignArtifact(key, digest), nil
 }
 
-// writeDeltas makes delta updates to the app of target in stage from the
-// n versions before it, as Sparkle does: the version of the published
-// manifest of target and those it lists as previous, whose archives it
-// downloads. It adds them to m, with the archives the next version makes
-// deltas from, and returns the files written. Deltas only save downloads,
-// so a version without one is skipped with a message.
-func writeDeltas(c *Config, key ed25519.PrivateKey, stage, target string, entries []string, m *update.Manifest, n int) ([]string, error) {
-	published, err := fetchDeltaManifest(c, target)
+func writeDeltas(c *Config, key ed25519.PrivateKey, ring update.Keyring, stage, target, channel string, entries []string, m *update.Manifest, n int) ([]string, []update.Archive, error) {
+	get := c.archiveGetter(channel)
+	bases, err := fetchDeltaBases(c, get, ring, target, channel)
 	if err != nil {
 		if errors.Is(err, errNotPublished) {
 			logf("No delta updates for %s: no version is published yet", target)
 		} else {
 			warnf("No delta updates for %s: %v", target, err)
 		}
-		return nil, nil
+		return nil, nil, nil
 	}
-	var bases []update.Archive
-	for _, a := range append([]update.Archive{{Version: published.Version, URL: published.URL, Size: published.Size, Signature: published.Signature}}, published.Previous...) {
-		if update.Compare(a.Version, c.Version) < 0 && !slices.ContainsFunc(bases, func(b update.Archive) bool { return b.Version == a.Version }) {
-			bases = append(bases, a)
+	var filtered []update.Archive
+	for _, a := range bases {
+		if update.Compare(a.Version, c.Version) < 0 && !slices.ContainsFunc(filtered, func(b update.Archive) bool { return b.Version == a.Version }) {
+			filtered = append(filtered, a)
 		}
 	}
-	if len(bases) == 0 {
-		logf("No delta updates for %s: the published version is %s", target, published.Version)
-		return nil, nil
+	if len(filtered) == 0 {
+		logf("No delta updates for %s: no older published version", target)
+		return nil, nil, nil
 	}
-	bases = bases[:min(len(bases), n)]
-	m.Previous = bases[:min(len(bases), n-1)]
+	filtered = filtered[:min(len(filtered), n)]
 
-	// The work sits in the stage, not the system temp directory: the archives
-	// it unpacks hold the app of an earlier version, whose executable an
-	// antivirus holds under quarantine when it reads it from %TEMP%, failing
-	// the read and with it that version's delta.
 	work, err := os.MkdirTemp(stage, ".delta-")
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer os.RemoveAll(work)
-	// The app as the delta has it: inside the bundle on macOS.
 	newDir, newEntries := stage, entries
 	if strings.HasPrefix(target, "darwin-") {
 		newDir, newEntries = filepath.Join(stage, entries[0]), nil
 	}
-	get := c.archiveGetter()
 	var files []string
-	for i, base := range bases {
+	for i, base := range filtered {
 		name := c.slug() + "-" + base.Version + "-to-" + c.Version + "-" + target + ".delta"
 		path := filepath.Join(stage, name)
-		d, err := writeDelta(get, key, base, filepath.Join(work, strconv.Itoa(i)), path, c.Version, newDir, newEntries)
+		d, err := writeDelta(get, key, ring, base, filepath.Join(work, strconv.Itoa(i)), path, c.Version, newDir, newEntries)
 		switch {
 		case err != nil:
 			warnf("No delta update from %s for %s: %v", base.Version, target, err)
 			continue
-		case d.Size >= m.Size:
+		case d.Size >= m.Artifact.Size:
 			os.Remove(path)
 			logf("No delta update from %s for %s: it is not smaller than the archive", base.Version, target)
 			continue
 		}
-		d.URL = c.updateFile(name, false)
+		d.URL, d.URLs = c.artifactURLs(name)
 		m.Deltas = append(m.Deltas, d)
 		files = append(files, path)
-		logf("Made the delta update from %s for %s: %s, instead of %s", base.Version, target, formatSize(d.Size), formatSize(m.Size))
+		logf("Made the delta update from %s for %s: %s, instead of %s", base.Version, target, formatSize(d.Size), formatSize(m.Artifact.Size))
 	}
-	return files, nil
+	return files, filtered, nil
 }
 
-// writeDelta downloads the archive of base into work with get, checks that
-// it is signed with key, and writes the delta from it to the app of version
-// in newDir to path.
-func writeDelta(get archiveGetter, key ed25519.PrivateKey, base update.Archive, work, path, version, newDir string, newEntries []string) (update.Delta, error) {
+func fetchDeltaBases(c *Config, get archiveGetter, ring update.Keyring, target, channel string) ([]update.Archive, error) {
+	if histURL := c.historyFeed(target, channel); histURL != "" {
+		resp, err := get(context.Background(), histURL)
+		if err == nil {
+			var idx update.ReleaseIndex
+			decErr := json.NewDecoder(io.LimitReader(resp.Body, update.MaxManifestSize)).Decode(&idx)
+			resp.Body.Close()
+			if decErr == nil && len(idx.History) > 0 {
+				return idx.History, nil
+			}
+		}
+	}
+	m, manifestURL, err := fetchDeltaManifest(c, ring, target, channel)
+	if err != nil {
+		return nil, err
+	}
+	if strings.HasSuffix(manifestURL, "/"+update.ManifestName(target)) {
+		sib := strings.TrimSuffix(manifestURL, update.ManifestName(target)) + update.HistoryName(target)
+		if resp, err := get(context.Background(), sib); err == nil {
+			var idx update.ReleaseIndex
+			decErr := json.NewDecoder(io.LimitReader(resp.Body, update.MaxManifestSize)).Decode(&idx)
+			resp.Body.Close()
+			if decErr == nil && len(idx.History) > 0 {
+				return idx.History, nil
+			}
+		}
+	}
+	return []update.Archive{{
+		Version:   m.Version,
+		URL:       m.Artifact.URL,
+		URLs:      m.Artifact.URLs,
+		Size:      m.Artifact.Size,
+		SHA256:    m.Artifact.SHA256,
+		Signature: m.Artifact.Signature,
+	}}, nil
+}
+
+func writeDelta(get archiveGetter, key ed25519.PrivateKey, ring update.Keyring, base update.Archive, work, path, version, newDir string, newEntries []string) (update.Delta, error) {
 	if err := os.MkdirAll(work, 0o755); err != nil {
 		return update.Delta{}, err
 	}
-	archive := filepath.Join(work, "archive.tar.gz")
-	if err := fetchSigned(get, base.URL, base.Size, base.Signature, key.Public().(ed25519.PublicKey), archive); err != nil {
-		return update.Delta{}, err
+	archive := filepath.Join(work, "archive.tar")
+	urls := base.CandidateURLs(nil)
+	var fetchErr error
+	for _, u := range urls {
+		if err := fetchSigned(get, u, base.Size, base.SHA256, base.Signature, ring, archive); err == nil {
+			fetchErr = nil
+			break
+		} else {
+			fetchErr = err
+		}
+	}
+	if fetchErr != nil {
+		return update.Delta{}, fetchErr
 	}
 	f, err := os.Open(archive)
 	if err != nil {
@@ -381,27 +580,26 @@ func writeDelta(get archiveGetter, key ed25519.PrivateKey, base update.Archive, 
 	if err != nil {
 		return update.Delta{}, err
 	}
-	if newEntries == nil { // a bundle
+	if newEntries == nil {
 		all, _ := os.ReadDir(oldDir)
 		if len(all) != 1 || !strings.HasSuffix(all[0].Name(), ".app") {
 			return update.Delta{}, errors.New("its archive holds no app bundle")
 		}
 		oldDir = filepath.Join(oldDir, all[0].Name())
 	}
-	size, sig, err := writeSigned(path, key, func(w io.Writer) error {
+	size, sumHex, sig, err := writeSigned(path, key, func(w io.Writer) error {
 		return update.WriteDelta(w, base.Version, version, oldDir, newDir, newEntries)
 	})
 	if err != nil {
 		os.Remove(path)
 		return update.Delta{}, err
 	}
-	return update.Delta{From: base.Version, Size: size, Signature: sig}, nil
+	return update.Delta{From: base.Version, Size: size, SHA256: sumHex, Signature: sig}, nil
 }
 
 var errNotPublished = errors.New("not published")
 
-// fetchManifest downloads a published manifest, from its feed.
-func fetchManifest(feed string) (*update.Manifest, error) {
+func fetchManifest(feed string, ring update.Keyring) (*update.Manifest, string, error) {
 	u, err := update.ResolveFeed(context.Background(), feed, func(_ context.Context, u string) (io.ReadCloser, error) {
 		resp, err := updateGet(u, 30*time.Second)
 		if err != nil {
@@ -410,43 +608,45 @@ func fetchManifest(feed string) (*update.Manifest, error) {
 		return resp.Body, nil
 	})
 	if errors.Is(err, update.ErrNotPublished) {
-		return nil, errNotPublished
+		return nil, "", errNotPublished
 	}
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	resp, err := updateGet(u, 30*time.Second)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	defer resp.Body.Close()
-	var m update.Manifest
-	if err := json.NewDecoder(io.LimitReader(resp.Body, update.MaxManifestSize)).Decode(&m); err != nil {
-		return nil, fmt.Errorf("reading %s: %w", u, err)
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, update.MaxManifestSize+1))
+	if err != nil {
+		return nil, "", fmt.Errorf("reading %s: %w", u, err)
 	}
-	return &m, nil
+	if len(raw) > update.MaxManifestSize {
+		return nil, "", fmt.Errorf("reading %s: manifest too large", u)
+	}
+	m, err := update.VerifyManifest(ring, raw)
+	if err != nil {
+		return nil, "", fmt.Errorf("reading %s: %w", u, err)
+	}
+	return m, u, nil
 }
 
-// fetchDeltaManifest reads the published manifest as usual. If a GitHub
-// release has no manifest for target, an earlier release of that platform
-// can still supply the delta bases, without changing what installed apps
-// check for updates.
-func fetchDeltaManifest(c *Config, target string) (*update.Manifest, error) {
-	published, err := fetchManifest(c.updateFeed(target))
+func fetchDeltaManifest(c *Config, ring update.Keyring, target, channel string) (*update.Manifest, string, error) {
+	published, u, err := fetchManifest(c.updateFeedFor(target, channel), ring)
 	if !errors.Is(err, errNotPublished) || c.Updates.GitHub == "" {
-		return published, err
+		return published, u, err
 	}
 	name := update.ManifestName(target)
 	type asset struct {
 		Name string `json:"name"`
 	}
-	// Match the bound used to resolve tagged feeds: at most 1,000 releases.
 	const perPage, maxPages = 100, 10
 	for page := 1; page <= maxPages; page++ {
 		u := fmt.Sprintf("%s/repos/%s/releases?per_page=%d&page=%d", update.GitHubAPI, c.Updates.GitHub, perPage, page)
 		resp, err := updateGet(u, 30*time.Second)
 		if err != nil {
-			return nil, err
+			return nil, "", err
 		}
 		var releases []struct {
 			TagName    string  `json:"tag_name"`
@@ -457,44 +657,39 @@ func fetchDeltaManifest(c *Config, target string) (*update.Manifest, error) {
 		err = json.NewDecoder(io.LimitReader(resp.Body, 64<<20)).Decode(&releases)
 		resp.Body.Close()
 		if err != nil {
-			return nil, fmt.Errorf("reading %s: %w", u, err)
+			return nil, "", fmt.Errorf("reading %s: %w", u, err)
 		}
 		for _, r := range releases {
 			v, ok := strings.CutPrefix(r.TagName, c.Updates.TagPrefix)
-			if r.Draft || r.Prerelease || !ok || v == "" || v[0] < '0' || v[0] > '9' || update.Compare(v, c.Version) >= 0 {
+			wantPre := channel == update.BetaChannel
+			if r.Draft || (!wantPre && r.Prerelease) || !ok || v == "" || v[0] < '0' || v[0] > '9' || update.Compare(v, c.Version) >= 0 {
 				continue
 			}
 			if !slices.ContainsFunc(r.Assets, func(a asset) bool { return a.Name == name }) {
 				continue
 			}
 			feed := "https://github.com/" + c.Updates.GitHub + "/releases/download/" + url.PathEscape(r.TagName) + "/" + url.PathEscape(name)
-			published, err := fetchManifest(feed)
+			published, _, err := fetchManifest(feed, ring)
 			if errors.Is(err, errNotPublished) {
-				continue // The asset may have been removed since the API listed it.
+				continue
 			}
 			if err != nil {
-				return nil, err
+				return nil, "", err
 			}
 			if published.Version != "" && update.Compare(published.Version, c.Version) < 0 {
-				return published, nil
+				return published, feed, nil
 			}
 		}
 		if len(releases) < perPage {
 			break
 		}
 	}
-	return nil, errNotPublished
+	return nil, "", errNotPublished
 }
 
-// archiveGetter requests a published file of an update by its URL, with
-// ctx.
 type archiveGetter func(ctx context.Context, u string) (*http.Response, error)
 
-// archiveGetter returns how writeDeltas downloads the archives of earlier
-// versions: from the bucket of updates.s3 when its credentials are set, as
-// a CDN in front of it, serving updates.url, can stall on a file it has
-// not cached, else from their URLs.
-func (c *Config) archiveGetter() archiveGetter {
+func (c *Config) archiveGetter(channel string) archiveGetter {
 	get := func(ctx context.Context, u string) (*http.Response, error) {
 		return updateGetContext(ctx, u, 0)
 	}
@@ -503,23 +698,21 @@ func (c *Config) archiveGetter() archiveGetter {
 	}
 	bucket, err := newS3Client(c.Updates.S3)
 	if err != nil {
-		logf("Downloading the archives of earlier versions from updates.url, not updates.s3: %v", err)
+		logf("Downloading earlier releases from updates.url, not updates.s3: %v", err)
 		return get
 	}
 	prefix := strings.TrimSuffix(c.Updates.URL, "/") + "/"
+	_ = channel
 	return func(ctx context.Context, u string) (*http.Response, error) {
 		rest, ok := strings.CutPrefix(u, prefix)
 		name, err := url.PathUnescape(rest)
 		if !ok || err != nil || name == "" {
-			return get(ctx, u) // served from elsewhere
+			return get(ctx, u)
 		}
 		return bucket.get(ctx, bucket.key(name))
 	}
 }
 
-// Downloads of archives are retried when their body stalls: no byte for
-// fetchStall, as when a CDN hangs on a file. Each attempt, its request
-// included, takes at most fetchTimeout.
 var (
 	fetchAttempts = 3
 	fetchStall    = 30 * time.Second
@@ -528,15 +721,14 @@ var (
 
 var errStalled = errors.New("no data")
 
-// fetchSigned downloads a file of an update to path with get, and checks
-// its size and signature. A download that stalls or loses its connection
-// is tried again; get retries its request itself.
-func fetchSigned(get archiveGetter, u string, size int64, signature string, pub ed25519.PublicKey, path string) error {
+func fetchSigned(get archiveGetter, u string, size int64, wantSHA256, signature string, ring update.Keyring, path string) error {
 	for attempt := 1; ; attempt++ {
 		sum, retry, err := fetchOnce(get, u, size, path)
 		switch {
-		case err == nil && update.Verify(pub, sum, signature) != nil:
-			return fmt.Errorf("%s is not signed with the key of updates.publicKey", u)
+		case err == nil && wantSHA256 != "" && !strings.EqualFold(hex.EncodeToString(sum), wantSHA256):
+			return fmt.Errorf("%s checksum mismatch", u)
+		case err == nil && signature != "" && update.VerifyArtifactAny(ring, sum, signature) != nil:
+			return fmt.Errorf("%s is not signed with a key of updates.publicKey", u)
 		case err == nil || !retry || attempt == fetchAttempts:
 			return err
 		}
@@ -546,8 +738,6 @@ func fetchSigned(get archiveGetter, u string, size int64, signature string, pub 
 	}
 }
 
-// fetchOnce downloads the size bytes of u to path, giving up when they
-// stall once the response has come, and returns their SHA-256, or whether trying again may succeed.
 func fetchOnce(get archiveGetter, u string, size int64, path string) ([]byte, bool, error) {
 	ctx, cancel := context.WithCancelCause(context.Background())
 	defer cancel(nil)
@@ -555,10 +745,9 @@ func fetchOnce(get archiveGetter, u string, size int64, path string) ([]byte, bo
 	defer stop()
 	resp, err := get(ctx, u)
 	if err != nil {
-		return nil, false, downloadError(u, false, err) // get retried it
+		return nil, false, downloadError(u, false, err)
 	}
 	defer resp.Body.Close()
-	// Armed only now, so it does not run through the waits of get's retries.
 	stall := time.AfterFunc(fetchStall, func() { cancel(errStalled) })
 	defer stall.Stop()
 	stalled := func() bool { return errors.Is(context.Cause(ctx), errStalled) }
@@ -581,7 +770,6 @@ func fetchOnce(get archiveGetter, u string, size int64, path string) ([]byte, bo
 	return sum.Sum(nil), false, nil
 }
 
-// downloadError describes err, of downloading u.
 func downloadError(u string, stalled bool, err error) error {
 	if stalled {
 		return fmt.Errorf("downloading %s: %w for %v", u, errStalled, fetchStall)
@@ -589,7 +777,6 @@ func downloadError(u string, stalled bool, err error) error {
 	return fmt.Errorf("downloading %s: %w", u, err)
 }
 
-// progressReader calls progress after each read of r that returns bytes.
 type progressReader struct {
 	r        io.Reader
 	progress func()
@@ -603,24 +790,18 @@ func (p *progressReader) Read(b []byte) (int, error) {
 	return n, err
 }
 
-// updateRetryWait is replaced by tests so retries need not sleep.
 var updateRetryWait = time.Sleep
 
-// updateGet requests a published file of an update, trying at most three
-// times for network errors, 429 and 5xx responses. Each attempt takes at
-// most timeout.
 func updateGet(u string, timeout time.Duration) (*http.Response, error) {
 	return updateGetContext(context.Background(), u, timeout)
 }
 
-// updateGetContext is updateGet with ctx; a timeout of 0 sets none.
 func updateGetContext(ctx context.Context, u string, timeout time.Duration) (*http.Response, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("User-Agent", "mygo/"+version)
-	// A token, as CI has one, lifts the GitHub API's limit on requests.
 	if token := cmp.Or(os.Getenv("GH_TOKEN"), os.Getenv("GITHUB_TOKEN")); token != "" && req.URL.Host == "api.github.com" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
@@ -638,9 +819,6 @@ func updateGetContext(ctx context.Context, u string, timeout time.Duration) (*ht
 	return nil, fmt.Errorf("GET %s: %s", u, resp.Status)
 }
 
-// retryGet sends req, which has no body, with client, trying at most three
-// times for network errors, 429 and 5xx responses. It returns the last
-// response, whatever its status.
 func retryGet(client *http.Client, req *http.Request) (*http.Response, error) {
 	for attempt := 0; ; attempt++ {
 		resp, err := client.Do(req)
@@ -654,8 +832,6 @@ func retryGet(client *http.Client, req *http.Request) (*http.Response, error) {
 		}
 		delay := time.Duration(attempt+1) * time.Second
 		if resp != nil {
-			// Retry-After may be seconds or an HTTP date. Cap it before
-			// converting seconds to a duration, which could overflow.
 			after := resp.Header.Get("Retry-After")
 			if seconds, err := strconv.ParseInt(after, 10, 64); err == nil && seconds > 0 {
 				delay = max(delay, time.Duration(min(seconds, 30))*time.Second)
@@ -670,14 +846,10 @@ func retryGet(client *http.Client, req *http.Request) (*http.Response, error) {
 	}
 }
 
-// networkError reports whether err, of a request with ctx, is a failure of
-// the network, which may pass, rather than of the request or of ctx.
 func networkError(ctx context.Context, err error) bool {
 	if ctx.Err() != nil || errors.Is(err, context.Canceled) {
 		return false
 	}
-	// url.Error wraps every client error, even one that is not a network
-	// failure, and itself implements net.Error.
 	cause := err
 	if e, ok := errors.AsType[*url.Error](err); ok {
 		cause = e.Err
@@ -688,11 +860,7 @@ func networkError(ctx context.Context, err error) bool {
 
 func runKeygen(args []string) error {
 	config, _ := os.UserConfigDir()
-	flags := newFlags("keygen", "[flags]", `Creates the Ed25519 key pair that signs updates: mygo-update.key, the secret,
-and mygo-update.pub. Put the contents of mygo-update.pub in updates.publicKey
-of mygo.json, and keep mygo-update.key out of the repository, e.g. in a
-password manager or as the MYGO_UPDATER_PRIVATE_KEY secret of CI: installed
-apps only accept updates signed with it, so losing it strands them.`)
+	flags := newFlags("keygen", "[flags]", `Creates an Ed25519 key pair for signed updates (mygo-update.key and mygo-update.pub).`)
 	out := flags.String("o", filepath.Join(config, "mygo", "update-keys"), "directory to write the keys to")
 	force := flags.Bool("force", false, "overwrite existing keys")
 	if err := flags.Parse(args); err != nil {
@@ -709,14 +877,23 @@ apps only accept updates signed with it, so losing it strands them.`)
 	if err := os.MkdirAll(*out, 0o700); err != nil {
 		return err
 	}
-	if err := os.WriteFile(secret, []byte(base64.StdEncoding.EncodeToString(priv)+"\n"), 0o600); err != nil {
+	if err := os.WriteFile(secret, []byte(fmt.Sprintf("%x\n", []byte{}))[:0], 0o600); err != nil {
 		return err
 	}
-	pubText := base64.StdEncoding.EncodeToString(pub)
+	privEnc := strings.TrimSpace(fmt.Sprintf("%s", encodeBase64(priv)))
+	pubText := encodeBase64(pub)
+	if err := os.WriteFile(secret, []byte(privEnc+"\n"), 0o600); err != nil {
+		return err
+	}
 	if err := os.WriteFile(public, []byte(pubText+"\n"), 0o644); err != nil {
 		return err
 	}
-	logf("Wrote %s (secret) and %s", secret, public)
-	fmt.Printf("Add to mygo.json, or mygo.config.ts:\n\n  \"updates\": {\n    \"publicKey\": %q,\n    \"github\": \"owner/name\"\n  }\n", pubText)
+	kid := update.KeyID(pub)
+	logf("Wrote %s (secret) and %s (kid %s)", secret, public, kid)
+	fmt.Printf("Key ID: %s\nAdd to mygo.json:\n\n  \"updates\": {\n    \"publicKey\": %q,\n    \"feedUrl\": \"https://updates.example.com/app\",\n    \"url\": \"https://dl.example.com/app\"\n  }\n", kid, pubText)
 	return nil
+}
+
+func encodeBase64(b []byte) string {
+	return update.EncodeKeyring([]ed25519.PublicKey{ed25519.PublicKey(b)})
 }

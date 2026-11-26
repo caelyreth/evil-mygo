@@ -427,10 +427,9 @@ func buildPlatform(c *Config, goos, goarch string, opts buildOptions) ([]string,
 		return nil, err
 	}
 	artifacts = append(artifacts, files...)
-	// install.sh installs on Linux, and with updates on macOS; install.ps1
-	// runs the Windows installer of the latest version, so a build without
-	// one has none.
-	if goos == "linux" || goos == "darwin" && c.Updates != nil {
+	// install.sh installs on Linux, and install.ps1 runs the Windows
+	// installer of the latest version.
+	if goos == "linux" {
 		script, err := writeInstallScript(c, stage)
 		if err != nil {
 			return nil, err

@@ -247,7 +247,7 @@ func TestSkipInstaller(t *testing.T) {
 		}
 	}
 	files, manifests, err := uploads(artifacts)
-	if err != nil || len(files) != 1 || filepath.Base(files[0]) != "skip-test-1.0.0-windows-amd64.tar.gz" || len(manifests) != 1 {
+	if err != nil || len(files) != 1 || filepath.Base(files[0]) != "skip-test-1.0.0-windows-amd64.tar.zst" || len(manifests) != 1 {
 		t.Errorf("uploads of %q = %q, %q, %v", artifacts, files, manifests, err)
 	}
 
