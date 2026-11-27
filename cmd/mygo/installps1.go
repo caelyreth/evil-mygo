@@ -72,7 +72,7 @@ func installPS1(c *Config) string {
 		data["GitHub"] = "1"
 		data["Irm"] = c.updateFile(installPS1Name, true)
 	default:
-		data["Releases"] = c.updateFile("", true)
+		data["Releases"] = joinArtifactURL(u.effectiveArtifacts(), c.Version, "")
 		data["Irm"] = c.updateFile(installPS1Name, true)
 	}
 	var b strings.Builder

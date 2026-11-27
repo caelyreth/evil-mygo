@@ -204,6 +204,22 @@ func TestUpdatesConfig(t *testing.T) {
 	if p, ex := c.artifactURLs("app-1.2.0-darwin-arm64.tar.zst"); p != "https://r2.example.com/app/app-1.2.0-darwin-arm64.tar.zst" || len(ex) != 1 || ex[0] != "https://fallback.example.com/v1.2.0/app-1.2.0-darwin-arm64.tar.zst" {
 		t.Errorf("artifactURLs = %q, %v", p, ex)
 	}
+	c, err = load(`{"publicKey": "` + key + `", "feedUrl": "https://updates.example.com", "url": "https://r2.example.com", "artifactsUrl": "https://r2.example.com/releases/v{version}"}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p, _ := c.artifactURLs("app-1.2.0-darwin-arm64.tar.zst"); p != "https://r2.example.com/releases/v1.2.0/app-1.2.0-darwin-arm64.tar.zst" {
+		t.Errorf("artifactsUrl artifactURLs = %q", p)
+	}
+	if got := c.historyFeed("darwin-arm64", "release"); got != "https://r2.example.com/release/history-darwin-arm64.json" {
+		t.Errorf("artifactsUrl historyFeed = %q", got)
+	}
+	if ps := installPS1(c); !strings.Contains(ps, "$releases = 'https://r2.example.com/releases/v1.2.0/'\n") || !strings.Contains(ps, "#   irm https://r2.example.com/install.ps1 | iex\n") {
+		t.Errorf("install.ps1 with artifactsUrl unexpected:\n%s", ps)
+	}
+	if sh := installScript(c); !strings.Contains(sh, "#   curl -fsSL https://r2.example.com/install.sh | sh\n") {
+		t.Errorf("install.sh with artifactsUrl unexpected:\n%s", sh)
+	}
 	if _, err := load(`{"publicKey": "` + key + `", "url": "https://dl.example.com/my-app", "s3": {"bucket": "downloads", "prefix": "my-app", "endpoint": "https://acc.r2.cloudflarestorage.com"}}`); err != nil {
 		t.Error(err)
 	}

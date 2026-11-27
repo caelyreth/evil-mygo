@@ -34,8 +34,13 @@ type Updates struct {
 	// FeedURL is the optional dedicated manifest server base URL
 	// (e.g. "https://updates.example.com/my-app"). When empty, URL is used.
 	FeedURL string `json:"feedUrl"`
-	// URL is the primary base URL serving update artifacts (e.g. Cloudflare R2).
+	// URL is the primary base URL serving root metadata, scripts, and history
+	// (e.g. Cloudflare R2 bucket origin).
 	URL string `json:"url"`
+	// ArtifactsURL is the optional base URL template (supporting {version})
+	// where versioned installers, archives, deltas, and SHA256SUMS are hosted
+	// (e.g. "https://dl.example.com/releases/v{version}"). When empty, URL is used.
+	ArtifactsURL string `json:"artifactsUrl"`
 	// Mirrors are additional fallback artifact base URLs (supporting {version}).
 	Mirrors []string `json:"mirrors"`
 	// Channel names the release channel (default: "prerelease" for prereleases, else "release").
@@ -65,6 +70,10 @@ func (u *Updates) tagged() bool {
 
 func (u *Updates) effectiveFeed() string {
 	return cmp.Or(u.FeedURL, u.URL)
+}
+
+func (u *Updates) effectiveArtifacts() string {
+	return cmp.Or(u.ArtifactsURL, u.URL, u.FeedURL)
 }
 
 func (u *Updates) effectiveChannel(version string) string {
@@ -106,7 +115,7 @@ func (u *Updates) validate() error {
 	if _, _, err := u.effectiveKeyring(); err != nil {
 		return fmt.Errorf("updates keyring: %w", err)
 	}
-	hasCustom := u.URL != "" || u.FeedURL != ""
+	hasCustom := u.URL != "" || u.FeedURL != "" || u.ArtifactsURL != ""
 	switch {
 	case (u.GitHub == "") == !hasCustom:
 		return errors.New("updates needs either github (owner/name) or url/feedUrl")
@@ -115,6 +124,11 @@ func (u *Updates) validate() error {
 	}
 	if u.URL != "" {
 		if err := validateHTTPSBase("updates.url", u.URL, false, false); err != nil {
+			return err
+		}
+	}
+	if u.ArtifactsURL != "" {
+		if err := validateHTTPSBase("updates.artifactsUrl", u.ArtifactsURL, false, true); err != nil {
 			return err
 		}
 	}
@@ -208,7 +222,7 @@ func (c *Config) artifactURLs(name string) (primary string, extra []string) {
 	if u.GitHub != "" {
 		return c.updateFile(name, false), nil
 	}
-	primary = joinArtifactURL(u.URL, c.Version, name)
+	primary = joinArtifactURL(u.effectiveArtifacts(), c.Version, name)
 	for _, mirror := range u.Mirrors {
 		extra = append(extra, joinArtifactURL(mirror, c.Version, name))
 	}
