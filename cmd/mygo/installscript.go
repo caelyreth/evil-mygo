@@ -52,6 +52,7 @@ func installScript(c *Config) string {
 		"Env":        envName(c.slug()),
 		"Channel":    "",
 		"Releases":   "",
+		"Feed":       "",
 		"API":        "",
 		"TagPrefix":  "",
 		"PublicKey":  "",
@@ -65,6 +66,11 @@ func installScript(c *Config) string {
 		data["Curl"] = "curl -fsSL " + c.updateFile(installScriptName, false) + " | sh"
 	case u != nil:
 		data["Releases"] = c.updateFile("", true)
+		if u.GitHub == "" {
+			data["Feed"] = strings.TrimSuffix(u.effectiveFeed(), "/") + "/"
+		} else {
+			data["Feed"] = data["Releases"]
+		}
 		data["Curl"] = "curl -fsSL " + c.updateFile(installScriptName, true) + " | sh"
 	}
 	if c.Updates != nil {
@@ -144,6 +150,7 @@ version={{q .Version}}
 # (api) hold others too.
 releases={{q .Releases}}
 {{- if .Updates}}
+feed={{q .Feed}}
 api={{q .API}}
 tag_prefix={{q .TagPrefix}}
 channel={{q .Channel}}
@@ -195,6 +202,7 @@ main() {
 {{- if .Updates}}
 	if [ -n "$download_url" ]; then
 		releases="${download_url%/}/"
+		feed="$releases"
 		api=
 	fi
 {{- end}}
@@ -233,7 +241,7 @@ linux() {
 		archive="$(dirname -- "$0")/$name-$version-$target.tar.gz"
 	fi
 	if [ -z "$archive" ]; then
-		[ -n "$releases" ] || fail "no $name-$version-$target.tar.gz next to this script: pass the archive to install"
+		[ -n "$releases" ] || [ -n "$feed" ] || fail "no $name-$version-$target.tar.gz next to this script: pass the archive to install"
 {{- if .Updates}}
 		command -v curl >/dev/null 2>&1 || command -v wget >/dev/null 2>&1 || fail "downloading $app_name needs curl or wget"
 		if [ -n "$api" ]; then
@@ -241,9 +249,9 @@ linux() {
 			[ -n "$tag" ] || fail "no release of $app_name is published"
 			manifest="$releases$tag/update-$target.json"
 		elif [ -n "$download_url" ]; then
-			manifest="${releases}update-$target.json"
+			manifest="${feed}update-$target.json"
 		else
-			manifest="${releases}${channel}/update-$target.json"
+			manifest="${feed}${channel}/update-$target.json"
 		fi
 		# Fail before downloading when nothing here checks Ed25519.
 		has_ed25519 || fail "checking the signature of $app_name needs OpenSSL 3.0 or later (the openssl command): install it, or download $name-<version>-$target.tar.gz and run sh install.sh with it"

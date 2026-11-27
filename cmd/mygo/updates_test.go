@@ -977,3 +977,43 @@ func TestFetchSignedRetry(t *testing.T) {
 		}
 	}
 }
+
+func TestReleaseNotesDir(t *testing.T) {
+	dir := t.TempDir()
+	chDir := filepath.Join(dir, "changelogs")
+	if err := os.MkdirAll(chDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write := func(name, content string) {
+		if err := os.WriteFile(filepath.Join(chDir, name), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("en.md", "### 1.0.0-alpha.1\n\n#### Highlights\n- English notes\n")
+	write("ja.md", "### 1.0.0-alpha.1\n\n#### ハイライト\n- 日本語のノート\n")
+	write("zh-Hans.md", "### 1.0.0-alpha.0\n\n- Older version only\n")
+
+	c := &Config{
+		Version: "1.0.0-alpha.1",
+		root:    dir,
+		Updates: &Updates{Changelog: "changelogs"},
+	}
+	notes, byLang, err := c.releaseNotes()
+	if err != nil {
+		t.Fatalf("releaseNotes: %v", err)
+	}
+	if notes != "#### Highlights\n- English notes" {
+		t.Errorf("notes = %q", notes)
+	}
+	if got := byLang["ja"]; got != "#### ハイライト\n- 日本語のノート" {
+		t.Errorf("byLang[ja] = %q", got)
+	}
+	if _, ok := byLang["zh-Hans"]; ok {
+		t.Errorf("unexpected zh-Hans entry when version missing: %+v", byLang)
+	}
+
+	c.Version = "1.0.0-alpha.2"
+	if _, _, err := c.releaseNotes(); err == nil {
+		t.Fatal("expected error when en.md lacks target version")
+	}
+}

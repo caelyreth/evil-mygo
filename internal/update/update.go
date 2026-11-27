@@ -898,14 +898,27 @@ func ExtractArchive(r io.Reader, dir string) error {
 }
 
 // ReleaseNotes returns the section of a Markdown changelog under the
-// "## <version>" heading, or "## [<version>]" as in Keep a Changelog (a date
-// or other text may follow the version), or "" when there is none.
+// "## <version>" or "### <version>" heading, or "## [<version>]" as in
+// Keep a Changelog (a date or other text may follow the version), or "" when
+// there is none. "## " headings take precedence over "### " headings so a
+// "### Fixed" subsection inside "## <version>" is not treated as a version.
 func ReleaseNotes(changelog, version string) string {
+	lines := strings.Split(strings.ReplaceAll(changelog, "\r\n", "\n"), "\n")
+	if notes := extractReleaseNotes(lines, "## ", version, false); notes != "" {
+		return notes
+	}
+	return extractReleaseNotes(lines, "### ", version, true)
+}
+
+func extractReleaseNotes(lines []string, prefix, version string, stopAtH2 bool) string {
 	var notes []string
 	in := false
 	version = strings.TrimPrefix(version, "v")
-	for _, line := range strings.Split(strings.ReplaceAll(changelog, "\r\n", "\n"), "\n") {
-		if rest, ok := strings.CutPrefix(line, "## "); ok {
+	for _, line := range lines {
+		if stopAtH2 && in && strings.HasPrefix(line, "## ") {
+			break
+		}
+		if rest, ok := strings.CutPrefix(line, prefix); ok {
 			if in {
 				break
 			}

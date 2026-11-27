@@ -185,6 +185,25 @@ func TestInstallScript(t *testing.T) {
 	if !strings.Contains(string(script), "the my-app and ma commands in ~/.local/bin,") {
 		t.Errorf("install.sh does not say what it installs:\n%s", script)
 	}
+	split := installScript(&Config{
+		Name:    "My App",
+		Version: "1.0.0",
+		Updates: &Updates{
+			PublicKey: base64.StdEncoding.EncodeToString(pub),
+			FeedURL:   "https://updates.example.com",
+			URL:       "https://data.example.com",
+		},
+	})
+	for _, want := range []string{
+		"releases='https://data.example.com/'",
+		"feed='https://updates.example.com/'",
+		`manifest="${feed}${channel}/update-$target.json"`,
+		"curl -fsSL https://data.example.com/install.sh | sh",
+	} {
+		if !strings.Contains(split, want) {
+			t.Errorf("split-hosting install.sh missing %q:\n%s", want, split)
+		}
+	}
 	alone := filepath.Join(t.TempDir(), "install.sh")
 	os.WriteFile(alone, script, 0o755)
 	if out := run(alone); !strings.Contains(out, "Downloading My App 1.1.0") || !strings.Contains(out, "run "+filepath.Join(binDir, "my-app")+"\n") {

@@ -45,7 +45,8 @@ type Updates struct {
 	// PrivateKey is the path to mygo-update.key; MYGO_UPDATER_PRIVATE_KEY
 	// takes precedence and may hold multiple comma/newline-separated keys.
 	PrivateKey string `json:"privateKey"`
-	// Changelog is the Markdown file for "## <version>" release notes (default CHANGELOG.md).
+	// Changelog is the Markdown file or folder of localized Markdown files for
+	// "## <version>" or "### <version>" release notes (default CHANGELOG.md or changelogs/).
 	Changelog string `json:"changelog"`
 	// Deltas is how many earlier versions receive delta updates (default 3, 0 for none).
 	Deltas *int `json:"deltas"`
@@ -274,23 +275,82 @@ func (c *Config) signingKeys() ([]ed25519.PrivateKey, error) {
 	return keys, nil
 }
 
-func (c *Config) releaseNotes() (string, error) {
+func (c *Config) releaseNotes() (string, map[string]string, error) {
 	name := c.Updates.Changelog
 	if name == "" {
-		name = "CHANGELOG.md"
-		if !fileExists(c.path(name)) {
-			return "", nil
+		switch {
+		case fileExists(c.path("CHANGELOG.md")):
+			name = "CHANGELOG.md"
+		default:
+			if st, err := os.Stat(c.path("changelogs")); err == nil && st.IsDir() {
+				name = "changelogs"
+			} else {
+				return "", nil, nil
+			}
 		}
 	}
-	data, err := os.ReadFile(c.path(name))
+	root := c.path(name)
+	info, err := os.Stat(root)
+	if err != nil {
+		return "", nil, err
+	}
+	if info.IsDir() {
+		notes, err := readReleaseNotesFile(filepath.Join(root, "en.md"), filepath.Join(name, "en.md"), c.Version)
+		if err != nil {
+			return "", nil, err
+		}
+		return notes, readLocalizedReleaseNotes(root, "", c.Version), nil
+	}
+	notes, err := readReleaseNotesFile(root, name, c.Version)
+	if err != nil {
+		return "", nil, err
+	}
+	stem := strings.TrimSuffix(filepath.Base(root), filepath.Ext(root)) + "."
+	return notes, readLocalizedReleaseNotes(filepath.Dir(root), stem, c.Version), nil
+}
+
+func readReleaseNotesFile(path, display, version string) (string, error) {
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return "", err
 	}
-	notes := update.ReleaseNotes(string(data), c.Version)
+	notes := update.ReleaseNotes(string(data), version)
 	if notes == "" {
-		return "", fmt.Errorf("%s has no notes for %s: add a \"## %s\" section", name, c.Version, c.Version)
+		return "", fmt.Errorf("%s has no notes for %s: add a \"## %s\" or \"### %s\" section", display, version, version, version)
 	}
 	return notes, nil
+}
+
+func readLocalizedReleaseNotes(dir, stemPrefix, version string) map[string]string {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	var byLang map[string]string
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if !strings.HasSuffix(name, ".md") || (stemPrefix != "" && !strings.HasPrefix(name, stemPrefix)) {
+			continue
+		}
+		lang := strings.TrimSuffix(strings.TrimPrefix(name, stemPrefix), ".md")
+		if lang == "" || strings.EqualFold(lang, "en") {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(dir, name))
+		if err != nil {
+			continue
+		}
+		if notes := update.ReleaseNotes(string(data), version); notes != "" {
+			if byLang == nil {
+				byLang = make(map[string]string)
+			}
+			byLang[lang] = notes
+		}
+	}
+	return byLang
 }
 
 // writeArchive archives stage entries: .tar.zst + SignedManifest (+ v2 deltas +
@@ -343,7 +403,7 @@ func writeArchive(c *Config, stage, target string, entries []string) ([]string, 
 		return files, nil
 	}
 
-	notes, err := c.releaseNotes()
+	notes, notesByLang, err := c.releaseNotes()
 	if err != nil {
 		return nil, err
 	}
@@ -371,6 +431,7 @@ func writeArchive(c *Config, stage, target string, entries []string) ([]string, 
 		Date:          time.Now().UTC().Format(time.RFC3339),
 		MinSystem:     minSys,
 		Notes:         notes,
+		NotesByLang:   notesByLang,
 		Mirrors:       slices.Clone(c.Updates.Mirrors),
 		LegacyArchive: legacy,
 		Artifact: update.Artifact{

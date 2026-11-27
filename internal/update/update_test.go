@@ -201,6 +201,15 @@ func TestReleaseNotes(t *testing.T) {
 			t.Errorf("notes of %s = %q, want %q", version, got, want)
 		}
 	}
+
+	// Level-3 version headings with level-4 subsections.
+	h3 := "### 1.0.0-alpha.1\n\nSummary.\n\n#### Writing\n\n- Live shaping\n\n### 0.9.0\n- Initial\n"
+	if got := ReleaseNotes(h3, "1.0.0-alpha.1"); got != "Summary.\n\n#### Writing\n\n- Live shaping" {
+		t.Errorf("h3 notes = %q", got)
+	}
+	if got := ReleaseNotes(h3, "0.9.0"); got != "- Initial" {
+		t.Errorf("h3 older notes = %q", got)
+	}
 }
 
 // writeTestArchive writes an update archive of the entries given, in order:

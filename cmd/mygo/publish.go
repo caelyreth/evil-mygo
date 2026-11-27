@@ -89,7 +89,7 @@ func publishGitHub(c *Config, artifacts []string) error {
 			return err
 		}
 	} else {
-		notes, _ := c.releaseNotes()
+		notes, _, _ := c.releaseNotes()
 		t := con.start("Creating the draft release " + tag + " of " + repo)
 		args := []string{"release", "create", tag, "--repo", repo, "--draft", "--title", tag, "--notes", notes}
 		if latest != "" {
