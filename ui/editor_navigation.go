@@ -306,26 +306,8 @@ func (ed *editor) key(c *context, st *state, k editEvent) {
 		}
 		return
 	}
-	if m != Cmd {
-		return
-	}
-	switch k.key {
-	case KeyA:
-		ed.selectAll()
-	case KeyC:
-		ed.command(c, "copy")
-	case KeyX:
-		ed.command(c, "cut")
-	case KeyV:
-		ed.command(c, "paste")
-	case KeyZ:
-		if shift {
-			ed.command(c, "redo")
-		} else {
-			ed.command(c, "undo")
-		}
-	case KeyY:
-		ed.command(c, "redo")
+	if name, ok := editChord(keyEvent{mods: k.mods, key: k.key}); ok {
+		ed.command(c, name)
 	}
 }
 

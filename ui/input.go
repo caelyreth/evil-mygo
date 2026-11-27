@@ -1232,6 +1232,15 @@ func (rt *engine) keyDownPhysical(mods Modifiers, key, physical Key, code KeyCod
 		rt.blinkStart = rt.now()
 		return true
 	}
+	if h := rt.focusHandler(); h != nil && h.editor == nil && !rt.claimed(k) {
+		// A handler of its own keys that leaves an edit chord gets it as
+		// its command, as the Edit menu gives it on macOS, where the menu
+		// takes the chord before the window does; elsewhere none does.
+		if name, ok := editChord(k); ok && rt.deliver(h, InputEvent{Kind: InputCommand, Text: name, Repeat: repeat}) {
+			rt.blinkStart = rt.now()
+			return true
+		}
+	}
 	if s := rt.states[rt.focused]; s != nil && s.editor != nil && s.editor.onTextKey != nil && s.flags&flagEditable != 0 &&
 		!typesText(k) && (s.editor.wants(k) || !rt.claimed(k)) && s.editor.textKey(k) {
 		// OnTextKey took it as it came, as HandleInput does, but after the
@@ -1633,6 +1642,33 @@ func (rt *engine) editEvent(ev editEvent) bool {
 var commandKeys = map[string]keyEvent{
 	"copy": {mods: Cmd, key: KeyC}, "cut": {mods: Cmd, key: KeyX}, "paste": {mods: Cmd, key: KeyV}, "selectAll": {mods: Cmd, key: KeyA},
 	"undo": {mods: Cmd, key: KeyZ}, "redo": {mods: Cmd | Shift, key: KeyZ},
+}
+
+// editChord is the edit command the chord k runs in text, as Cmd+A
+// selects all: the keys an editor runs its commands by (editor.key), which
+// a handler of its own keys gets as InputCommand where it leaves them.
+func editChord(k keyEvent) (string, bool) {
+	if k.mods&^Shift != Cmd {
+		return "", false
+	}
+	switch k.key {
+	case KeyA:
+		return "selectAll", true
+	case KeyC:
+		return "copy", true
+	case KeyX:
+		return "cut", true
+	case KeyV:
+		return "paste", true
+	case KeyZ:
+		if k.mods&Shift != 0 {
+			return "redo", true
+		}
+		return "undo", true
+	case KeyY:
+		return "redo", true
+	}
+	return "", false
 }
 
 // commandKey has an edit command that the focus, or ed, doesn't take go to
