@@ -35,9 +35,9 @@ const (
 	SchemaVersion = 2
 
 	// DefaultChannel is the release channel used when none is configured.
-	DefaultChannel = "stable"
-	// BetaChannel is the channel used for prerelease builds.
-	BetaChannel = "beta"
+	DefaultChannel = "release"
+	// PrereleaseChannel is the channel used for prerelease builds.
+	PrereleaseChannel = "prerelease"
 
 	manifestDomain = "app-update-manifest-v2\n"
 	artifactDomain = "app-update-artifact-v2\n"

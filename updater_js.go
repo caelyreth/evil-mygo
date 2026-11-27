@@ -79,8 +79,8 @@ type UpdateSource interface {
 func (u *UpdaterModule) Availability() UpdateAvailability { return UpdateUnavailableUnconfigured }
 func (u *UpdaterModule) Enabled() bool                    { return false }
 func (u *UpdaterModule) Target() string                   { return "js-wasm" }
-func (u *UpdaterModule) DefaultChannel() string           { return "stable" }
-func (u *UpdaterModule) Channel() string                  { return "stable" }
+func (u *UpdaterModule) DefaultChannel() string           { return "release" }
+func (u *UpdaterModule) Channel() string                  { return "release" }
 func (u *UpdaterModule) SetChannel(string)                {}
 func (u *UpdaterModule) SetSource(UpdateSource)           {}
 func (u *UpdaterModule) SetPrereleases(bool)              {}

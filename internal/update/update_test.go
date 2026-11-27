@@ -74,7 +74,7 @@ func TestSignatures(t *testing.T) {
 	}
 	m := &Manifest{
 		Target:  "darwin-arm64",
-		Channel: "stable",
+		Channel: "release",
 		Version: "1.2.0",
 		Date:    "2026-11-26T00:00:00Z",
 		Notes:   "English notes",

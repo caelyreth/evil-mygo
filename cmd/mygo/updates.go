@@ -38,7 +38,7 @@ type Updates struct {
 	URL string `json:"url"`
 	// Mirrors are additional fallback artifact base URLs (supporting {version}).
 	Mirrors []string `json:"mirrors"`
-	// Channel names the release channel (default: "beta" for prereleases, else "stable").
+	// Channel names the release channel (default: "prerelease" for prereleases, else "release").
 	Channel string `json:"channel"`
 	// S3 is the S3/R2 bucket where `mygo build -upload` pushes artifacts.
 	S3 *S3 `json:"s3"`
@@ -71,7 +71,7 @@ func (u *Updates) effectiveChannel(version string) string {
 		return u.Channel
 	}
 	if update.IsPrerelease(version) {
-		return update.BetaChannel
+		return update.PrereleaseChannel
 	}
 	return update.DefaultChannel
 }
@@ -661,7 +661,7 @@ func fetchDeltaManifest(c *Config, ring update.Keyring, target, channel string) 
 		}
 		for _, r := range releases {
 			v, ok := strings.CutPrefix(r.TagName, c.Updates.TagPrefix)
-			wantPre := channel == update.BetaChannel
+			wantPre := channel == update.PrereleaseChannel
 			if r.Draft || (!wantPre && r.Prerelease) || !ok || v == "" || v[0] < '0' || v[0] > '9' || update.Compare(v, c.Version) >= 0 {
 				continue
 			}

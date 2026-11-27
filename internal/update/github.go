@@ -42,7 +42,7 @@ func TaggedFeed(repo, prefix, name string) string {
 
 // ResolveChannelFeed resolves feed for target and channel:
 //   - Direct .json URLs or custom URL templates ({channel}, {target}) expand inline.
-//   - GitHub feeds select prereleases when channel == BetaChannel.
+//   - GitHub feeds select prereleases when channel == PrereleaseChannel.
 //   - Base HTTP/HTTPS directory feeds resolve to <feed>/<channel>/update-<target>.json.
 func ResolveChannelFeed(ctx context.Context, feed, target, channel string, get Getter) (string, error) {
 	if channel == "" {
@@ -56,7 +56,7 @@ func ResolveChannelFeed(ctx context.Context, feed, target, channel string, get G
 		return r.Replace(feed), nil
 	}
 	if _, _, _, isGH := parseGitHubFeed(feed); isGH || strings.Contains(feed, VersionPlaceholder) {
-		if channel == BetaChannel {
+		if channel == PrereleaseChannel {
 			return ResolvePrereleaseFeed(ctx, feed, get)
 		}
 		return ResolveFeed(ctx, feed, get)

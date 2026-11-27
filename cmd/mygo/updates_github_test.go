@@ -137,7 +137,7 @@ func TestWriteDeltasGitHub(t *testing.T) {
 					Size: int64(archive.Len()), SHA256: hex.EncodeToString(sum[:]), Signature: update.SignArtifact(signer, sum[:]),
 				})
 			}
-			histBytes, err := json.Marshal(update.ReleaseIndex{Target: target, Channel: "stable", History: bases})
+			histBytes, err := json.Marshal(update.ReleaseIndex{Target: target, Channel: "release", History: bases})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -148,7 +148,7 @@ func TestWriteDeltasGitHub(t *testing.T) {
 			}
 			manifest, err := update.SignManifest([]ed25519.PrivateKey{baseSigner}, &update.Manifest{
 				Target:  target,
-				Channel: "stable",
+				Channel: "release",
 				Version: bases[0].Version,
 				Artifact: update.Artifact{
 					URL:       bases[0].URL,
@@ -162,7 +162,7 @@ func TestWriteDeltasGitHub(t *testing.T) {
 			}
 			newerManifest, err := update.SignManifest([]ed25519.PrivateKey{key}, &update.Manifest{
 				Target:  target,
-				Channel: "stable",
+				Channel: "release",
 				Version: "2.0.0",
 				Artifact: update.Artifact{
 					URL:       bases[0].URL,

@@ -194,11 +194,11 @@ func TestUpdatesConfig(t *testing.T) {
 		}
 	}
 	c, err = load(`{"publicKey": "` + key + `", "url": "https://dl.example.com/my-app/"}`)
-	if err != nil || c.updateFeed("linux-amd64") != "https://dl.example.com/my-app/stable/update-linux-amd64.json" {
+	if err != nil || c.updateFeed("linux-amd64") != "https://dl.example.com/my-app/release/update-linux-amd64.json" {
 		t.Errorf("url feed = %s, %v", c.updateFeed("linux-amd64"), err)
 	}
 	c, err = load(`{"publicKey": "` + key + `", "feedUrl": "https://updates.example.com/app", "url": "https://r2.example.com/app", "mirrors": ["https://fallback.example.com/v{version}"]}`)
-	if err != nil || c.updateFeed("darwin-arm64") != "https://updates.example.com/app/stable/update-darwin-arm64.json" {
+	if err != nil || c.updateFeed("darwin-arm64") != "https://updates.example.com/app/release/update-darwin-arm64.json" {
 		t.Errorf("split feedUrl = %v, %v", c.updateFeed("darwin-arm64"), err)
 	}
 	if p, ex := c.artifactURLs("app-1.2.0-darwin-arm64.tar.zst"); p != "https://r2.example.com/app/app-1.2.0-darwin-arm64.tar.zst" || len(ex) != 1 || ex[0] != "https://fallback.example.com/v1.2.0/app-1.2.0-darwin-arm64.tar.zst" {
@@ -413,7 +413,7 @@ func main() {
 		t.Fatalf("updating printed:\n%s", out)
 	}
 	mu.Lock()
-	if want := []string{"/stable/" + update.ManifestName(target), "/" + filepath.Base(m.Deltas[0].URL)}; !slices.Equal(requests, want) {
+	if want := []string{"/release/" + update.ManifestName(target), "/" + filepath.Base(m.Deltas[0].URL)}; !slices.Equal(requests, want) {
 		t.Errorf("the update downloaded %q, want %q", requests, want)
 	}
 	mu.Unlock()
@@ -749,7 +749,7 @@ func TestWriteDeltas(t *testing.T) {
 	}))
 	defer srv.Close()
 	// Publish ReleaseIndex history-linux-amd64.json with 1.1.0, 1.0.0, 2.0.0, and untrusted 0.9.0.
-	idx := update.ReleaseIndex{Target: "linux-amd64", Channel: "stable"}
+	idx := update.ReleaseIndex{Target: "linux-amd64", Channel: "release"}
 	for _, v := range []string{"1.1.0", "1.0.0", "2.0.0", "0.9.0"} {
 		dir := filepath.Join(t.TempDir(), v)
 		entries := app(dir, v)
@@ -770,9 +770,9 @@ func TestWriteDeltas(t *testing.T) {
 		}
 		idx.History = append(idx.History, a)
 	}
-	os.MkdirAll(filepath.Join(serve, "stable"), 0o755)
+	os.MkdirAll(filepath.Join(serve, "release"), 0o755)
 	histBytes, _ := json.Marshal(idx)
-	os.WriteFile(filepath.Join(serve, "stable", update.HistoryName("linux-amd64")), histBytes, 0o644)
+	os.WriteFile(filepath.Join(serve, "release", update.HistoryName("linux-amd64")), histBytes, 0o644)
 
 	build := func(deltas int) (update.Manifest, []string) {
 		t.Helper()

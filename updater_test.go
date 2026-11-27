@@ -184,7 +184,7 @@ func TestUpdater(t *testing.T) {
 	if _, err := Updater.Check(ctx); err != ErrUpdatesDisabled {
 		t.Errorf("Check without updates: %v", err)
 	}
-	up, err := checkUpdate(ctx, feedSource(srv.URL+"/update.json"), key, testTarget(), "stable", "1.1.9", "")
+	up, err := checkUpdate(ctx, feedSource(srv.URL+"/update.json"), key, testTarget(), "release", "1.1.9", "")
 	if err != nil || up == nil || up.Version != "1.2.0" || up.Notes != "- Faster" || up.Date.Year() != 2026 {
 		t.Fatalf("checkUpdate = %+v, %v", up, err)
 	}
@@ -192,14 +192,14 @@ func TestUpdater(t *testing.T) {
 		t.Errorf("NotesFor(ja) = %q", got)
 	}
 	for _, current := range []string{"1.2.0", "1.10.0", "1.3.0-beta.1"} {
-		if up, err := checkUpdate(ctx, feedSource(srv.URL+"/update.json"), key, testTarget(), "stable", current, ""); up != nil || err != nil {
+		if up, err := checkUpdate(ctx, feedSource(srv.URL+"/update.json"), key, testTarget(), "release", current, ""); up != nil || err != nil {
 			t.Errorf("checkUpdate from %s = %+v, %v", current, up, err)
 		}
 	}
-	if up, err := checkUpdate(ctx, feedSource(srv.URL+"/update.json"), key, testTarget(), "stable", "1.2.0-rc.1", ""); err != nil || up == nil || up.Version != "1.2.0" {
+	if up, err := checkUpdate(ctx, feedSource(srv.URL+"/update.json"), key, testTarget(), "release", "1.2.0-rc.1", ""); err != nil || up == nil || up.Version != "1.2.0" {
 		t.Errorf("checkUpdate from 1.2.0-rc.1 = %+v, %v", up, err)
 	}
-	if _, err := checkUpdate(ctx, feedSource("http://example.com/update.json"), key, testTarget(), "stable", "1.0.0", ""); err == nil || !strings.Contains(err.Error(), "HTTPS") {
+	if _, err := checkUpdate(ctx, feedSource("http://example.com/update.json"), key, testTarget(), "release", "1.0.0", ""); err == nil || !strings.Contains(err.Error(), "HTTPS") {
 		t.Errorf("plain HTTP: %v", err)
 	}
 
@@ -224,7 +224,7 @@ func TestUpdater(t *testing.T) {
 	// Refused manifest / corrupted digest / wrong key changes nothing.
 	target, main = installedApp(t)
 	otherKey, _, _ := ed25519.GenerateKey(nil)
-	if _, err := checkUpdate(ctx, feedSource(srv.URL+"/update.json"), base64.StdEncoding.EncodeToString(otherKey), testTarget(), "stable", "1.0.0", ""); err == nil {
+	if _, err := checkUpdate(ctx, feedSource(srv.URL+"/update.json"), base64.StdEncoding.EncodeToString(otherKey), testTarget(), "release", "1.0.0", ""); err == nil {
 		t.Error("manifest verified under wrong key")
 	}
 	bad := up.manifest
@@ -306,7 +306,7 @@ func TestUpdaterETagAndKeyRotation(t *testing.T) {
 	pub2, priv2, _ := ed25519.GenerateKey(nil)
 	m := update.Manifest{
 		Target:  testTarget(),
-		Channel: "stable",
+		Channel: "release",
 		Version: "2.0.0",
 		Artifact: update.Artifact{
 			URL:    "https://dl.example.com/2.0.0/app.tar.zst",
@@ -335,11 +335,11 @@ func TestUpdaterETagAndKeyRotation(t *testing.T) {
 	defer srv.Close()
 
 	src := feedSource(srv.URL + "/update.json")
-	up1, err := checkUpdateCached(t.Context(), src, srv.URL, ringRaw, testTarget(), "stable", "1.0.0", "en")
+	up1, err := checkUpdateCached(t.Context(), src, srv.URL, ringRaw, testTarget(), "release", "1.0.0", "en")
 	if err != nil || up1 == nil || up1.Version != "2.0.0" {
 		t.Fatalf("first check = %+v, %v", up1, err)
 	}
-	up2, err := checkUpdateCached(t.Context(), src, srv.URL, ringRaw, testTarget(), "stable", "1.0.0", "en")
+	up2, err := checkUpdateCached(t.Context(), src, srv.URL, ringRaw, testTarget(), "release", "1.0.0", "en")
 	if err != nil || up2 == nil || up2.Version != "2.0.0" {
 		t.Fatalf("304 check = %+v, %v", up2, err)
 	}
@@ -352,7 +352,7 @@ func TestUpdaterDelta(t *testing.T) {
 	useIsolatedCache(t)
 	ctx := context.Background()
 	srv, key, m, requests := updateServer(t, "1.2.0", "v2, a bigger version", "1.1.9")
-	up, err := checkUpdate(ctx, feedSource(srv.URL+"/update.json"), key, testTarget(), "stable", "1.1.9", "")
+	up, err := checkUpdate(ctx, feedSource(srv.URL+"/update.json"), key, testTarget(), "release", "1.1.9", "")
 	if err != nil || len(up.manifest.Deltas) != 1 {
 		t.Fatalf("checkUpdate = %+v, %v", up, err)
 	}
@@ -436,7 +436,7 @@ func TestUpdaterWaitsForTheAppToExit(t *testing.T) {
 	useIsolatedCache(t)
 	ctx := context.Background()
 	srv, key, _, _ := updateServer(t, "1.2.0", "v2", "")
-	up, err := checkUpdate(ctx, feedSource(srv.URL+"/update.json"), key, testTarget(), "stable", "1.1.9", "")
+	up, err := checkUpdate(ctx, feedSource(srv.URL+"/update.json"), key, testTarget(), "release", "1.1.9", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -461,7 +461,7 @@ func TestUpdaterWaitsForTheAppToExit(t *testing.T) {
 func TestUpdaterChannelAndPrereleases(t *testing.T) {
 	t.Cleanup(func() { Updater.SetChannel("") })
 	if Updater.Channel() != update.DefaultChannel || Updater.Prereleases() {
-		t.Error("default channel should be stable")
+		t.Error("default channel should be release")
 	}
 	done := make(chan struct{})
 	go func() {
@@ -472,8 +472,8 @@ func TestUpdaterChannelAndPrereleases(t *testing.T) {
 	}()
 	Updater.SetPrereleases(true)
 	<-done
-	if !Updater.Prereleases() || Updater.Channel() != update.BetaChannel {
-		t.Error("SetPrereleases(true) did not switch to beta")
+	if !Updater.Prereleases() || Updater.Channel() != update.PrereleaseChannel {
+		t.Error("SetPrereleases(true) did not switch to prerelease")
 	}
 	Updater.SetChannel("nightly")
 	if Updater.Channel() != "nightly" {
@@ -540,11 +540,11 @@ func TestUpdaterSource(t *testing.T) {
 	}
 	src := &testSource{srv: srv, raw: signed}
 	key2 := base64.StdEncoding.EncodeToString(pub)
-	up, err := checkUpdate(ctx, src, key2, testTarget(), "beta", "1.1.9", "en")
+	up, err := checkUpdate(ctx, src, key2, testTarget(), "prerelease", "1.1.9", "en")
 	if err != nil || up == nil || up.Version != "1.2.0" {
 		t.Fatalf("checkUpdate = %+v, %v", up, err)
 	}
-	if len(src.queries) != 1 || src.queries[0].Channel != "beta" {
+	if len(src.queries) != 1 || src.queries[0].Channel != "prerelease" {
 		t.Errorf("queries = %+v", src.queries)
 	}
 	target, main := installedApp(t)

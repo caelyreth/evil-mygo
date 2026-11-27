@@ -131,7 +131,7 @@ func (u *UpdaterModule) Channel() string {
 	return u.DefaultChannel()
 }
 
-// SetChannel sets the update channel (e.g. "stable", "beta"); empty restores DefaultChannel().
+// SetChannel sets the update channel (e.g. "release", "prerelease"); empty restores DefaultChannel().
 func (u *UpdaterModule) SetChannel(channel string) {
 	if channel == "" {
 		updateChannel.Store(nil)
@@ -141,18 +141,18 @@ func (u *UpdaterModule) SetChannel(channel string) {
 	updateChannel.Store(&ch)
 }
 
-// SetPrereleases selects the "beta" channel when on is true, or "stable" when false.
+// SetPrereleases selects the "prerelease" channel when on is true, or "release" when false.
 func (u *UpdaterModule) SetPrereleases(on bool) {
 	if on {
-		u.SetChannel(update.BetaChannel)
+		u.SetChannel(update.PrereleaseChannel)
 		return
 	}
 	u.SetChannel(update.DefaultChannel)
 }
 
-// Prereleases reports whether the active channel is "beta".
+// Prereleases reports whether the active channel is "prerelease".
 func (u *UpdaterModule) Prereleases() bool {
-	return u.Channel() == update.BetaChannel
+	return u.Channel() == update.PrereleaseChannel
 }
 
 var (

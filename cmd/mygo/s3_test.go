@@ -136,7 +136,7 @@ func TestPublishS3(t *testing.T) {
 		{"/downloads/app/empty.deb", "application/vnd.debian.binary-package", "public, max-age=31536000, immutable"},
 		{"/downloads/app/app-1.2.0-1.x86_64.rpm", "application/x-rpm", "public, max-age=31536000, immutable"},
 		{"/downloads/app/install.sh", "text/plain; charset=utf-8", "no-cache"},
-		{"/downloads/app/stable/update-darwin-arm64.json", "application/json", "no-cache"},
+		{"/downloads/app/release/update-darwin-arm64.json", "application/json", "no-cache"},
 	}
 	if !slices.Equal(put, want) {
 		t.Errorf("uploaded\n%v\nwant\n%v", put, want)
@@ -195,7 +195,7 @@ func TestArchivesFromS3(t *testing.T) {
 		}
 		return nil
 	}
-	get := c.archiveGetter("stable")
+	get := c.archiveGetter("release")
 	for _, u := range []string{served + "/App%201.0.0.tar.gz", srv.URL + "/elsewhere/app-0.9.0.tar.gz"} {
 		if err := read(get, u); err != nil {
 			t.Fatal(err)
@@ -211,7 +211,7 @@ func TestArchivesFromS3(t *testing.T) {
 	// Without credentials, from updates.url.
 	t.Setenv("AWS_ACCESS_KEY_ID", "")
 	got = nil
-	if err := read(c.archiveGetter("stable"), served+"/app-1.0.0.tar.gz"); err != nil {
+	if err := read(c.archiveGetter("release"), served+"/app-1.0.0.tar.gz"); err != nil {
 		t.Fatal(err)
 	}
 	if want := []string{host + "/app/app-1.0.0.tar.gz"}; !slices.Equal(got, want) {
@@ -262,7 +262,7 @@ func TestPublishS3SplitHosting(t *testing.T) {
 	want := []string{
 		"/downloads/app/app-1.2.0-darwin-arm64.tar.zst",
 		"/downloads/app/app-1.1.0-to-1.2.0-darwin-arm64.delta",
-		"/downloads/app/stable/history-darwin-arm64.json",
+		"/downloads/app/release/history-darwin-arm64.json",
 	}
 	if !slices.Equal(put, want) {
 		t.Errorf("split-hosted R2 uploads = %v, want %v", put, want)
