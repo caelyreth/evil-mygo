@@ -6,6 +6,7 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/egoist/mygo/internal/scene"
 	"github.com/egoist/mygo/internal/text"
 )
 
@@ -207,6 +208,35 @@ func TestEllipsisZeroAndNarrowWidth(t *testing.T) {
 					assertPureBG(t, img, 90, 100, 0, 40)
 				}
 			})
+		}
+	}
+}
+
+// TestTextMovedByPartOfAPixelMovesWhole moves a text by parts of a pixel,
+// as a label beside a control growing: its glyphs keep their places to
+// each other, the text stepping whole, never the room between them.
+func TestTextMovedByPartOfAPixelMovesWhole(t *testing.T) {
+	var want []float32
+	for i := 0; i <= 20; i++ {
+		x := float32(i) / 20
+		tt := coreNewTester(func(c *context) {
+			coreRow(c).Children(func() {
+				coreBox(c).Width(10 + x)
+				coreText(c, "Incipit").FontSize(44).FontWeight(700)
+			})
+		}, 400, 100)
+		var xs []float32
+		for _, op := range tt.h.last.Ops {
+			if op.Kind == scene.OpGlyphs {
+				for _, g := range tt.h.last.Glyphs[op.Start:op.End] {
+					xs = append(xs, g.X-tt.h.last.Glyphs[op.Start].X)
+				}
+			}
+		}
+		if want == nil {
+			want = xs
+		} else if !slices.Equal(xs, want) {
+			t.Fatalf("Moved %v of a pixel, the glyphs stand %v from the first, not %v.", x, xs, want)
 		}
 	}
 }

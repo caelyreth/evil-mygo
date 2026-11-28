@@ -285,9 +285,10 @@ func restMorph(r *contentRec, spans []Span) {
 // has from the others moving from them, going to their size, color and
 // opacity, the others fading in. Each shows its pen and baseline at (gx,
 // gy), size times as large, in c with the weight of shade, alpha opaque,
-// where text at rest has it at (rx, ry); runes are those of its cluster,
-// for the first glyph of one.
-func (pr *morphPairs) each(r *contentRec, bx, by, x, y, tx, ty float32, color Color, sp *spanPaint, k float32, show func(g text.Glyph, runes []rune, rx, ry, gx, gy, size float32, c Color, shade text.Shade, alpha float32)) {
+// where text at rest has it at (rx, ry), its origin on a whole pixel at s
+// pixels a DIP as text at rest has it (glyphSpace.pen); runes are those
+// of its cluster, for the first glyph of one.
+func (pr *morphPairs) each(r *contentRec, bx, by, x, y, tx, ty, s float32, color Color, sp *spanPaint, k float32, show func(g text.Glyph, runes []rune, rx, ry, gx, gy, size float32, c Color, shade text.Shade, alpha float32)) {
 	mx, my := bx-pr.boxX, by-pr.boxY
 	if fade := 1 - k; fade > 0 {
 		for i, a := range pr.from {
@@ -298,6 +299,8 @@ func (pr *morphPairs) each(r *contentRec, bx, by, x, y, tx, ty float32, color Co
 		}
 	}
 	cur := r.tl
+	// Where the text at rest stands, its origin on a whole pixel.
+	rest := float32(math.Round(float64((x+tx)*s)))/s - x
 	for li := range cur.Lines {
 		line := &cur.Lines[li]
 		for _, g := range line.Glyphs {
@@ -317,7 +320,7 @@ func (pr *morphPairs) each(r *contentRec, bx, by, x, y, tx, ty float32, color Co
 				runes = cur.Runes[b.at : b.at+b.n]
 			}
 			if ci < 0 || pr.pairs[ci] < 0 {
-				show(g, runes, gx+tx, gy+ty, gx, gy, 1, color, shade, k)
+				show(g, runes, gx+rest, gy+ty, gx, gy, 1, color, shade, k)
 				continue
 			}
 			a, b := pr.from[pr.pairs[ci]], pr.curC[ci]
@@ -332,7 +335,7 @@ func (pr *morphPairs) each(r *contentRec, bx, by, x, y, tx, ty float32, color Co
 			if k < 0.5 {
 				sh = text.ShadeOf(a.color.R, a.color.G, a.color.B)
 			}
-			show(g, runes, gx+tx, gy+ty, gx+dx*(1-k), gy+dy*(1-k), size, mixPremultiplied(a.color, color, k, pr.lab), sh, lerp(a.alpha, 1, k))
+			show(g, runes, gx+rest, gy+ty, gx+dx*(1-k), gy+dy*(1-k), size, mixPremultiplied(a.color, color, k, pr.lab), sh, lerp(a.alpha, 1, k))
 		}
 	}
 }
@@ -435,7 +438,7 @@ func (p *Painter) morph(e *node, r *contentRec, x, y float32, ts textStyle, span
 	if shadowGlyph != nil && ts.shadow.color.A > 0 {
 		shadow = true
 		start := int32(len(p.s.Glyphs))
-		pr.each(r, e.x, e.y, x, y, tx, ty, color, sp, k, show)
+		pr.each(r, e.x, e.y, x, y, tx, ty, s, color, sp, k, show)
 		if end := int32(len(p.s.Glyphs)); end > start {
 			p.add(scene.Op{Kind: scene.OpGlyphs, Start: start, End: end})
 		}
@@ -444,14 +447,14 @@ func (p *Painter) morph(e *node, r *contentRec, x, y float32, ts textStyle, span
 	if strokeGlyph != nil && ts.strokeWidth > 0 && ts.strokeColor.A > 0 {
 		stroke = ts.strokeWidth
 		start := int32(len(p.s.Glyphs))
-		pr.each(r, e.x, e.y, x, y, tx, ty, color, sp, k, show)
+		pr.each(r, e.x, e.y, x, y, tx, ty, s, color, sp, k, show)
 		if end := int32(len(p.s.Glyphs)); end > start {
 			p.add(scene.Op{Kind: scene.OpGlyphs, Start: start, End: end})
 		}
 		stroke = 0
 	}
 	start := int32(len(p.s.Glyphs))
-	pr.each(r, e.x, e.y, x, y, tx, ty, color, sp, k, show)
+	pr.each(r, e.x, e.y, x, y, tx, ty, s, color, sp, k, show)
 	if end := int32(len(p.s.Glyphs)); end > start {
 		p.add(scene.Op{Kind: scene.OpGlyphs, Start: start, End: end})
 	}
@@ -490,7 +493,8 @@ func snapMorphFrom(src *contentRec, bx, by, x, y float32, color Color, dst *cont
 		sp = newSpanPaint(pr.spans)
 	}
 	var from []morphGlyph
-	pr.each(src, bx, by, x, y, 0, 0, color, sp, k, func(g text.Glyph, runes []rune, _, _, gx, gy, size float32, c Color, _ text.Shade, alpha float32) {
+	// Where the glyphs show, not where text at rest has them: any scale.
+	pr.each(src, bx, by, x, y, 0, 0, 1, color, sp, k, func(g text.Glyph, runes []rune, _, _, gx, gy, size float32, c Color, _ text.Shade, alpha float32) {
 		if alpha > 0.001 {
 			from = append(from, morphGlyph{runes: runes, font: g.Font, id: g.ID, fontSize: g.Size, size: g.Size * size, x: gx, y: gy, color: c, alpha: alpha})
 		}

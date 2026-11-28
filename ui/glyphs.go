@@ -146,7 +146,7 @@ func (p *Painter) Glyphs(glyphs []Glyph, x, y float32, c Color) {
 			if g.font == nil {
 				continue
 			}
-			pen := (x+g.X)*s + gs.dx
+			pen := gs.pen(x, g.X)
 			if !p.transform.Set && (pen > right || pen+(g.Advance+g.font.Size)*s < left) {
 				continue
 			}
@@ -177,7 +177,7 @@ func (p *Painter) Glyphs(glyphs []Glyph, x, y float32, c Color) {
 			if g.font == nil {
 				continue
 			}
-			pen := (x+g.X)*s + gs.dx
+			pen := gs.pen(x, g.X)
 			if !p.transform.Set && (pen > right || pen+(g.Advance+g.font.Size)*s < left) {
 				continue
 			}
@@ -238,7 +238,7 @@ func (p *Painter) TextLine(l *text.Layout, x, y float32, color func(cluster int)
 	if run == nil {
 		sys.Lock()
 		for _, g := range line.Glyphs {
-			pen := (x+g.X)*s + gs.dx
+			pen := gs.pen(x, g.X)
 			// An inline object's box draws no glyph (text.Span.ObjectWidth).
 			if g.Object || !p.transform.Set && (pen > right || pen+(g.Advance+g.Size)*s < left) {
 				continue
@@ -263,7 +263,7 @@ func (p *Painter) TextLine(l *text.Layout, x, y float32, color func(cluster int)
 		sys.Unlock()
 	} else {
 		for _, g := range line.Glyphs {
-			pen := (x+g.X)*s + gs.dx
+			pen := gs.pen(x, g.X)
 			// An inline object's box draws no glyph (text.Span.ObjectWidth).
 			if g.Object || !p.transform.Set && (pen > right || pen+(g.Advance+g.Size)*s < left) {
 				continue

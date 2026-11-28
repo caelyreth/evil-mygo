@@ -182,6 +182,17 @@ type glyphSpace struct {
 	screen   bool
 }
 
+// pen returns where the pen of a glyph gx DIPs into a text laid out from
+// x stands, in gs's pixels: from the text's origin on a whole pixel, as
+// its baseline is, so that a text moved by a part of a pixel moves
+// whole. Each pen from x itself, the system's text stack putting each
+// glyph at the position within a pixel its pen falls at, a text moving
+// across a pixel, as a label beside a growing control, had its glyphs
+// step at different moments, the room between them changing as it went.
+func (gs glyphSpace) pen(x, gx float32) float32 {
+	return float32(math.Round(float64(x*gs.scale+gs.dx))) + gx*gs.scale
+}
+
 // glyphSpace returns where the glyphs of l, laid out from (x, y), lie and
 // rasterize under the painter's transform. moves tells that inline
 // transforms move glyphs of l. Without a transform scaling them, they lie

@@ -1157,7 +1157,7 @@ func (p *Painter) textForeground(l *text.Layout, x, y float32, color Color, ts t
 			sys.Lock()
 			baseline := sys.BaselineLocked((y+line.Baseline)*s + gs.dy)
 			for _, g := range line.Glyphs {
-				pen := (x+g.X)*s + gs.dx
+				pen := gs.pen(x, g.X)
 				if g.Object || clips && (pen > (p.clip.X+p.clip.W)*s || pen+(g.Advance+g.Size)*s < p.clip.X*s) {
 					continue
 				}
@@ -1188,7 +1188,7 @@ func (p *Painter) textForeground(l *text.Layout, x, y float32, color Color, ts t
 		} else {
 			baseline := sys.Baseline((y+line.Baseline)*s + gs.dy)
 			for _, g := range line.Glyphs {
-				pen := (x+g.X)*s + gs.dx
+				pen := gs.pen(x, g.X)
 				if g.Object || clips && (pen > (p.clip.X+p.clip.W)*s || pen+(g.Advance+g.Size)*s < p.clip.X*s) {
 					continue
 				}
@@ -1266,7 +1266,7 @@ func (p *Painter) textStrokes(l *text.Layout, x, y float32, color Color, ts text
 		}
 		baseline := sys.Baseline((y+line.Baseline)*s + gs.dy)
 		for _, g := range line.Glyphs {
-			pen := (x+g.X)*s + gs.dx
+			pen := gs.pen(x, g.X)
 			width, stroke := ts.strokeWidth, ts.strokeColor
 			if g.Object || clips && (pen > (p.clip.X+p.clip.W+width)*s || pen+(g.Advance+g.Size+width)*s < p.clip.X*s) {
 				continue
@@ -1358,7 +1358,7 @@ func (p *Painter) textShadows(l *text.Layout, x, y float32, color Color, ts text
 				gx-reach > p.clip.X+p.clip.W || gx+g.Advance+g.Size+reach < p.clip.X) {
 				continue
 			}
-			pen := gx*s + gs.dx
+			pen := gs.pen(x, g.X+sh.x)
 			gi := shadowGlyph(sys, g.Font, g.ID, s, pen, glyphShade, p.opaque && !moves, sh.blur/2*s)
 			if !gi.OK {
 				continue
