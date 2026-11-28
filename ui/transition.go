@@ -49,7 +49,10 @@ type ElementTransition struct {
 	// element is in its parent, its width and height (its content laid out
 	// at each size on the way), its background and border colors, and its
 	// shadows (Shadow, InsetShadow), as a resting shadow fading on hover.
-	// None set animates them all.
+	// None set animates them all. Colors and shadows that change as the
+	// theme they paint with changes its colors show at once: the theme
+	// moving, as an app blending from light to dark, carries them, as it
+	// carries everything else painted with it.
 	Position, Size, Colors, Shadows bool
 	// Width and Height, in place of Size, animate the element's width or
 	// its height alone, as CSS's transition-property lists one of them:
@@ -312,6 +315,9 @@ type transition struct {
 	colorK                             channel
 	colorMoving, colorSet              bool
 	colorFrame                         uint64
+	// colorInk and shadowInk are the inks of the theme the colors and the
+	// shadows painted with (engine.themeInk).
+	colorInk, shadowInk uint64
 	// The shadows, which move as the colors do, k of the way from
 	// shadowFrom.
 	shadowTarget, shadowFrom, shadowShown []shadow
@@ -1138,27 +1144,29 @@ func ghostOf(e *node) *node {
 }
 
 // animateColors moves e's background and border colors, once its styleFn
-// set them, as its Transition asks: even while the desktop asks for less
-// motion, as changing colors moves nothing.
-func (rt *engine) animateColors(e *node, r *transition) {
+// set them from t, as its Transition asks: even while the desktop asks for
+// less motion, as changing colors moves nothing.
+func (rt *engine) animateColors(e *node, r *transition, t *Theme) {
 	if r.properties()&propColors == 0 {
 		return
 	}
 	now := rt.c.now
 	if r.colorFrame != rt.frame {
 		target := [2]Color{e.bg, e.borderC}
+		ink := rt.themeInk(t)
 		switch {
 		case !r.colorSet || r.colorFrame+1 != rt.frame:
 			// Not painted in the frame before: its colors show at once.
 			r.colorMoving = false
-		case target != r.colorTarget && rt.instant():
+		case target != r.colorTarget && (rt.instant() || ink != r.colorInk):
+			// The theme moved them: it moves on its own, frame by frame.
 			r.colorMoving = false
 		case target != r.colorTarget:
 			r.colorFrom, r.colorMoving = r.colorShown, true
 			r.colorK = channel{at: now}
 			headFor(&r.colorK, 1, r.animation(), now)
 		}
-		r.colorSet, r.colorTarget, r.colorFrame = true, target, rt.frame
+		r.colorSet, r.colorTarget, r.colorFrame, r.colorInk = true, target, rt.frame, ink
 		r.colorShown = target
 		if r.colorMoving {
 			r.colorK.advance(now)
@@ -1178,7 +1186,7 @@ func (rt *engine) animateColors(e *node, r *transition) {
 // animateShadows is engine.animateShadows once a view asks for a
 // Transition, so that apps without one do not link it.
 var (
-	animateShadows func(rt *engine, e *node, r *transition)
+	animateShadows func(rt *engine, e *node, r *transition, t *Theme)
 	linkShadows    sync.Once
 )
 
@@ -1187,25 +1195,26 @@ var (
 // from the one in its place in the frame before, a missing one from a
 // transparent one at no offset, as CSS interpolates box-shadow lists.
 // Lists with an inner shadow where the other has an outer one change at
-// once.
-func (rt *engine) animateShadows(e *node, r *transition) {
+// once, as do shadows the theme t moved.
+func (rt *engine) animateShadows(e *node, r *transition, t *Theme) {
 	if r.properties()&propShadows == 0 {
 		return
 	}
 	now := rt.c.now
 	if r.shadowFrame != rt.frame {
+		ink := rt.themeInk(t)
 		switch {
 		case !r.shadowSet || r.shadowFrame+1 != rt.frame:
 			r.shadowMoving = false
 		case slices.Equal(e.shadows, r.shadowTarget):
-		case rt.instant() || !shadowsMix(r.shadowShown, e.shadows):
+		case rt.instant() || ink != r.shadowInk || !shadowsMix(r.shadowShown, e.shadows):
 			r.shadowMoving = false
 		default:
 			r.shadowFrom, r.shadowMoving = append(r.shadowFrom[:0], r.shadowShown...), true
 			r.shadowK = channel{at: now}
 			headFor(&r.shadowK, 1, r.animation(), now)
 		}
-		r.shadowSet, r.shadowFrame = true, rt.frame
+		r.shadowSet, r.shadowFrame, r.shadowInk = true, rt.frame, ink
 		r.shadowTarget = append(r.shadowTarget[:0], e.shadows...)
 		r.shadowShown = append(r.shadowShown[:0], e.shadows...)
 		if r.shadowMoving {
@@ -1224,6 +1233,31 @@ func (rt *engine) animateShadows(e *node, r *transition) {
 		// element puts its shadows back (Painter.element).
 		e.shadows = r.shadowShown
 	}
+}
+
+// themeInk is a digest of t's colors, the same from frame to frame while
+// they stay: an element whose colors change as it does takes them at once
+// (animateColors). It keeps the last theme's, as the elements of a frame
+// paint with a few.
+func (rt *engine) themeInk(t *Theme) uint64 {
+	if t == rt.ink.theme && rt.ink.frame == rt.frame {
+		return rt.ink.digest
+	}
+	h := uint64(14695981039346656037)
+	for _, c := range [...]Color{
+		t.Background, t.Surface, t.SurfaceHover, t.SurfacePressed, t.Border,
+		t.Text, t.TextMuted, t.Accent, t.AccentHover, t.AccentPressed,
+		t.AccentText, t.InactiveAccent, t.Danger, t.Warning, t.Success,
+		t.Selection, t.Focus, t.Inverse, t.InverseText, t.Scrollbar,
+		t.ScrollbarStyle.Track, t.ScrollbarStyle.Thumb, t.ScrollbarStyle.Hover, t.ScrollbarStyle.Active,
+	} {
+		for _, v := range [...]uint64{uint64(c.R), uint64(c.G), uint64(c.B), uint64(c.A),
+			uint64(uint16(c.wide[0])), uint64(uint16(c.wide[1])), uint64(uint16(c.wide[2]))} {
+			h = (h ^ v) * 1099511628211
+		}
+	}
+	rt.ink.theme, rt.ink.frame, rt.ink.digest = t, rt.frame, h
+	return h
 }
 
 // shadowsMix reports whether the shadows a and b move from one to the

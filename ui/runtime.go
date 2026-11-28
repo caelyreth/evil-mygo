@@ -356,6 +356,12 @@ type engine struct {
 	matches matcher
 	// instantFrame is the frame that DisableAnimations shows at once.
 	instantFrame uint64
+	// ink is the digest of the theme last asked for in a frame
+	// (themeInk).
+	ink struct {
+		theme         *Theme
+		frame, digest uint64
+	}
 	// paints counts the frames painted, those painting the last frame's
 	// elements again included.
 	paints uint64

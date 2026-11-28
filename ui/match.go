@@ -112,7 +112,8 @@ type flight struct {
 // kept (engine.exitsBuilt), for its look and the transform of the
 // elements around it, unless it flew (lookSet), showing look under world.
 // gone is a copy of it once it went, which the element flying in its place
-// takes (claim), and goneColors the colors it showed.
+// takes (claim), and goneColors the colors it showed in a theme of
+// goneInk.
 type matchRec struct {
 	key        any
 	frame, id  uint64
@@ -125,6 +126,7 @@ type matchRec struct {
 	gone       *node
 	goneAlpha  float32
 	goneColors [2]Color
+	goneInk    uint64
 	// taker is the element of the Match on its way in frame takenAt.
 	taker   *node
 	takenAt uint64
@@ -592,7 +594,7 @@ func (m *matches) claim() {
 			continue
 		}
 		// Its colors, which the element appearing comes from.
-		rec.goneColors = m.shown(from)
+		rec.goneColors, rec.goneInk = m.shown(from), from.colorInk
 		if !u.t.Fly || !from.t.Fly || from.built == rt.frame || from.ghost != nil || from.elem == nil || from.laid+1 != rt.frame {
 			continue // it goes as its Exit says, or, still built, flies itself
 		}
@@ -769,6 +771,7 @@ func (m *matches) start(r *transition, u transitionUse, rec *matchRec, now time.
 	if c := rec.goneColors; c != ([2]Color{}) {
 		// Its colors come from the other's too.
 		r.colorSet, r.colorTarget, r.colorShown, r.colorFrame = true, c, c, rt.frame-1
+		r.colorInk = rec.goneInk
 	}
 	g := rec.gone
 	rec.gone, rec.goneColors = nil, [2]Color{}

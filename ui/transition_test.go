@@ -397,6 +397,40 @@ func TestTransitionFadesColors(t *testing.T) {
 	}
 }
 
+func TestTransitionLeavesColorsTheThemeMovesToIt(t *testing.T) {
+	theme := LightTheme()
+	var own Color
+	tt, now := clockTester(func(c *context) {
+		t := *theme
+		c.SetTheme(&t)
+		bg := t.Surface
+		if own != (Color{}) {
+			bg = own
+		}
+		coreBox(c).Size(50, 50).Background(bg).Transition(ElementTransition{Colors: true, Ease: Linear})
+	}, 100, 100)
+	// The app blends its theme itself, a step each frame: the box takes
+	// each step at once, not starting a fade of its own after it.
+	for _, surface := range []Color{RGB(200, 0, 0), RGB(150, 0, 0), RGB(100, 0, 0)} {
+		theme.Surface = surface
+		*now = now.Add(16 * time.Millisecond)
+		tt.Frame()
+		if p := tt.Image().RGBAAt(25, 25); p.R != surface.R {
+			t.Fatalf("as the theme moves to %v, the box is %v", surface, p)
+		}
+	}
+	// The theme still, a change of the box's own fades.
+	*now = now.Add(16 * time.Millisecond)
+	tt.Frame()
+	own = RGB(0, 0, 255)
+	tt.Frame()
+	*now = now.Add(100 * time.Millisecond)
+	tt.Frame()
+	if p := tt.Image().RGBAAt(25, 25); p.B < 110 || p.B > 145 {
+		t.Errorf("halfway through its own change, the box is %v", p)
+	}
+}
+
 func TestTransitionFadesColorsInOklab(t *testing.T) {
 	bg := RGB(255, 255, 0)
 	tt, now := clockTester(func(c *context) {

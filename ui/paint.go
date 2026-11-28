@@ -370,9 +370,10 @@ func (p *Painter) element(e *node) {
 		e.styleFn(e)
 	}
 	if r != nil {
-		p.rt.animateColors(e, r)
+		t := p.Theme()
+		p.rt.animateColors(e, r, t)
 		if animateShadows != nil {
-			animateShadows(p.rt, e, r)
+			animateShadows(p.rt, e, r, t)
 		}
 	}
 	if styled && (e.ts.color != built.text || e.ts.set != builtTextSet) {
